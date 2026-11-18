@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SpeedySpec\Block\App\Media;
 
+use SpeedySpec\Block\Domain\Contracts\MediaUploadPolicyInterface;
 use SpeedySpec\Block\Domain\Exceptions\MediaUploadRefusedException;
 use SpeedySpec\Block\Domain\ValueObjects\MediaUpload;
 
@@ -15,7 +16,7 @@ use SpeedySpec\Block\Domain\ValueObjects\MediaUpload;
  *
  * @since 0.1.0
  */
-class MediaUploadPolicy
+class MediaUploadPolicy implements MediaUploadPolicyInterface
 {
     public const int DEFAULT_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -33,10 +34,7 @@ class MediaUploadPolicy
     }
 
     /**
-     * Checks one upload and describes it with its real type.
-     *
-     * @throws MediaUploadRefusedException
-     *   When the file is empty, unnamed, too large or of a kind not accepted.
+     * Refuses a file that is empty, unnamed, over the limit or of a kind not accepted.
      *
      * @since 0.1.0
      */

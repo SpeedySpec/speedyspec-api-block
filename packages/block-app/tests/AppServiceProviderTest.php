@@ -115,7 +115,7 @@ test('the upload policy is bound with the default limit, and no media library is
     $container = new BlockServiceContainer();
     (new AppServiceProvider())->register($container);
 
-    expect($container->get(\SpeedySpec\Block\App\Media\MediaUploadPolicy::class))
+    expect($container->get(\SpeedySpec\Block\Domain\Contracts\MediaUploadPolicyInterface::class))
         ->toBeInstanceOf(\SpeedySpec\Block\App\Media\MediaUploadPolicy::class)
         ->and($container->has(\SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface::class))->toBeFalse();
 });

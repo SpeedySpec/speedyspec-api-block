@@ -74,6 +74,7 @@ use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentSerializerInterface;
+use SpeedySpec\Block\Domain\Contracts\MediaUploadPolicyInterface;
 use SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
 use SpeedySpec\Block\Domain\Contracts\RichTextSanitizerInterface;
@@ -107,7 +108,7 @@ class AppServiceProvider
         // Uploads are checked here; where they are kept is the host's, so no media library is bound.
         $container->add(MediaTypeDetector::class, fn () => new MediaTypeDetector());
         $container->add(
-            MediaUploadPolicy::class,
+            MediaUploadPolicyInterface::class,
             fn (BlockServiceContainer $c) => new MediaUploadPolicy($c->get(MediaTypeDetector::class)),
         );
         $container->add(

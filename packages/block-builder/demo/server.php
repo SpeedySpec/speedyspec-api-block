@@ -188,6 +188,9 @@ $response = $container->get(BuilderApi::class)->handle(new ApiRequest(
     substr($path, 4),
     array_map(strval(...), array_filter($_GET, is_scalar(...))),
     (string) file_get_contents('php://input'),
+    function_exists('getallheaders') ? getallheaders() : array_filter([
+        'content-type' => $_SERVER['CONTENT_TYPE'] ?? null,
+    ]),
 ));
 
 http_response_code($response->status);
