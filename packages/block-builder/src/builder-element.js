@@ -1,6 +1,6 @@
 import { createClient } from './api.js';
 import {
-    FieldError, fields, parseField, tableShape, withColumn, withoutColumn, withoutRow, withRow, withValue,
+    FieldError, fields, parseField, tableShape, withColumn, withoutColumn, withoutRow, withRow, withTyped, withValue,
 } from './forms.js';
 import { createBuilder } from './store.js';
 import { CANVAS_STYLE, STYLE } from './styles.js';
@@ -20,7 +20,7 @@ import {
     writeResponsive,
 } from './view.js';
 import { dropPosition, dropZone } from './drag.js';
-import { keyAction, safeLink, settingSchema, tidyTyped } from './inline.js';
+import { keyAction, removableWhenEmpty, safeLink, settingSchema, startsNewBlock, tidyTyped } from './inline.js';
 
 const STYLE_NS = 'core/style';
 const RULES_NS = 'core/visibility';
@@ -104,6 +104,7 @@ export class BlockBuilderElement extends HTMLElement {
             rules: null,
         };
         this.typing = null;
+        this.keepTyping = false;
         this.focusAfter = null;
         this.builder = createBuilder({
             client: this.client ?? createClient({ baseUrl: this.getAttribute('api') ?? '/api', headers: this.headers() }),
@@ -594,7 +595,7 @@ export class BlockBuilderElement extends HTMLElement {
         page.querySelectorAll('[draggable]').forEach((element) => element.setAttribute('draggable', 'false'));
         node.setAttribute('contenteditable', rich ? 'true' : 'plaintext-only');
         node.setAttribute('data-bb-typing', '');
-        this.typing = { node, blockId, path, rich, type: block?.type, before: rich ? tidyTyped(node.innerHTML) : node.innerText };
+        this.typing = { node, blockId, path, rich, schema: entry?.settings, type: block?.type, before: rich ? tidyTyped(node.innerHTML) : node.innerText };
         node.focus();
     }
 
@@ -623,7 +624,8 @@ export class BlockBuilderElement extends HTMLElement {
             return Promise.resolve();
         }
 
-        return this.builder.updateSettings(typing.blockId, withValue(block.settings, typing.path, value));
+        // Worked out when its turn comes, so a cell typed while the last one is still saving does not undo it.
+        return this.builder.changeSettings(typing.blockId, (settings) => withTyped(settings, typing.schema, typing.path, value));
     }
 
     typingKey(event) {
@@ -641,9 +643,12 @@ export class BlockBuilderElement extends HTMLElement {
             shiftKey: event.shiftKey,
             metaKey: event.metaKey,
             ctrlKey: event.ctrlKey,
-            empty: typing.node.textContent === '',
+            // Only a block's main text adds or removes whole blocks; a cell, caption or citation is part of one.
+            empty: typing.node.textContent === ''
+                && removableWhenEmpty(find(this.builder.state().document, typing.blockId), typing.schema, typing.path),
             atStart,
             plain: !typing.rich,
+            split: startsNewBlock(typing.path),
         });
 
         if (action === null) {
@@ -724,7 +729,18 @@ export class BlockBuilderElement extends HTMLElement {
                 run('insertHTML', `<code>${safe}</code>`);
             }),
             command('Link', 'Link', () => {
-                const link = safeLink(window.prompt('Link to (a web address, an email or a page on this site)') ?? '');
+                // The prompt takes focus away from the page in some browsers; that must not end the typing.
+                this.keepTyping = true;
+                let asked;
+
+                try {
+                    asked = window.prompt('Link to (a web address, an email or a page on this site)');
+                } finally {
+                    this.keepTyping = false;
+                }
+
+                this.typing?.node.focus();
+                const link = safeLink(asked ?? '');
 
                 if (link === null) {
                     return;

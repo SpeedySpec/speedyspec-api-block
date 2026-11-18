@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { keyAction, safeLink, settingSchema, tidyTyped } from '../src/inline.js';
+import { keyAction, removableWhenEmpty, safeLink, settingSchema, startsNewBlock, tidyTyped } from '../src/inline.js';
 
 test('what a browser produced while typing is tidied to the allowed subset', () => {
     assert.equal(tidyTyped('<b>a</b> <i>b</i> <strike>c</strike> <del>d</del>'), '<strong>a</strong> <em>b</em> <s>c</s> <s>d</s>');
@@ -69,3 +69,37 @@ test('the schema of a setting is found by its path, into lists and maps', () => 
     assert.equal(settingSchema(undefined, 'text'), null);
 });
 
+
+const quoteSchema = {
+    type: 'object',
+    properties: { text: { type: 'string', 'x-control': 'rich-text' }, citation: { type: 'string', 'x-control': 'rich-text' } },
+};
+const tableTypeSchema = {
+    type: 'object',
+    properties: {
+        rows: { type: 'array', 'x-control': 'table', default: [['', '']] },
+        caption: { type: 'string', 'x-control': 'rich-text' },
+    },
+};
+
+test('only the main text of a block starts a new block on Enter', () => {
+    assert.equal(startsNewBlock('text'), true);
+    assert.equal(startsNewBlock('citation'), false);
+    assert.equal(startsNewBlock('caption'), false);
+    assert.equal(startsNewBlock('rows.0.1'), false);
+});
+
+test('Enter outside the main text breaks the line instead', () => {
+    assert.equal(keyAction({ key: 'Enter', split: false }), 'line-break');
+    assert.equal(keyAction({ key: 'Enter' }), 'commit-split');
+});
+
+test('a block is removed by Backspace only when emptying its text leaves nothing else in it', () => {
+    const paragraph = { settings: {}, children: [] };
+    assert.equal(removableWhenEmpty(paragraph, quoteSchema, 'text'), true);
+    assert.equal(removableWhenEmpty({ settings: { citation: 'Rams' }, children: [] }, quoteSchema, 'text'), false);
+    assert.equal(removableWhenEmpty({ settings: {}, children: [{ id: 'x' }] }, quoteSchema, 'text'), false);
+    assert.equal(removableWhenEmpty(paragraph, quoteSchema, 'citation'), false);
+    assert.equal(removableWhenEmpty({ settings: {}, children: [] }, tableTypeSchema, 'caption'), false);
+    assert.equal(removableWhenEmpty({ settings: {}, children: [] }, tableTypeSchema, 'rows.0.0'), false);
+});

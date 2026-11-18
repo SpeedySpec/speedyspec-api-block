@@ -62,13 +62,15 @@ export function tidyTyped(html) {
  *   is set for plain text such as code, where Enter is a new line.
  * @returns {'commit-split'|'line-break'|'remove'|'stop'|null} Null to let the browser do what it would.
  */
-export function keyAction({ key, shiftKey = false, metaKey = false, ctrlKey = false, empty = false, atStart = false, plain = false }) {
+export function keyAction({
+    key, shiftKey = false, metaKey = false, ctrlKey = false, empty = false, atStart = false, plain = false, split = true,
+}) {
     if (metaKey || ctrlKey) {
         return null;
     }
 
     if (key === 'Enter') {
-        return shiftKey || plain ? 'line-break' : 'commit-split';
+        return shiftKey || plain || !split ? 'line-break' : 'commit-split';
     }
 
     if (key === 'Backspace') {
@@ -137,4 +139,40 @@ export function settingSchema(schema, path) {
     }
 
     return current ?? null;
+}
+
+/**
+ * Tells whether Enter in a setting starts a new block. Only a block's main text does: Enter in a citation, a caption
+ * or a table cell adding a whole new quote or table would surprise anyone, so there it breaks the line.
+ *
+ * @param {string} path
+ */
+export function startsNewBlock(path) {
+    return path === 'text';
+}
+
+const TYPED_CONTROLS = ['rich-text', 'table', 'code'];
+
+/**
+ * Tells whether Backspace in an empty setting may remove the whole block: only when that setting is the block's
+ * main text, and the block holds no blocks and no other text that would go with it.
+ *
+ * @param {object} block
+ * @param {object} [schema] The block type's settings schema.
+ * @param {string} path
+ */
+export function removableWhenEmpty(block, schema, path) {
+    if (path !== 'text' || (block?.children ?? []).length > 0) {
+        return false;
+    }
+
+    return Object.entries(schema?.properties ?? {}).every(([name, property]) => {
+        if (name === path || !TYPED_CONTROLS.includes(property?.['x-control'])) {
+            return true;
+        }
+
+        const value = block?.settings?.[name] ?? property.default;
+
+        return value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
+    });
 }

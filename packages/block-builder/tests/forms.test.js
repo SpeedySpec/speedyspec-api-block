@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-    FieldError, fields, parseField, tableShape, withColumn, withoutColumn, withoutRow, withRow, withValue,
+    FieldError, fields, parseField, tableShape, withColumn, withoutColumn, withoutRow, withRow, withTyped, withValue,
 } from '../src/forms.js';
 
 const schema = {
@@ -154,4 +154,28 @@ test('a column is removed from every row but the last column stays', () => {
 test('a table with no rows gains one row and one column', () => {
     assert.deepEqual(withRow([], 0), [['']]);
     assert.deepEqual(withColumn([], 0), [['']]);
+});
+
+const tableSchema = {
+    type: 'object',
+    properties: {
+        rows: { type: 'array', items: { type: 'array', items: { type: 'string' } }, default: [['', ''], ['', '']] },
+        caption: { type: 'string' },
+    },
+};
+
+test('typing into a setting that is not stored starts from its default', () => {
+    assert.deepEqual(withTyped({}, tableSchema, 'rows.0.0', 'Name'), { rows: [['Name', ''], ['', '']] });
+    assert.deepEqual(withTyped({}, tableSchema, 'rows.1.1', 'x'), { rows: [['', ''], ['', 'x']] });
+});
+
+test('typing past the end of a list fills the gap with empty text, never null', () => {
+    assert.deepEqual(withTyped({ rows: [['a'], ['c']] }, tableSchema, 'rows.1.2', 'x'), { rows: [['a'], ['c', '', 'x']] });
+    assert.deepEqual(withTyped({ rows: [['a']] }, tableSchema, 'rows.2.0', 'x'), { rows: [['a'], [], ['x']] });
+});
+
+test('typing into a top-level setting only sets that setting', () => {
+    const stored = { rows: [['a']], caption: 'old' };
+    assert.deepEqual(withTyped(stored, tableSchema, 'caption', 'new'), { rows: [['a']], caption: 'new' });
+    assert.deepEqual(stored, { rows: [['a']], caption: 'old' });
 });

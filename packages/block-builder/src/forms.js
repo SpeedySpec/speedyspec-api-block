@@ -229,3 +229,59 @@ export function withoutColumn(rows, at) {
 
     return rows.map((row) => row.filter((cell, index) => index !== at));
 }
+
+/**
+ * Copies settings with what a person typed into one setting, or into one place inside it such as `rows.1.2`.
+ *
+ * A block added a moment ago stores no settings, yet the page shows the defaults, so typing into a place inside a
+ * setting that is not stored starts from its default; otherwise one cell typed into a new table would replace the
+ * whole table. Places skipped over in a list are filled with the empty value the schema expects there, so the result
+ * is still valid.
+ *
+ * @param {object} settings The stored settings.
+ * @param {object} [schema] The block type's settings schema.
+ * @param {string} path
+ * @param {*} value
+ */
+export function withTyped(settings, schema, path, value) {
+    const [name, ...rest] = String(path).split('.');
+
+    if (rest.length === 0) {
+        return withValue(settings, name, value);
+    }
+
+    const property = schema?.properties?.[name] ?? {};
+    const stored = settings?.[name];
+    const start = stored === undefined && property.default !== undefined ? structuredClone(property.default) : stored;
+
+    return withValue(settings, name, typedInto(start, property, rest, value));
+}
+
+function typedInto(container, schema, segments, value) {
+    const [segment, ...rest] = segments;
+    const inList = /^\d+$/.test(segment);
+    const inner = inList ? schema?.items : (schema?.properties?.[segment] ?? schema?.additionalProperties);
+    const next = inList
+        ? (Array.isArray(container) ? [...container] : [])
+        : (container !== null && typeof container === 'object' && !Array.isArray(container) ? { ...container } : {});
+
+    if (inList) {
+        for (let index = next.length; index < Number(segment); index++) {
+            next[index] = emptyOf(inner);
+        }
+    }
+
+    next[segment] = rest.length === 0 ? value : typedInto(next[segment], inner, rest, value);
+
+    return next;
+}
+
+function emptyOf(schema) {
+    const types = [].concat(schema?.type ?? []);
+
+    if (types.includes('string')) {
+        return '';
+    }
+
+    return types.includes('array') ? [] : types.includes('object') ? {} : null;
+}

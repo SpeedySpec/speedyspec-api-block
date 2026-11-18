@@ -31,6 +31,7 @@ test('only the allowed subset survives cleaning, and text is kept', function (st
     'mail link' => ['<a href="mailto:a@e.test">a</a>', '<a href="mailto:a@e.test">a</a>'],
     'site path' => ['<a href="/about">a</a>', '<a href="/about">a</a>'],
     'other site path' => ['<a href="//evil.test/x">a</a>', 'a'],
+    'other site path with a backslash' => ['<a href="/\\evil.test/x">a</a>', 'a'],
     'link without href' => ['<a>a</a>', 'a'],
     'misnested' => ['<em><strong>a</em></strong>', '<em><strong>a</strong></em>'],
     'escaped markup' => ['&lt;script&gt;', '&lt;script&gt;'],

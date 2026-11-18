@@ -197,7 +197,8 @@ class RichTextSanitizer implements RichTextSanitizerInterface
         $href = trim($href);
         $compact = (string) preg_replace('/[\x00-\x20\x7F]+/', '', $href);
 
-        if ($href === '' || str_starts_with($compact, '//'))
+        // Browsers read `/\` as `//`, the start of another site's address.
+        if ($href === '' || str_starts_with($compact, '//') || str_starts_with($compact, '/\\'))
         {
             return null;
         }

@@ -219,6 +219,19 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
 
         updateSettings: (id, settings) => edit({ operation: 'updateSettings', block: id, settings }),
 
+        /**
+         * Changes a block's settings from what they are when the change's turn comes, so a change sent while an
+         * earlier one is still under way builds on it instead of putting back what it replaced.
+         *
+         * @param {string} id
+         * @param {(settings: object) => object} change
+         */
+        changeSettings: (id, change) => edit(() => {
+            const block = find(state.document, id);
+
+            return block === null ? null : { operation: 'updateSettings', block: id, settings: change(block.settings ?? {}) };
+        }),
+
         updateExtension: (id, namespace, settings) =>
             edit({ operation: 'updateExtension', block: id, namespace, settings }),
 
