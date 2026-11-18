@@ -8,6 +8,7 @@ use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\Document;
+use SpeedySpec\Block\Domain\ValueObjects\AdminContext;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\BlockView;
 use SpeedySpec\Block\Domain\ValueObjects\Context;
@@ -95,25 +96,43 @@ class DocumentResolver implements DocumentResolverInterface
         {
             array_push($issues, ...$outcome->issues);
 
-            return new ResolvedBlock($stored, $type, $outcome->settings, $outcome->extensions, null, $context);
+            return new ResolvedBlock(
+                $stored,
+                $type,
+                $outcome->settings,
+                $outcome->extensions,
+                null,
+                $context,
+                $this->admin($mode, $outcome, $outcome->issues, []),
+            );
         }
 
         $outcome = $this->gate->run($outcome, $type, $context, $mode);
         $outcome = $this->resolve->run($outcome, $type, $context, $mode);
         $outcome = $this->validate->run($outcome, $type, $context, $mode);
-        [$view, $blockIssues] = $this->view->run($outcome, $type, $context, $mode);
-        array_push($issues, ...$blockIssues);
+        [$view, $blockIssues, $adminValues] = $this->view->run($outcome, $type, $context, $mode);
 
         if ($view === null)
         {
+            array_push($issues, ...$blockIssues);
             $block = $outcome->continue ? $outcome->workingBlock() : $stored;
 
-            return new ResolvedBlock($block, $type, $outcome->settings, $outcome->extensions, null, $context);
+            return new ResolvedBlock(
+                $block,
+                $type,
+                $outcome->settings,
+                $outcome->extensions,
+                null,
+                $context,
+                $this->admin($mode, $outcome, $blockIssues, $adminValues),
+            );
         }
 
+        $passContexts = $this->passContexts($stored, $type, $view, $context, $blockIssues);
+        array_push($issues, ...$blockIssues);
         $passes = [];
 
-        foreach ($this->passContexts($stored, $type, $view, $context, $issues) as $index => $passContext)
+        foreach ($passContexts as $index => $passContext)
         {
             $children = [];
 
@@ -142,8 +161,27 @@ class DocumentResolver implements DocumentResolverInterface
             $outcome->extensions,
             $view,
             $context,
+            $this->admin($mode, $outcome, $blockIssues, $adminValues),
             $passes,
         );
+    }
+
+    /**
+     * Assembles the editor information of one block, so even a block that stopped can show the editor why.
+     *
+     * @param list<Issue> $blockIssues
+     *   Every issue recorded against the block itself.
+     * @param array<string, mixed> $values
+     *   The admin values the behaviour handed over.
+     */
+    private function admin(Mode $mode, StageOutcome $outcome, array $blockIssues, array $values): ?AdminContext
+    {
+        if ($mode !== Mode::Admin)
+        {
+            return null;
+        }
+
+        return new AdminContext($values, $blockIssues, $outcome->bindingInfo, $outcome->hiddenOnFront);
     }
 
     /**

@@ -10,6 +10,9 @@ use SpeedySpec\Block\Domain\ValueObjects\Mode;
 /**
  * Produces the copy of a document that may leave the server, so private settings never reach a visitor.
  *
+ * Resolved blocks and documents carry private settings in both modes; together with the default view, this export
+ * is what is safe to send to a visitor.
+ *
  * @since 0.1.0
  */
 interface ClientExportInterface

@@ -8,7 +8,6 @@ use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ViewStepInterface;
-use SpeedySpec\Block\Domain\ValueObjects\AdminContext;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\BlockView;
 use SpeedySpec\Block\Domain\ValueObjects\Context;
@@ -46,8 +45,12 @@ class ViewStage
     /**
      * Builds one block's view; a failing behaviour or view schema yields no view and an issue, never an exception.
      *
-     * @return array{0: BlockView|null, 1: list<Issue>}
-     *   The view, or null when the block has none, and all of the block's issues including the earlier stages'.
+     * The view carries no editor information: the behaviour's admin values are handed back separately so the
+     * resolver can attach the editor information to the resolved block, whether or not it reached a view.
+     *
+     * @return array{0: BlockView|null, 1: list<Issue>, 2: array<string, mixed>}
+     *   The view, or null when the block has none; all of the block's issues including the earlier stages'; and
+     *   the admin values the behaviour handed over, empty in {@link Mode::Front} or when there are none.
      *
      * @since 0.1.0
      */
@@ -57,10 +60,11 @@ class ViewStage
 
         if (!$validated->continue)
         {
-            return [null, $issues];
+            return [null, $issues, []];
         }
 
         $blockId = $validated->block->id;
+        $block = $validated->workingBlock();
         $behaviour = $this->behaviours->get($type->name);
 
         if ($behaviour === null)
@@ -71,7 +75,7 @@ class ViewStage
         {
             try
             {
-                $view = $behaviour->view($type, $validated->settings, $context->only($type->uses), $mode);
+                $view = $behaviour->view($block, $type, $validated->settings, $context->only($type->uses), $mode);
             }
             catch (Throwable $e)
             {
@@ -81,9 +85,11 @@ class ViewStage
                     $e::class,
                 ));
 
-                return [null, $issues];
+                return [null, $issues, []];
             }
         }
+
+        $adminValues = $mode === Mode::Admin ? ($view->admin?->values ?? []) : [];
 
         foreach ($view->childPasses ?? [] as $item)
         {
@@ -94,7 +100,7 @@ class ViewStage
                     $type->name->toString(),
                 ));
 
-                return [null, $issues];
+                return [null, $issues, $adminValues];
             }
         }
 
@@ -109,12 +115,11 @@ class ViewStage
 
             if ($errors !== [])
             {
-                return [null, $issues];
+                return [null, $issues, $adminValues];
             }
         }
 
-        $view = $view->withAdmin($mode === Mode::Admin ? $this->admin($view->admin, $validated) : null);
-        $block = $validated->workingBlock();
+        $view = $view->withAdmin(null);
 
         foreach ($this->steps->for(ViewStepInterface::class) as $step)
         {
@@ -122,12 +127,12 @@ class ViewStage
             $view = new BlockView(
                 $view->values,
                 array_replace($view->extensions, $extended->extensions),
-                $view->admin,
+                null,
                 $view->childPasses,
             );
         }
 
-        return [$view, $issues];
+        return [$view, $issues, $adminValues];
     }
 
     /**
@@ -145,17 +150,5 @@ class ViewStage
         }
 
         return array_diff_key($settings, array_flip($this->validator->privateProperties($type->settingsSchema)));
-    }
-
-    /**
-     * Adds what resolving learned about the block to the behaviour's editor information.
-     */
-    private function admin(?AdminContext $admin, StageOutcome $validated): AdminContext
-    {
-        return ($admin ?? new AdminContext())->with(
-            issues: $validated->issues,
-            bindings: $validated->bindingInfo,
-            hiddenOnFront: $validated->hiddenOnFront,
-        );
     }
 }

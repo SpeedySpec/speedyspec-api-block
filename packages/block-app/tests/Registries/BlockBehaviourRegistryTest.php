@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use SpeedySpec\Block\App\Registries\BlockBehaviourRegistry;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourInterface;
+use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\BlockView;
@@ -13,7 +14,7 @@ use SpeedySpec\Block\Domain\ValueObjects\Mode;
 function behaviour(): BlockBehaviourInterface
 {
     return new class implements BlockBehaviourInterface {
-        public function view(BlockType $type, array $settings, Context $context, Mode $mode): BlockView
+        public function view(Block $block, BlockType $type, array $settings, Context $context, Mode $mode): BlockView
         {
             return new BlockView($settings);
         }

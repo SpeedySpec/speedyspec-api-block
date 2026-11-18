@@ -36,7 +36,7 @@ function viewStage(?callable $setup = null): ViewStage
 }
 
 /**
- * Builds a behaviour from a closure.
+ * Builds a behaviour from a closure, which receives the type, settings, context, mode and block.
  */
 function viewBehaviour(Closure $view): BlockBehaviourInterface
 {
@@ -45,9 +45,9 @@ function viewBehaviour(Closure $view): BlockBehaviourInterface
         {
         }
 
-        public function view(BlockType $type, array $settings, Context $context, Mode $mode): BlockView
+        public function view(Block $block, BlockType $type, array $settings, Context $context, Mode $mode): BlockView
         {
-            return ($this->view)($type, $settings, $context, $mode);
+            return ($this->view)($type, $settings, $context, $mode, $block);
         }
     };
 }
@@ -69,7 +69,7 @@ test('with no behaviour the view values are the settings, without private ones o
     [$admin] = viewStage()->run($outcome, $secret(), Context::empty(), Mode::Admin);
     expect($front->values)->toBe(['n' => 1])->and($front->admin)->toBeNull()->and($frontIssues)->toBe([])
         ->and($admin->values)->toBe(['n' => 1, 'to' => 'me@example.test'])
-        ->and($admin->admin)->toBeInstanceOf(AdminContext::class);
+        ->and($admin->admin)->toBeNull();
 });
 
 test('a behaviour view is not filtered for private settings', function () use ($secret) {
@@ -80,7 +80,7 @@ test('a behaviour view is not filtered for private settings', function () use ($
     expect($view->values)->toBe(['n' => 1, 'to' => 'me@example.test']);
 });
 
-test('the behaviour admin values survive in admin mode alongside the system additions', function () {
+test('the behaviour admin values are handed back in admin mode and the view keeps no admin context', function () {
     $stage = viewStage(function ($behaviours) {
         $behaviours->set(BlockName::fromString('acme/box'), viewBehaviour(
             fn () => new BlockView([], admin: new AdminContext(['hint' => 'h'], [], ['ignored' => []], false))
@@ -88,12 +88,24 @@ test('the behaviour admin values survive in admin mode alongside the system addi
     });
     $earlier = new Issue('a', IssueKind::InvalidBinding, 'bad');
     $info = ['n' => ['source' => 'acme/values', 'used' => 'fallback']];
-    [$view, $issues] = $stage->run(validated([], [$earlier], true, $info), type('acme/box'), Context::empty(), Mode::Admin);
-    expect($view->admin->values)->toBe(['hint' => 'h'])
-        ->and($view->admin->issues)->toBe([$earlier])
-        ->and($view->admin->bindings)->toBe($info)
-        ->and($view->admin->hiddenOnFront)->toBeTrue()
-        ->and($issues)->toBe([$earlier]);
+    [$view, $issues, $values] = $stage->run(validated([], [$earlier], true, $info), type('acme/box'), Context::empty(), Mode::Admin);
+    [$front, , $frontValues] = $stage->run(validated([]), type('acme/box'), Context::empty(), Mode::Front);
+    expect($view->admin)->toBeNull()->and($values)->toBe(['hint' => 'h'])->and($issues)->toBe([$earlier])
+        ->and($front->admin)->toBeNull()->and($frontValues)->toBe([]);
+});
+
+test('a behaviour receives the working block with its id and children', function () {
+    $seen = null;
+    $stage = viewStage(function ($behaviours) use (&$seen) {
+        $behaviours->set(BlockName::fromString('acme/box'), viewBehaviour(function ($t, $s, $c, $m, Block $block) use (&$seen) {
+            $seen = [$block->id, array_map(fn (Block $child) => $child->id, $block->children), $block->settings];
+
+            return new BlockView([]);
+        }));
+    });
+    $outcome = new StageOutcome(block('a', 'acme/box', [], block('c1'), block('c2')), ['n' => 2], [], [], true);
+    $stage->run($outcome, type('acme/box'), Context::empty(), Mode::Front);
+    expect($seen)->toBe(['a', ['c1', 'c2'], ['n' => 2]]);
 });
 
 test('a behaviour that throws yields no view and an issue naming the exception', function () {
@@ -155,5 +167,5 @@ test('view steps run in registry order and the later step wins per namespace', f
 test('a stopped outcome yields no view and keeps its issues', function () {
     $issue = new Issue('a', IssueKind::InvalidSettings, 'bad');
     $outcome = validated([], [$issue])->with(continue: false);
-    expect(viewStage()->run($outcome, type('acme/box'), Context::empty(), Mode::Front))->toBe([null, [$issue]]);
+    expect(viewStage()->run($outcome, type('acme/box'), Context::empty(), Mode::Front))->toBe([null, [$issue], []]);
 });

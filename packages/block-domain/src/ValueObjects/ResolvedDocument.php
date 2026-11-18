@@ -9,6 +9,9 @@ use SpeedySpec\Block\Domain\Entities\Document;
 /**
  * A whole document after resolving, with every issue found along the way in tree order.
  *
+ * Like its blocks, a resolved document is server-side and complete: its blocks' settings include private settings
+ * in both modes. Only the default view and the client export are safe to hand to a visitor.
+ *
  * @since 0.1.0
  */
 class ResolvedDocument

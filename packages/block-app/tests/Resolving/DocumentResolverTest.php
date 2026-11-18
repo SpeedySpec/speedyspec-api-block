@@ -35,7 +35,7 @@ function fixedView(BlockView $view): BlockBehaviourInterface
         {
         }
 
-        public function view(BlockType $type, array $settings, Context $context, Mode $mode): BlockView
+        public function view(Block $block, BlockType $type, array $settings, Context $context, Mode $mode): BlockView
         {
             return $this->view;
         }
@@ -54,7 +54,7 @@ test('a private setting is absent from a front view and present in an admin view
     [$resolver] = resolver(function ($c) use ($form, $field) { types($c)->add($form()); types($c)->add($field()); });
     $document = doc(block('f', 'acme/form'));
     expect($resolver->resolve($document, Mode::Front)->find('f')->view->values)->toBe(['formId' => 'f1'])
-        ->and($resolver->resolve($document, Mode::Front)->find('f')->view->admin)->toBeNull()
+        ->and($resolver->resolve($document, Mode::Front)->find('f')->admin)->toBeNull()
         ->and($resolver->resolve($document, Mode::Admin)->find('f')->view->values['to'])->toBe('owner@example.test');
 });
 
@@ -67,7 +67,7 @@ test('a behaviour sees only the context keys its type uses', function () use ($f
             {
             }
 
-            public function view(BlockType $type, array $settings, Context $context, Mode $mode): BlockView
+            public function view(Block $block, BlockType $type, array $settings, Context $context, Mode $mode): BlockView
             {
                 $this->seen = $context->all();
                 return new BlockView(['key' => $settings['key']], admin: new AdminContext(['hint' => 'h']));
@@ -76,18 +76,20 @@ test('a behaviour sees only the context keys its type uses', function () use ($f
     });
     $context = Context::empty()->with('acme/unrelated', 1);
     $result = $resolver->resolve(doc(block('f', 'acme/form', [], block('n', 'acme/field', ['key' => 'name']))), Mode::Front, $context);
-    expect($seen)->toBe(['acme/form-id' => 'f1'])->and($result->find('n')->view->admin)->toBeNull();
+    expect($seen)->toBe(['acme/form-id' => 'f1'])->and($result->find('n')->admin)->toBeNull();
 });
 
-test('the admin view carries the block admin context plus issues, bindings and the hidden flag', function () use ($form, $field) {
+test('the admin context carries the behaviour values plus issues, bindings and the hidden flag', function () use ($form, $field) {
     [$resolver] = resolver(function ($c) use ($form, $field) {
         types($c)->add($form()); types($c)->add($field());
         sources($c)->add(new ArrayDataSource('acme/values', ['k' => 'email']));
         steps($c)->add(GateStepInterface::class, gateStep(false));
     });
     $fieldBlock = block('n', 'acme/field')->withBinding(SettingPath::fromString('key'), Binding::to('acme/values', ['key' => 'k']));
-    $admin = $resolver->resolve(doc(block('f', 'acme/form', [], $fieldBlock)), Mode::Admin)->find('n')->view->admin;
-    expect($admin->hiddenOnFront)->toBeTrue()->and($admin->bindings['key'])->toBe(['source' => 'acme/values', 'used' => 'source']);
+    $resolved = $resolver->resolve(doc(block('f', 'acme/form', [], $fieldBlock)), Mode::Admin)->find('n');
+    $admin = $resolved->admin;
+    expect($admin->hiddenOnFront)->toBeTrue()->and($admin->bindings['key'])->toBe(['source' => 'acme/values', 'used' => 'source'])
+        ->and($resolved->view->admin)->toBeNull();
 });
 
 test('a hidden block and its children are not resolved on the front end and call no data source', function () use ($form, $field) {
@@ -130,7 +132,7 @@ test('a view can ask for its children once per item', function () {
         types($c)->add(type('acme/loop', ['children' => true]));
         types($c)->add(type('acme/item'));
         behaviours($c)->set(BlockName::fromString('acme/loop'), new class implements BlockBehaviourInterface {
-            public function view(BlockType $type, array $settings, Context $context, Mode $mode): BlockView
+            public function view(Block $block, BlockType $type, array $settings, Context $context, Mode $mode): BlockView
             {
                 return new BlockView([], childPasses: [new CurrentItem('x', 0, 'q'), new CurrentItem('y', 1, 'q')]);
             }
@@ -261,4 +263,70 @@ test('a disallowed child under a repeating block is reported once and left out o
     $passes = $result->find('l')->passes;
     expect(array_map(fn (Issue $i) => [$i->blockId, $i->kind], $result->issues))->toBe([['b', IssueKind::DisallowedChild]])
         ->and(array_map(fn (array $pass) => array_map(fn ($r) => $r->block->id, $pass), $passes))->toBe([['i'], ['i']]);
+});
+
+test('a behaviour reads its block id and the ids of its children', function () {
+    $seen = null;
+    [$resolver] = resolver(function ($c) use (&$seen) {
+        types($c)->add(type('acme/wrap', ['children' => true]));
+        types($c)->add(type('acme/box'));
+        behaviours($c)->set(BlockName::fromString('acme/wrap'), new class($seen) implements BlockBehaviourInterface {
+            public function __construct(private mixed &$seen)
+            {
+            }
+
+            public function view(Block $block, BlockType $type, array $settings, Context $context, Mode $mode): BlockView
+            {
+                $this->seen = [$block->id, array_map(fn (Block $child) => $child->id, $block->children)];
+
+                return new BlockView([]);
+            }
+        });
+    });
+    $resolver->resolve(doc(block('w', 'acme/wrap', [], block('a', 'acme/box'), block('b', 'acme/box'))), Mode::Front);
+    expect($seen)->toBe(['w', ['a', 'b']]);
+});
+
+test('a behaviour admin value reaches the resolved block admin context', function () {
+    [$resolver] = resolver(function ($c) {
+        types($c)->add(type('acme/box'));
+        behaviours($c)->set(BlockName::fromString('acme/box'), fixedView(new BlockView([], admin: new AdminContext(['hint' => 'h']))));
+    });
+    $resolved = $resolver->resolve(doc(block('a', 'acme/box')), Mode::Admin)->find('a');
+    expect($resolved->admin->values)->toBe(['hint' => 'h'])->and($resolved->view->admin)->toBeNull();
+});
+
+test('a block with invalid settings has an admin context with its issues in admin mode', function () {
+    [$resolver] = resolver(function ($c) {
+        types($c)->add(type('acme/box', ['settings' => ['type' => 'object', 'properties' => ['n' => ['type' => 'integer']]]]));
+        sources($c)->add(new ArrayDataSource('acme/values', ['k' => 'v']));
+    });
+    $b = block('a', 'acme/box', ['n' => 'nope'])->withBinding(SettingPath::fromString('n'), Binding::to('acme/values', ['key' => 'k']));
+    $resolved = $resolver->resolve(doc($b), Mode::Admin)->find('a');
+    expect($resolved->isResolved())->toBeFalse()
+        ->and(kinds($resolved->admin->issues))->toContain(IssueKind::InvalidSettings)
+        ->and($resolved->admin->bindings['n']['source'])->toBe('acme/values');
+});
+
+test('a block of an unknown type has an admin context with its issue in admin mode', function () {
+    [$resolver] = resolver();
+    $resolved = $resolver->resolve(doc(block('g', 'gone/away')), Mode::Admin)->find('g');
+    expect(kinds($resolved->admin->issues))->toBe([IssueKind::UnknownType])
+        ->and($resolved->admin->bindings)->toBe([])->and($resolved->admin->hiddenOnFront)->toBeFalse();
+});
+
+test('the over-cap pass issue is in the block admin issues', function () {
+    $items = array_map(fn (int $i) => new CurrentItem($i, $i, 'q'), range(0, 1000));
+    [$resolver] = resolver(function ($c) use ($items) {
+        types($c)->add(type('acme/loop', ['children' => true]));
+        behaviours($c)->set(BlockName::fromString('acme/loop'), fixedView(new BlockView([], childPasses: $items)));
+    });
+    $loop = $resolver->resolve(doc(block('l', 'acme/loop')), Mode::Admin)->find('l');
+    expect(kinds($loop->admin->issues))->toBe([IssueKind::InvalidView]);
+});
+
+test('no resolved block has an admin context in front mode, stopped or not', function () {
+    [$resolver] = resolver(function ($c) { types($c)->add(type('acme/box')); });
+    $result = $resolver->resolve(doc(block('a', 'acme/box'), block('g', 'gone/away')), Mode::Front);
+    expect($result->find('a')->admin)->toBeNull()->and($result->find('g')->admin)->toBeNull();
 });

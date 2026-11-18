@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace SpeedySpec\Block\Domain\ValueObjects;
 
 /**
- * The resolved, render-ready form of a block: its view values, decorator extensions and editor information.
+ * The resolved, render-ready form of a block: its view values and decorator extensions.
  *
  * @since 0.1.0
  */
@@ -19,7 +19,8 @@ class BlockView
      * @param array<string, array<string, mixed>> $extensions
      *   Maps a decorator namespace to its view values.
      * @param AdminContext|null $admin
-     *   Editor-only information, or null outside the editor.
+     *   Editor values a behaviour hands over in the admin; the resolver moves them to {@link ResolvedBlock::$admin},
+     *   so a view stored on a resolved block always has none.
      * @param list<CurrentItem>|null $childPasses
      *   Null means the children are produced once; otherwise one pass per item.
      */
