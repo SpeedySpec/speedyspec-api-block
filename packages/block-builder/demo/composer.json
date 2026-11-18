@@ -17,7 +17,9 @@
         "speedyspec/block-media-domain": "^0.1",
         "speedyspec/block-media": "^0.1",
         "speedyspec/block-actions-domain": "^0.1",
-        "speedyspec/block-actions": "^0.1"
+        "speedyspec/block-actions": "^0.1",
+        "speedyspec/block-interactive-domain": "^0.1",
+        "speedyspec/block-interactive": "^0.1"
     },
     "repositories": [
         {

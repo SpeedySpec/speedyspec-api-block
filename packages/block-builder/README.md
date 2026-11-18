@@ -99,8 +99,14 @@ composer install --working-dir=demo
 php -S 127.0.0.1:8765 demo/server.php
 ```
 
-Then open http://127.0.0.1:8765. The demo keeps its documents in the system's temporary directory, lets anyone on
-the machine edit, and is not for production.
+Then open http://127.0.0.1:8765 to edit, and http://127.0.0.1:8765/view to see the page as a visitor does, with
+its stylesheets and scripts. The demo keeps its documents in the system's temporary directory, lets anyone on the
+machine edit, and is not for production.
+
+`PackageFiles` (in `php/`) is how the demo serves package assets. Each loaded package's scripts and stylesheets are
+served from `/packages/<name>/`, and nothing outside a package's own directory, nor any other kind of file, is
+served. As the asset locator, it gives those files their addresses. A host without a build step can use it the same
+way.
 
 ## Tests
 

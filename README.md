@@ -23,6 +23,8 @@ its directory and run `composer install && vendor/bin/pest --colors=never`.
 | `block-media` | The standard way to draw the media blocks, with its own icon set. |
 | `block-actions-domain` | The actions blocks' definitions: buttons, call to action, testimonial, pricing, rating, social links. |
 | `block-actions` | The standard way to draw the actions blocks, with one stylesheet. |
+| `block-interactive-domain` | The interactive blocks' definitions: accordion, tabs, slider, countdown, progress, counter, modal. |
+| `block-interactive` | The standard way to draw the interactive blocks, with a stylesheet and a small script. |
 | `block-presentation` | The builder contracts as a framework-free JSON API, behind an access rule the host supplies. |
 | `block-infra-wp` | The WordPress adapter: posts as documents, WordPress's block types and binding sources. |
 | `block-builder` | A reference builder in plain JavaScript, written against the builder API. See its README. |
@@ -222,6 +224,37 @@ $loader->load(ActionsPackage::from($container));
 - **A social link must go to its own service.** An Instagram link must go to instagram.com; website, RSS and Mastodon take any https link, and email takes only `mailto:`. A link to another site is reported as an issue.
 - **Logos.** Social links are drawn as the service's name, not its logo, since the logos are other companies' trademarks. A plugin that wants logos loads its own outputs package.
 - **Styles.** The outputs share one stylesheet asset, `core/actions`, built on the design tokens' custom properties (such as `--color-primary`). It includes hover and visible-focus states.
+
+## Interactive
+
+`block-interactive-domain` defines the Interactive section of the block list, and `block-interactive` draws it:
+
+| Block | What it is | With no script |
+|---|---|---|
+| `core/accordion`, `core/accordion-item` | Sections that open when clicked, optionally one at a time. | The browser's own `details` elements. |
+| `core/tabs`, `core/tab` | Panels shown one at a time, chosen by their labels. | Every panel in order, under its label. |
+| `core/slider`, `core/slide` | Slides in a row, with Previous, Next and, when set to move by itself, Pause. | A row that scrolls and snaps to each slide. |
+| `core/countdown` | The time left until a date in a time zone, then closing words. | The date and time in words. |
+| `core/progress` | A bar and a percentage. | The same. |
+| `core/counter` | A number that counts up when it comes into view. | The final number. |
+| `core/modal` | A button that opens a panel over the page. | The browser's own `popover`. |
+
+```php
+$loader->load(new InteractiveTypesPackage());   // takes a clock for countdowns, the system's by default
+$loader->load(new InteractivePackage());
+```
+
+- **Assets.** The outputs declare two assets: an inline stylesheet, `core/interactive`, and a module script, `core/interactive-script`. The script is a file in the package, so the host's asset locator decides where it is served.
+- **What the script does.** It only adds behaviour:
+  - keyboard tabs, following the WAI-ARIA tabs pattern;
+  - slider controls;
+  - a ticking countdown;
+  - a counting animation.
+- **How it stays safe.** It writes no markup from the page's text, and each block is set up once.
+- **Reduced motion.** For visitors who ask for less motion, the slider never moves by itself and the counter does not count.
+- **Countdown times.** A countdown counts to one moment in UTC:
+  - a local time skipped when summer time starts becomes the next valid moment;
+  - a time repeated when it ends counts to the first of the two.
 
 ## For builders
 

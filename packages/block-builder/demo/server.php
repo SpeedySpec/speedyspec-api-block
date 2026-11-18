@@ -44,6 +44,8 @@ use SpeedySpec\Block\Domain\ValueObjects\MediaQuery;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
 use SpeedySpec\Block\Domain\ValueObjects\RenderRequest;
 use SpeedySpec\Block\Infra\Filesystem\FilesystemMediaLibrary;
+use SpeedySpec\Block\Interactive\Domain\InteractiveTypesPackage;
+use SpeedySpec\Block\Interactive\InteractivePackage;
 use SpeedySpec\Block\Infra\Filesystem\FilesystemServiceProvider;
 use SpeedySpec\Block\Media\Domain\MediaTypesPackage;
 use SpeedySpec\Block\Media\MediaPackage;
@@ -158,6 +160,8 @@ $loader->load(MediaTypesPackage::from($container));
 $loader->load(MediaPackage::from($container));
 $loader->load(ActionsTypesPackage::from($container));
 $loader->load(ActionsPackage::from($container));
+$loader->load(new InteractiveTypesPackage());
+$loader->load(new InteractivePackage());
 $container->get(DesignTokenRegistryInterface::class)->set('color.primary', '#2456d6');
 $container->get(DesignTokenRegistryInterface::class)->set('space.md', '1.5rem');
 
@@ -305,6 +309,78 @@ if ($documents->find('home') === null)
             ], $text('plan-team-button', 'core/button', ['text' => 'Talk to us', 'link' => 'mailto:team@example.com', 'variant' => 'secondary'])),
         ),
         $text('score', 'core/rating', ['value' => 4.5, 'outOf' => 5, 'label' => 'Reviews']),
+        $text(
+            'faq',
+            'core/accordion',
+            ['single' => true],
+            $text('faq-one', 'core/accordion-item', ['title' => 'Does it work without JavaScript?', 'open' => true], $text(
+                'faq-one-text',
+                'core/paragraph',
+                ['text' => 'Yes. Every block here is readable and usable with scripts turned off.'],
+            )),
+            $text('faq-two', 'core/accordion-item', ['title' => 'Can I open two at once?'], $text(
+                'faq-two-text',
+                'core/paragraph',
+                ['text' => 'Not in this accordion: it is set to one open at a time.'],
+            )),
+            $text('faq-three', 'core/accordion-item', ['title' => 'Where is the script?'], $text(
+                'faq-three-text',
+                'core/paragraph',
+                ['text' => 'In the interactive outputs package, served from /packages/.'],
+            )),
+        ),
+        $text(
+            'tabs',
+            'core/tabs',
+            [],
+            $text('tab-one', 'core/tab', ['label' => 'Overview'], $text(
+                'tab-one-text',
+                'core/paragraph',
+                ['text' => 'Use the arrow keys, Home and End to move between tabs.'],
+            )),
+            $text('tab-two', 'core/tab', ['label' => 'Details'], $text(
+                'inner-tabs',
+                'core/tabs',
+                [],
+                $text('inner-a', 'core/tab', ['label' => 'Inside A'], $text(
+                    'inner-a-text',
+                    'core/paragraph',
+                    ['text' => 'A set of tabs inside a tab keeps its own.'],
+                )),
+                $text('inner-b', 'core/tab', ['label' => 'Inside B'], $text(
+                    'inner-b-text',
+                    'core/paragraph',
+                    ['text' => 'Second inner tab.'],
+                )),
+            )),
+            $text('tab-three', 'core/tab', ['label' => 'Questions'], $text(
+                'tab-three-text',
+                'core/paragraph',
+                ['text' => 'Without the script, the tabs read as headed sections in order.'],
+            )),
+        ),
+        $text(
+            'slides',
+            'core/slider',
+            ['label' => 'Highlights', 'autoplay' => true, 'interval' => 5],
+            $text('slide-one', 'core/slide', [], $text('slide-one-text', 'core/heading', ['text' => 'First slide'])),
+            $text('slide-two', 'core/slide', [], $text('slide-two-text', 'core/heading', ['text' => 'Second slide'])),
+            $text('slide-three', 'core/slide', [], $text('slide-three-text', 'core/heading', ['text' => 'Third slide'])),
+        ),
+        $text('launch', 'core/countdown', [
+            'label' => 'The new year in London in',
+            'target' => '2027-01-01T00:00',
+            'timeZone' => 'Europe/London',
+            'after' => 'Happy new year!',
+        ]),
+        $text('funding', 'core/progress', ['label' => 'Funded', 'value' => 65, 'max' => 100]),
+        $text('customers', 'core/counter', ['from' => 0, 'to' => 1200, 'suffix' => '+']),
+        $text(
+            'more',
+            'core/modal',
+            ['trigger' => 'About this demo', 'title' => 'About this demo'],
+            $text('more-text', 'core/paragraph', ['text' => 'This panel is the browser\'s own popover: Escape closes it.']),
+        ),
         $text(
             'social',
             'core/social-links',
