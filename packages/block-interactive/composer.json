@@ -1,0 +1,56 @@
+{
+    "name": "speedyspec/block-interactive",
+    "version": "0.1.0",
+    "description": "SpeedySpec Block System - Interactive Block Outputs",
+    "type": "library",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.4",
+        "speedyspec/block-domain": "^0.1",
+        "speedyspec/block-interactive-domain": "^0.1"
+    },
+    "require-dev": {
+        "pestphp/pest": "^3.0|^4.0",
+        "speedyspec/block-app": "^0.1",
+        "speedyspec/block-contract-tests": "^0.1",
+        "speedyspec/block-infra-memory": "^0.1"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../*"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "SpeedySpec\\Block\\Interactive\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SpeedySpec\\Block\\Interactive\\Tests\\": "tests/"
+        }
+    },
+    "archive": {
+        "exclude": [
+            "/docs",
+            "/tests",
+            "/.github",
+            "/.git",
+            "/.editorconfig",
+            "/.gitattributes",
+            "/.gitignore",
+            "/phpunit.xml",
+            "/CHANGELOG.md",
+            "/.release-please-manifest.json",
+            "/release-please-config.json"
+        ]
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    }
+}

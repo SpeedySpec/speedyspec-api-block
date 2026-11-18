@@ -1,0 +1,8 @@
+{
+    "name": "@speedyspec/block-interactive-script",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "test": "node --test tests/js/*.test.js"
+    }
+}
