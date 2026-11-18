@@ -18,7 +18,7 @@ use SpeedySpec\Block\App\Documents\DocumentsPackage;
 use SpeedySpec\Block\App\Flow\FlowPackage;
 use SpeedySpec\Block\App\Presentation\PresentationPackage;
 use SpeedySpec\Block\App\Storage\StorageServiceProvider;
-use SpeedySpec\Block\Builder\ReferenceEditor;
+use SpeedySpec\Block\Builder\PackageFiles;
 use SpeedySpec\Block\Builder\ReferenceEditorServiceProvider;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
 use SpeedySpec\Block\Domain\Contracts\AssetLocatorInterface;
@@ -26,8 +26,12 @@ use SpeedySpec\Block\Domain\Contracts\AssetRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
 use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\EditorInterface;
+use SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface;
+use SpeedySpec\Block\Domain\Contracts\MediaUploadPolicyInterface;
+use SpeedySpec\Block\Domain\Contracts\StyleCollectorInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\BlockTree;
 use SpeedySpec\Block\Domain\Entities\Document;
@@ -35,10 +39,10 @@ use SpeedySpec\Block\Domain\ValueObjects\AssetKind;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BuilderAbility;
 use SpeedySpec\Block\Domain\ValueObjects\EditorRequest;
-use SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface;
-use SpeedySpec\Block\Domain\Contracts\MediaUploadPolicyInterface;
 use SpeedySpec\Block\Domain\ValueObjects\MediaKind;
 use SpeedySpec\Block\Domain\ValueObjects\MediaQuery;
+use SpeedySpec\Block\Domain\ValueObjects\Mode;
+use SpeedySpec\Block\Domain\ValueObjects\RenderRequest;
 use SpeedySpec\Block\Infra\Filesystem\FilesystemMediaLibrary;
 use SpeedySpec\Block\Infra\Filesystem\FilesystemServiceProvider;
 use SpeedySpec\Block\Media\Domain\MediaTypesPackage;
@@ -91,25 +95,39 @@ if (str_starts_with($path, $mediaUrl))
     return;
 }
 
-if ($path !== '/' && !str_starts_with($path, '/api/'))
-{
-    $root = dirname(__DIR__);
-    $file = realpath($root . $path);
-    $types = ['js' => 'text/javascript'];
-    $extension = is_string($file) ? pathinfo($file, PATHINFO_EXTENSION) : '';
+// Every loaded package's scripts and stylesheets are served from /packages/<name>/, and only those.
+$roots = [];
 
-    // Only the package's own scripts are served: they are what the asset locator below points at.
-    if (!is_string($file) || !str_starts_with($file, $root . '/src/') || !isset($types[$extension]) || !is_file($file))
+foreach (glob(__DIR__ . '/vendor/speedyspec/*', GLOB_ONLYDIR) ?: [] as $directory)
+{
+    $roots['speedyspec/' . basename($directory)] = $directory;
+}
+
+$packages = new PackageFiles($roots);
+
+if (str_starts_with($path, '/packages/'))
+{
+    $file = $packages->file($path);
+
+    if ($file === null)
     {
         http_response_code(404);
 
         return;
     }
 
-    header('Content-Type: ' . $types[$extension] . '; charset=utf-8');
-    // A demo is for trying changes, so scripts are fetched afresh on every load.
+    header('Content-Type: ' . $file['type'] . '; charset=utf-8');
+    header('X-Content-Type-Options: nosniff');
+    // A demo is for trying changes, so files are fetched afresh on every load.
     header('Cache-Control: no-store');
-    readfile($file);
+    readfile($file['path']);
+
+    return;
+}
+
+if (!in_array($path, ['/', '/view'], true) && !str_starts_with($path, '/api/'))
+{
+    http_response_code(404);
 
     return;
 }
@@ -120,13 +138,7 @@ $container = new BlockServiceContainer();
 (new FilesystemServiceProvider($storage, $mediaUrl))->register($container);
 (new PresentationServiceProvider())->register($container);
 (new ReferenceEditorServiceProvider())->register($container);
-$container->add(AssetLocatorInterface::class, fn () => new class implements AssetLocatorInterface {
-    public function url(string $package, string $path): string
-    {
-        // This demo serves only the builder's own files, from the root of the site.
-        return $package === ReferenceEditor::PACKAGE ? '/' . $path : '';
-    }
-});
+$container->add(AssetLocatorInterface::class, fn () => $packages);
 $container->add(BuilderAccessInterface::class, fn () => new class implements BuilderAccessInterface {
     public function allows(BuilderAbility $ability, ?string $documentId = null): bool
     {
@@ -309,22 +321,69 @@ if ($documents->find('home') === null)
     )));
 }
 
-if ($path === '/')
+/**
+ * Writes the tags that place assets in a page's head, in the order the registry resolved them.
+ *
+ * @param list<string> $names
+ */
+$assetTags = function (array $names) use ($container): string
 {
-    $page = $container->get(EditorInterface::class)->open(new EditorRequest('home', '/api'));
     $locator = $container->get(AssetLocatorInterface::class);
     $tags = '';
 
-    foreach ($container->get(AssetRegistryInterface::class)->resolve($page->assets) as $asset)
+    foreach ($container->get(AssetRegistryInterface::class)->resolve($names) as $asset)
     {
         $url = $asset->source === 'file' ? $locator->url($asset->package, $asset->path) : $asset->url;
-        $tags .= match ($asset->kind)
+        $inline = $asset->source === 'inline' ? str_replace('</', '<\\/', $asset->content) : null;
+
+        if ($inline === null && $url === '')
         {
-            AssetKind::Style => sprintf('<link rel="stylesheet" href="%s">', htmlspecialchars($url)),
-            AssetKind::Module => sprintf('<script type="module" src="%s"></script>', htmlspecialchars($url)),
-            AssetKind::Script => sprintf('<script src="%s"></script>', htmlspecialchars($url)),
+            continue;
+        }
+
+        $tags .= match (true)
+        {
+            $asset->kind === AssetKind::Style && $inline !== null => '<style>' . $inline . '</style>',
+            $asset->kind === AssetKind::Style => sprintf('<link rel="stylesheet" href="%s">', htmlspecialchars($url)),
+            $inline !== null => sprintf(
+                '<script%s>%s</script>',
+                $asset->kind === AssetKind::Module ? ' type="module"' : '',
+                $inline,
+            ),
+            $asset->kind === AssetKind::Module
+                => sprintf('<script type="module" src="%s"></script>', htmlspecialchars($url)),
+            default => sprintf('<script src="%s"></script>', htmlspecialchars($url)),
         };
     }
+
+    return $tags;
+};
+
+// The home page as a visitor sees it, with its stylesheets and scripts placed as a host would.
+if ($path === '/view')
+{
+    $document = $documents->find('home');
+    $result = $container->get(DocumentRendererInterface::class)->render($document, new RenderRequest(Mode::Front));
+    $css = str_replace('</', '<\\/', $container->get(StyleCollectorInterface::class)->css());
+
+    header('Content-Type: text/html; charset=utf-8');
+    header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        . "img-src 'self' data:; frame-src https://www.youtube-nocookie.com https://player.vimeo.com "
+        . 'https://www.openstreetmap.org');
+    echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        . '<meta name="viewport" content="width=device-width, initial-scale=1"><title>Block builder demo: view</title>'
+        . '<style>body { max-width: 60rem; margin: 2rem auto; padding: 0 1.25rem;'
+        . ' font: 16px/1.5 system-ui, sans-serif; } img, video { max-width: 100%; height: auto; }'
+        . ' iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; }</style>'
+        . $assetTags($result->assets) . '<style>' . $css . '</style></head><body>' . $result->output . '</body></html>';
+
+    return;
+}
+
+if ($path === '/')
+{
+    $page = $container->get(EditorInterface::class)->open(new EditorRequest('home', '/api'));
+    $tags = $assetTags($page->assets);
 
     header('Content-Type: text/html; charset=utf-8');
     echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
