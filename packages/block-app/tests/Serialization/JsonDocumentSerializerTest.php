@@ -164,3 +164,9 @@ test('an extension with a valid namespace and a binding with a fallback object p
 
     expect($s->serialize($s->parse($json)))->toBe($json);
 });
+
+test('serialize refuses a document whose format version is not 1', function (int $format) {
+    $doc = new Document('d', 'page', new BlockTree(block('a', 'acme/x')), $format);
+
+    expect(fn () => (new JsonDocumentSerializer())->serialize($doc))->toThrow(InvalidDocumentException::class);
+})->with([0, 2]);

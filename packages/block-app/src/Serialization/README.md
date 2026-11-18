@@ -21,6 +21,19 @@ server.
   object. An empty array nested inside settings is ambiguous and is written as `[]`, so an empty nested object
   `{}` comes back as `[]` after a load and save.
 
+## What a load and save does not keep
+
+Only the top-level maps (`settings`, `extensions`, `bindings`, a binding's `arguments`) are told apart from lists
+on the way out. Below them PHP arrays carry no object-or-list flag, so:
+
+- A nested object whose keys are exactly `0` to `n-1` in order, in settings, binding arguments, a fallback or an
+  extension value, re-encodes as a JSON array: `{"m": {"0": "a", "1": "b"}}` comes back as `{"m": ["a", "b"]}`.
+- A fallback of `{}` comes back as `[]`.
+- An integer beyond 64 bits is decoded as a float and written back as one, losing precision.
+- Unknown top-level keys and unknown block keys are dropped on save; only the keys shown above are written.
+- `serialize()` writes format 1 only and throws `InvalidDocumentException` for a document whose `formatVersion` is
+  anything else, since `parse()` would refuse what it wrote.
+
 ## Parsing
 
 `parse()` needs no registry and keeps blocks of unregistered types unchanged. `format` must be `1`. `version`
@@ -34,7 +47,9 @@ are told apart on the raw JSON, so a setting named `0` is an object key, not a l
 `Mode::Admin` returns the same document. `Mode::Front` removes each top-level setting marked `x-private` in the
 block type's settings schema, together with every binding that targets one. A block whose type is not registered
 loses all of its settings and all of its bindings, because nothing says which are safe; its extensions and
-children are kept, and children are cleaned by their own type.
+children are kept, and children are cleaned by their own type. A block whose `version` differs from its registered
+type's version, older or newer, is treated the same way: its settings have not been migrated, so the current
+schema cannot say which of them are private. The export does not migrate.
 
 ## Strictness
 

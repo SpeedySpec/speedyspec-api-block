@@ -117,3 +117,37 @@ test('front export keeps the settings of a registered type whose schema has no p
 
     expect(exporter(type('acme/box'))->export($doc, Mode::Front)->tree->find('a')->settings)->toBe(['n' => 1]);
 });
+
+if (!function_exists('formV2'))
+{
+    /**
+     * Builds a form type at version 2 whose private `recipient` setting a migration would have filled from `to`.
+     */
+    function formV2(): BlockType
+    {
+        return type('acme/form', ['version' => 2, 'children' => true, 'settings' => ['type' => 'object', 'properties' => [
+            'recipient' => ['type' => 'string', 'x-private' => true], 'title' => ['type' => 'string']]]]);
+    }
+}
+
+test('front export strips every setting and binding of a block stored at an older or newer type version', function (int $version) {
+    $b = block('f', 'acme/form', ['to' => 'legacy-secret@example.test', 'title' => 'T'])->withTypeVersion($version)
+        ->withBinding(SettingPath::fromString('title'), Binding::to('acme/values', ['key' => 'y']))
+        ->withExtension('acme/vis', ['hide' => true]);
+    $exported = exporter(formV2())->export(new Document('d', 'page', new BlockTree($b)), Mode::Front);
+    $out = $exported->tree->find('f');
+    expect($out->settings)->toBe([])->and($out->bindings)->toBe([])
+        ->and($out->extensions)->toBe(['acme/vis' => ['hide' => true]])->and($out->typeVersion)->toBe($version)
+        ->and((new JsonDocumentSerializer())->serialize($exported))->not->toContain('legacy-secret@example.test');
+})->with([1, 3]);
+
+test('front export strips a nested child at an old version under a current parent', function () {
+    $child = block('c', 'acme/form', ['to' => 'legacy-secret@example.test']);
+    $parent = block('p', 'acme/form', ['recipient' => 'owner@example.test', 'title' => 'P'], $child)->withTypeVersion(2);
+    $exported = exporter(formV2())->export(new Document('d', 'page', new BlockTree($parent)), Mode::Front);
+    $json = (new JsonDocumentSerializer())->serialize($exported);
+    expect($exported->tree->find('p')->settings)->toBe(['title' => 'P'])
+        ->and($exported->tree->find('c')->settings)->toBe([])
+        ->and($json)->not->toContain('legacy-secret@example.test')
+        ->and($json)->not->toContain('owner@example.test');
+});

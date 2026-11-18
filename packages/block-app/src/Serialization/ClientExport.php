@@ -15,8 +15,8 @@ use SpeedySpec\Block\Domain\ValueObjects\Mode;
 use SpeedySpec\Block\Domain\ValueObjects\SettingPath;
 
 /**
- * Strips what a visitor must not see: private settings, and every setting of a block whose type is unknown
- * because nothing says which of its settings are safe.
+ * Strips what a visitor must not see: private settings, and every setting of a block whose type is unknown or
+ * stored at another version than the registered one, because nothing says which of its settings are safe.
  *
  * @since 0.1.0
  */
@@ -58,7 +58,9 @@ class ClientExport implements ClientExportInterface
         $type = $this->types->get($block->type);
         $children = array_map($this->front(...), $block->children);
 
-        if ($type === null)
+        // Settings stored under another version have not been migrated, so the current schema cannot say which
+        // of them are private; such a block is treated like one of an unknown type.
+        if ($type === null || $type->version !== $block->typeVersion)
         {
             return new Block($block->id, $block->type, $block->typeVersion, [], $block->extensions, [], $children);
         }

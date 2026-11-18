@@ -39,6 +39,16 @@ class JsonDocumentSerializer implements DocumentSerializerInterface
      */
     public function serialize(Document $document): string
     {
+        // Writing another format would produce a document that parse() then refuses.
+        if ($document->formatVersion !== self::FORMAT)
+        {
+            throw new InvalidDocumentException(sprintf(
+                'Cannot serialize document format %d; expected %d.',
+                $document->formatVersion,
+                self::FORMAT,
+            ));
+        }
+
         try
         {
             return json_encode(
