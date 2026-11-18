@@ -52,6 +52,8 @@ It is laid out the way the block editors people already know are:
   with buttons to move or remove each. Choosing opens a picker in the inspector: search by name, upload from your
   computer, or pick from the library, newest first, a page at a time. Only files of the setting's kind are offered.
   An upload the server refuses is shown with its reason. A chosen file that has left the library says so.
+- **Lists of text**, such as a plan's features, are edited in the inspector, one box per item, with buttons to add, move or remove items. Items can also be typed into on the page.
+- **The page's stylesheets** are placed on the canvas, so blocks look as they will: links to stylesheets first, then inline ones, then each block's own rules. Scripts never are.
 - **The inspector** on the right has three tabs. *Block* holds the block's own settings; a table
   has buttons to add or remove a row or column, and code gets a monospace box. *Style* holds the shared
   style settings in sections, with a switch for which widths a value applies from, colour pickers that offer the

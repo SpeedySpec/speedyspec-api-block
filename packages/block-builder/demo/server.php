@@ -11,6 +11,8 @@ declare(strict_types=1);
  *     php -S 127.0.0.1:8765 demo/server.php
  */
 
+use SpeedySpec\Block\Actions\ActionsPackage;
+use SpeedySpec\Block\Actions\Domain\ActionsTypesPackage;
 use SpeedySpec\Block\App\AppServiceProvider;
 use SpeedySpec\Block\App\Documents\DocumentsPackage;
 use SpeedySpec\Block\App\Flow\FlowPackage;
@@ -142,6 +144,8 @@ $loader->load(new TextTypesPackage());
 $loader->load(TextPackage::from($container));
 $loader->load(MediaTypesPackage::from($container));
 $loader->load(MediaPackage::from($container));
+$loader->load(ActionsTypesPackage::from($container));
+$loader->load(ActionsPackage::from($container));
 $container->get(DesignTokenRegistryInterface::class)->set('color.primary', '#2456d6');
 $container->get(DesignTokenRegistryInterface::class)->set('space.md', '1.5rem');
 
@@ -243,6 +247,61 @@ if ($documents->find('home') === null)
             $text('feature-two', 'core/icon-list-item', ['icon' => 'star', 'text' => 'Uploads are checked by what they contain.']),
         ),
         $text('map', 'core/map', ['latitude' => 51.5074, 'longitude' => -0.1278, 'zoom' => 13, 'title' => 'London']),
+        $text(
+            'cta',
+            'core/call-to-action',
+            ['heading' => 'Try the actions blocks', 'text' => 'Click a button\'s text to change it.'],
+            $text(
+                'cta-buttons',
+                'core/buttons',
+                [],
+                $text('cta-start', 'core/button', ['text' => 'Get started', 'link' => '/start']),
+                $text('cta-docs', 'core/button', [
+                    'text' => 'Read the docs',
+                    'link' => 'https://example.com/docs',
+                    'variant' => 'outline',
+                    'newTab' => true,
+                ]),
+            ),
+        ),
+        $text('quote-card', 'core/testimonial', [
+            'quote' => 'We rebuilt our pages in an afternoon.',
+            'name' => 'Ann Lee',
+            'role' => 'Designer, Example Co',
+            'media' => $pictures[0] ?? '',
+        ]),
+        $text(
+            'pricing',
+            'core/pricing-table',
+            ['columns' => ['base' => 1, 'tablet' => 3]],
+            $text('plan-free', 'core/pricing-plan', [
+                'name' => 'Free',
+                'price' => '$0',
+                'features' => ['One site', 'Community help'],
+            ], $text('plan-free-button', 'core/button', ['text' => 'Start free', 'link' => '/free', 'variant' => 'outline'])),
+            $text('plan-pro', 'core/pricing-plan', [
+                'name' => 'Pro',
+                'price' => '$19',
+                'features' => ['Ten sites', 'Email help', 'Saved templates'],
+                'highlighted' => true,
+                'badge' => 'Most popular',
+            ], $text('plan-pro-button', 'core/button', ['text' => 'Choose Pro', 'link' => '/pro'])),
+            $text('plan-team', 'core/pricing-plan', [
+                'name' => 'Team',
+                'price' => '$49',
+                'features' => ['Unlimited sites', 'Priority help', 'Shared styles'],
+            ], $text('plan-team-button', 'core/button', ['text' => 'Talk to us', 'link' => 'mailto:team@example.com', 'variant' => 'secondary'])),
+        ),
+        $text('score', 'core/rating', ['value' => 4.5, 'outOf' => 5, 'label' => 'Reviews']),
+        $text(
+            'social',
+            'core/social-links',
+            [],
+            $text('social-site', 'core/social-link', ['service' => 'website', 'url' => 'https://example.com']),
+            $text('social-mail', 'core/social-link', ['service' => 'email', 'url' => 'mailto:hello@example.com']),
+            $text('social-github', 'core/social-link', ['service' => 'github', 'url' => 'https://github.com/example']),
+            $text('social-mastodon', 'core/social-link', ['service' => 'mastodon', 'url' => 'https://mastodon.social/@example']),
+        ),
         ...array_values(array_filter([
             $pictures === [] ? null : $text('photo', 'core/image', ['media' => $pictures[0], 'caption' => 'Choose another image in the inspector.']),
             $pictures === [] ? null : $text('gallery', 'core/gallery', ['media' => $pictures, 'columns' => ['base' => 1, 'tablet' => 3]]),

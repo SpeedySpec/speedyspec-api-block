@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import {
     breadcrumb,
+    canvasDocument,
     devices,
     fieldRefusal,
     groupCatalogue,
@@ -170,3 +171,43 @@ test('a refusal about a format is put in words a person can act on', () => {
     assert.equal(fieldRefusal(refusals, 't', 'core/style', 'color'), 'That is not a value this setting accepts.');
 });
 
+
+test('the canvas document places linked, then inline, then collected styles before the page', () => {
+    const html = canvasDocument({
+        output: '<p>page</p>',
+        css: '.b-1{color:blue}',
+        styles: [
+            { name: 'a', href: '/assets/a.css' },
+            { name: 'b', content: '.b{color:red}</style><script>x</script>' },
+            { name: 'c', href: 'https://cdn.test/c.css' },
+        ],
+    }, '');
+
+    const linkA = html.indexOf('<link rel="stylesheet" href="/assets/a.css">');
+    const linkC = html.indexOf('<link rel="stylesheet" href="https://cdn.test/c.css">');
+    const inline = html.indexOf('.b{color:red}<\\/style><script>x<\\/script>');
+    const collected = html.indexOf('.b-1{color:blue}');
+
+    assert.ok(linkA > 0 && linkC > linkA && inline > linkC && collected > inline);
+    assert.ok(html.endsWith('<p>page</p>'));
+    assert.equal(html.includes('</style><script>x'), false);
+});
+
+test('a stylesheet address that is not safe is left out of the canvas', () => {
+    const html = canvasDocument({
+        output: '',
+        css: '',
+        styles: [
+            { name: 'a', href: 'javascript:alert(1)' },
+            { name: 'b', href: '//evil.test/x.css' },
+            { name: 'c', href: '"><script>x</script>' },
+        ],
+    }, '');
+
+    assert.equal(html.includes('<link'), false);
+    assert.equal(html.includes('<script>x'), false);
+});
+
+test('a preview without styles still makes a canvas', () => {
+    assert.ok(canvasDocument({ output: '<p>x</p>', css: '' }, 'body{}').includes('<style>body{}</style>'));
+});

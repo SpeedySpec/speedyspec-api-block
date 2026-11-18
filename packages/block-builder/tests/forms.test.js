@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-    FieldError, fields, parseField, tableShape, withColumn, withoutColumn, withoutRow, withRow, withTyped, withValue,
+    FieldError, fields, movedListItem, parseField, tableShape, withColumn, withListItem, withListText, withoutColumn,
+    withoutListItem, withoutRow, withRow, withTyped, withValue,
 } from '../src/forms.js';
 
 const schema = {
@@ -192,4 +193,35 @@ test('a media setting says which kind of media it holds', () => {
     assert.equal(media[0].mediaKind, 'image');
     assert.equal(media[0].hint, 'media');
     assert.equal(media[1].mediaKind, '');
+});
+
+test('an item is added to a list of text at a position', () => {
+    const list = ['a', 'b'];
+
+    assert.deepEqual(withListItem(list, 0), ['', 'a', 'b']);
+    assert.deepEqual(withListItem(list, 1, 'x'), ['a', 'x', 'b']);
+    assert.deepEqual(withListItem(list, 2, 'c'), ['a', 'b', 'c']);
+    assert.deepEqual(withListItem(undefined, 0, 'a'), ['a']);
+    assert.deepEqual(list, ['a', 'b']);
+});
+
+test('an item is taken out of a list of text, down to an empty list', () => {
+    assert.deepEqual(withoutListItem(['a', 'b'], 0), ['b']);
+    assert.deepEqual(withoutListItem(['a'], 0), []);
+    assert.deepEqual(withoutListItem('not a list', 0), []);
+});
+
+test('an item moves within a list of text, and a move past either end changes nothing', () => {
+    assert.deepEqual(movedListItem(['a', 'b', 'c'], 0, 2), ['b', 'c', 'a']);
+    assert.deepEqual(movedListItem(['a', 'b'], 0, -1), ['a', 'b']);
+    assert.deepEqual(movedListItem(['a', 'b'], 1, 2), ['a', 'b']);
+});
+
+test('one item of a list of text is replaced', () => {
+    const list = ['a', 'b'];
+
+    assert.deepEqual(withListText(list, 1, 'B'), ['a', 'B']);
+    assert.deepEqual(withListText(list, 5, 'x'), ['a', 'b']);
+    assert.deepEqual(withListText(null, 0, 'x'), []);
+    assert.deepEqual(list, ['a', 'b']);
 });

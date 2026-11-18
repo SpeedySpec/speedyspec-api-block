@@ -21,6 +21,8 @@ its directory and run `composer install && vendor/bin/pest --colors=never`.
 | `block-text` | The standard way to draw the text blocks. |
 | `block-media-domain` | The media blocks' definitions: image, gallery, video, audio, embed, icons, map. |
 | `block-media` | The standard way to draw the media blocks, with its own icon set. |
+| `block-actions-domain` | The actions blocks' definitions: buttons, call to action, testimonial, pricing, rating, social links. |
+| `block-actions` | The standard way to draw the actions blocks, with one stylesheet. |
 | `block-presentation` | The builder contracts as a framework-free JSON API, behind an access rule the host supplies. |
 | `block-infra-wp` | The WordPress adapter: posts as documents, WordPress's block types and binding sources. |
 | `block-builder` | A reference builder in plain JavaScript, written against the builder API. See its README. |
@@ -198,6 +200,29 @@ is of the wrong kind, makes the block unavailable: visitors get nothing, editors
 `unavailable-media` issue. A behaviour reports this by throwing `UnavailableBlockException`, which any block type
 may use. A gallery leaves out images that have gone and is unavailable only when none are left.
 
+## Actions
+
+`block-actions-domain` defines the Actions section of the block list, and `block-actions` draws it:
+
+| Block | What it is |
+|---|---|
+| `core/button`, `core/buttons` | A link that looks like a button, in one of four looks and three sizes; a row of them. |
+| `core/call-to-action` | A heading, a few words and buttons. |
+| `core/testimonial` | A quote with the person's name, role and, when the host has a media library, their photo. |
+| `core/pricing-table`, `core/pricing-plan` | Plans side by side; each has a price, a period, a list of features and buttons. |
+| `core/rating` | A score out of 1 to 10 stars, always said in words as well. |
+| `core/social-links`, `core/social-link` | Links to profiles on a fixed list of services, drawn as the service's name. |
+
+```php
+$loader->load(ActionsTypesPackage::from($container));   // uses the media library when one is bound
+$loader->load(ActionsPackage::from($container));
+```
+
+- **Buttons and social links without a usable link** draw nothing for visitors. Editors see them greyed out, with a note saying what they need. A link opening in a new tab always gets `rel="noopener noreferrer"`.
+- **A social link must go to its own service.** An Instagram link must go to instagram.com; website, RSS and Mastodon take any https link, and email takes only `mailto:`. A link to another site is reported as an issue.
+- **Logos.** Social links are drawn as the service's name, not its logo, since the logos are other companies' trademarks. A plugin that wants logos loads its own outputs package.
+- **Styles.** The outputs share one stylesheet asset, `core/actions`, built on the design tokens' custom properties (such as `--color-primary`). It includes hover and visible-focus states.
+
 ## For builders
 
 A builder is the interface where someone drops, arranges and configures blocks. It is not part of this repository;
@@ -246,8 +271,8 @@ echo $response->json();
 | `GET /documents/{id}` | The document as stored, with its issues. | edit |
 | `DELETE /documents/{id}` | Removes it. | edit |
 | `POST /documents/{id}/operations` | One editing operation, including `restore`, which puts back a whole earlier state and is what undo is built on; saves on success, `422` with every refusal otherwise. | edit |
-| `POST /documents/{id}/preview` | Draws one block; `mode` is `admin` or `front`. | edit, or view for front |
-| `GET /documents/{id}/render` | Draws the page, with its stylesheet. | view, or edit for `mode=admin` |
+| `POST /documents/{id}/preview` | Draws one block; `mode` is `admin` or `front`. With `styles`, the page's stylesheets to place. | edit, or view for front |
+| `GET /documents/{id}/render` | Draws the page, with its collected rules (`css`) and its stylesheets to place (`styles`). | view, or edit for `mode=admin` |
 | `GET /templates` | Template libraries and their templates. | edit |
 | `POST /templates` | Saves a block of a document as a template. | manage-templates and edit |
 | `DELETE /templates/{vendor}/{name}` | Removes a saved template. | manage-templates |

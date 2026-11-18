@@ -28,7 +28,7 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         saving: false,
         canUndo: false,
         canRedo: false,
-        preview: { output: '', css: '' },
+        preview: { output: '', css: '', styles: [] },
     };
     const listeners = new Set();
     let queue = Promise.resolve();
@@ -45,8 +45,8 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
 
     async function refreshPreview() {
         try {
-            const { output, css } = await client.render(documentId, 'admin');
-            set({ preview: { output, css } });
+            const { output, css, styles = [] } = await client.render(documentId, 'admin');
+            set({ preview: { output, css, styles } });
         } catch (error) {
             set({ error: error.message });
         }
@@ -152,7 +152,7 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
                     client.catalogue(),
                     client.vocabulary(),
                 ]);
-                const { output, css } = await client.render(documentId, 'admin');
+                const { output, css, styles = [] } = await client.render(documentId, 'admin');
 
                 set({
                     status: 'ready',
@@ -161,7 +161,7 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
                     catalogue: catalogue.blocks,
                     packages: catalogue.packages,
                     vocabulary,
-                    preview: { output, css },
+                    preview: { output, css, styles },
                 });
             } catch (error) {
                 set({ status: 'failed', error: error.message });
