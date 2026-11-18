@@ -1,4 +1,5 @@
 import { createClient } from './api.js';
+import { bindable, bindingFrom, bindingOf, describeBinding } from './bindings.js';
 import { clipboardText, pastePosition, readClipboard } from './clipboard.js';
 import {
     FieldError, fields, movedListItem, parseField, tableShape, withColumn, withListItem, withListText, withoutColumn,
@@ -121,6 +122,8 @@ export class BlockBuilderElement extends HTMLElement {
             confirmRemove: null,
             // The save-as-template form while it is open: the block and what has been typed so far.
             saveForm: null,
+            // The binding form while it is open: which setting it binds, and the source and arguments chosen.
+            binding: null,
         };
         // Media items already looked up, by id, so a chosen file shows its picture and name; null while loading.
         this.media = new Map();
@@ -723,6 +726,15 @@ export class BlockBuilderElement extends HTMLElement {
         const block = find(state.document, blockId);
         const entry = state.catalogue.find((candidate) => candidate.name === block?.type);
         const path = node.getAttribute('data-block-setting');
+        const bound = bindingOf(block, path) ?? bindingOf(block, path.split('.')[0]);
+
+        // Typing would change the text only until the page is drawn again from the source.
+        if (bound !== null) {
+            this.say(`This text comes from ${bound.source}. Change it in the inspector.`);
+
+            return;
+        }
+
         const rich = settingSchema(entry?.settings, path)?.['x-control'] === 'rich-text';
         const page = this.frame.contentDocument;
 
@@ -1275,6 +1287,7 @@ export class BlockBuilderElement extends HTMLElement {
 
     select(id, reveal = false) {
         this.ui.more = false;
+        this.ui.binding = null;
         this.ui.errors = {};
         this.ui.target = 0;
         this.ui.rules = null;
@@ -1557,24 +1570,155 @@ export class BlockBuilderElement extends HTMLElement {
         const overridden = responsive && at === '' && field.value !== null && typeof field.value === 'object'
             && Object.keys(field.value).some((name) => name !== 'base');
         const label = field.title === field.name ? words(field.name) : field.title;
+        const sources = state.vocabulary?.sources ?? [];
+        const own = group === 'settings' && at === '';
+        const bound = own ? bindingOf(block, field.name) : null;
+        const binding = own && this.ui.binding?.block === block.id && this.ui.binding.setting === field.name;
+        const canBind = own && sources.length > 0 && bindable(this.schemaOf(state, block)).includes(field.name);
+
+        if (bound !== null || binding) {
+            return el(
+                'div',
+                { class: 'bb-field bb-bound' },
+                el('span', { class: 'bb-label', text: label }),
+                binding
+                    ? this.bindingForm(state, block, field)
+                    : [
+                          el('p', { class: 'bb-binding', text: describeBinding(bound, sources) }),
+                          el(
+                              'div',
+                              { class: 'bb-actions' },
+                              canBind ? el('button', { class: 'bb-link', type: 'button', text: 'Change', onclick: () => this.openBinding(block, field, bound) }) : null,
+                              el('button', { class: 'bb-link', type: 'button', text: 'Unbind', onclick: () => this.builder.clearBinding(block.id, field.name) }),
+                          ),
+                      ],
+                wrong === null ? null : el('span', { class: 'bb-wrong', text: wrong }),
+            );
+        }
+
+        const bind = canBind
+            ? el('button', {
+                  class: 'bb-link bb-bind',
+                  type: 'button',
+                  text: 'Bind',
+                  'aria-label': `Bind ${label} to a data source`,
+                  onclick: () => this.openBinding(block, field, null),
+              })
+            : null;
         const control = this.control(state, field, shown, commit, key, wrong !== null);
 
         if (control.type === 'checkbox') {
+            if (bind !== null) {
+                return el('div', { class: 'bb-field bb-label-row' }, el('label', { class: 'bb-check' }, control, el('span', { text: label })), bind);
+            }
+
             return el('label', { class: 'bb-field bb-check' }, control, el('span', { text: label }));
         }
+
+        const caption = el(
+            'label',
+            { class: 'bb-label', for: `bb-${key}` },
+            el('span', { text: field.private ? `${label} (only editors see this)` : label }),
+            overridden ? el('i', { title: 'Has a different value at some widths' }) : null,
+        );
 
         return el(
             'div',
             { class: 'bb-field' },
-            el(
-                'label',
-                { class: 'bb-label', for: `bb-${key}` },
-                el('span', { text: field.private ? `${label} (only editors see this)` : label }),
-                overridden ? el('i', { title: 'Has a different value at some widths' }) : null,
-            ),
+            bind === null ? caption : el('div', { class: 'bb-label-row' }, caption, bind),
             control,
             field.description ? el('span', { class: 'bb-help', text: field.description }) : null,
             wrong === null ? null : el('span', { class: 'bb-wrong', text: wrong }),
+        );
+    }
+
+    schemaOf(state, block) {
+        return state.catalogue.find((candidate) => candidate.name === block.type)?.settings;
+    }
+
+    openBinding(block, field, current) {
+        const sources = this.builder.state().vocabulary?.sources ?? [];
+        const source = current?.source ?? sources[0]?.name ?? '';
+
+        this.ui.binding = {
+            block: block.id,
+            setting: field.name,
+            source,
+            arguments: { ...(current?.arguments ?? {}) },
+            useFallback: current !== null && current.fallback !== undefined,
+            fallback: current?.fallback ?? block.settings?.[field.name] ?? '',
+        };
+        this.render();
+    }
+
+    /**
+     * Asks which source a setting takes its value from, and with what arguments; drawn under the setting's label.
+     */
+    bindingForm(state, block, field) {
+        const draft = this.ui.binding;
+        const sources = state.vocabulary?.sources ?? [];
+        const source = sources.find((candidate) => candidate.name === draft.source);
+        const close = () => {
+            this.ui.binding = null;
+            this.render();
+        };
+        const save = async () => {
+            await this.builder.setBinding(block.id, field.name, bindingFrom(draft));
+
+            if (this.builder.state().refusals.length === 0 && this.builder.state().error === null) {
+                close();
+            }
+        };
+        const argument = (name, value) => {
+            draft.arguments = { ...draft.arguments, [name]: value ?? '' };
+            this.render();
+        };
+
+        return el(
+            'div',
+            { class: 'bb-binding-form' },
+            el(
+                'label',
+                { class: 'bb-field' },
+                el('span', { class: 'bb-label', text: 'Source' }),
+                el(
+                    'select',
+                    {
+                        class: 'bb-input',
+                        'data-key': `binding-source-${field.name}`,
+                        onchange: (event) => {
+                            draft.source = event.target.value;
+                            draft.arguments = {};
+                            this.render();
+                        },
+                    },
+                    sources.map((candidate) =>
+                        el('option', { value: candidate.name, text: candidate.name, selected: candidate.name === draft.source })),
+                ),
+            ),
+            source === undefined
+                ? null
+                : fields(source.arguments, draft.arguments).map((argumentField) =>
+                      this.field(state, block, `binding:${field.name}`, argumentField, argument, '')),
+            el(
+                'label',
+                { class: 'bb-field bb-check' },
+                el('input', {
+                    type: 'checkbox',
+                    checked: draft.useFallback,
+                    onchange: (event) => {
+                        draft.useFallback = event.target.checked;
+                        this.render();
+                    },
+                }),
+                el('span', { text: 'Show the current value when the source has none' }),
+            ),
+            el(
+                'div',
+                { class: 'bb-actions' },
+                el('button', { class: 'bb-primary', type: 'button', text: 'Save', disabled: source === undefined, onclick: save }),
+                el('button', { class: 'bb-link', type: 'button', text: 'Cancel', onclick: close }),
+            ),
         );
     }
 

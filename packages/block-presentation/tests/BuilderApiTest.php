@@ -12,6 +12,7 @@ use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
+use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
@@ -22,6 +23,7 @@ use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\BuilderAbility;
 use SpeedySpec\Block\Domain\ValueObjects\RenderInput;
+use SpeedySpec\Block\Infra\Memory\ArrayDataSource;
 use SpeedySpec\Block\Infra\Memory\MemoryServiceProvider;
 use SpeedySpec\Block\Presentation\ApiRequest;
 use SpeedySpec\Block\Presentation\BuilderApi;
@@ -155,6 +157,21 @@ test('the vocabulary gives a builder the breakpoints, tokens, conditions and col
         ->and($body['conditions'][0]['arguments']['required'])->toBe(['field'])
         ->and($body['collections'])->toBe([])
         ->and(array_column($body['decorators'], 'namespace'))->toBe(['core/visibility', 'core/style']);
+});
+
+test('the vocabulary lists the data sources a setting can be bound to, with what each takes and gives', function () use (
+    $host,
+    $call,
+) {
+    [$api, $c] = $host();
+    $c->get(DataSourceRegistryInterface::class)->add(new ArrayDataSource('acme/site', ['name' => 'x'], ['type' => 'string']));
+
+    [, $body] = $call($api, 'GET', '/vocabulary');
+    $site = array_values(array_filter($body['sources'], static fn (array $source): bool => $source['name'] === 'acme/site'));
+
+    expect(array_column($body['sources'], 'name'))->toBe(['acme/site', 'core/current-item'])
+        ->and($site[0]['arguments']['properties'])->toHaveKey('key')
+        ->and($site[0]['value'])->toBe(['type' => 'string']);
 });
 
 test('a document is read with its private settings and its issues, for someone who may edit it', function () use (

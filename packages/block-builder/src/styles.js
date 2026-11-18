@@ -218,6 +218,13 @@ block-builder .bb-rule { margin-bottom: .5rem; padding: .5rem; border: 1px solid
     background: var(--bb-panel); }
 block-builder .bb-rule-top { display: flex; gap: .4rem; margin-bottom: .4rem; }
 block-builder .bb-or { margin: .2rem 0; color: var(--bb-soft); text-align: center; }
+block-builder .bb-label-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+block-builder .bb-label-row .bb-label { margin-bottom: .25rem; }
+block-builder .bb-bind { font-size: 12px; }
+block-builder .bb-binding { margin: 0; padding: .45rem .55rem; border: 1px dashed var(--bb-line); border-radius: 6px;
+    color: var(--bb-soft); }
+block-builder .bb-bound .bb-actions { margin-top: .35rem; }
+block-builder .bb-binding-form { padding: .6rem; border: 1px solid var(--bb-line); border-radius: 6px; }
 block-builder .bb-add-tabs { margin: 0 0 .6rem; padding: 0; }
 block-builder .bb-template { display: grid; gap: .15rem; align-content: start; }
 block-builder .bb-template .bb-link { justify-self: start; font-size: 12px; }

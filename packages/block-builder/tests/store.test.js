@@ -566,3 +566,21 @@ test('a template that cannot be saved is shown as an error', async () => {
     assert.equal(saved, false);
     assert.equal(builder.state().error, 'You are not allowed to do that.');
 });
+
+test('binding and unbinding a setting send their operations and can be undone', async () => {
+    const client = editingClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.setBinding('b', 'text', { source: 'demo/site', arguments: { key: 'name' } });
+    await builder.clearBinding('b', 'text');
+
+    assert.deepEqual(
+        client.calls.filter((call) => call[0] === 'operate').map((call) => call[1]),
+        [
+            { operation: 'setBinding', block: 'b', path: 'text', binding: { source: 'demo/site', arguments: { key: 'name' } } },
+            { operation: 'clearBinding', block: 'b', path: 'text' },
+        ],
+    );
+    assert.equal(builder.state().canUndo, true);
+});

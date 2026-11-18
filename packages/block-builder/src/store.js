@@ -276,6 +276,16 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
             edit({ operation: 'updateExtension', block: id, namespace, settings }),
 
         /**
+         * Binds a setting to a data source, so its value comes from the source when the page is drawn.
+         *
+         * @param {string} path The setting, such as `text`.
+         * @param {{source: string, arguments: object, fallback?: *}} binding
+         */
+        setBinding: (id, path, binding) => edit({ operation: 'setBinding', block: id, path, binding }),
+
+        clearBinding: (id, path) => edit({ operation: 'clearBinding', block: id, path }),
+
+        /**
          * Takes the document back to how it was before the last edit.
          */
         undo: () => step(past, future),

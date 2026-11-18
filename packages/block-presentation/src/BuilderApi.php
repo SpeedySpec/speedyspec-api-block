@@ -18,6 +18,7 @@ use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
 use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
 use SpeedySpec\Block\Domain\Contracts\CollectionSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ConditionRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
@@ -207,6 +208,14 @@ class BuilderApi
                     'appliesTo' => $decorator->appliesTo,
                 ],
                 $this->container->get(DecoratorRegistryInterface::class)->all(),
+            ),
+            'sources' => array_map(
+                static fn ($source): array => [
+                    'name' => $source->name(),
+                    'arguments' => $source->argumentsSchema(),
+                    'value' => $source->valueSchema(),
+                ],
+                $this->container->get(DataSourceRegistryInterface::class)->all(),
             ),
         ]);
     }

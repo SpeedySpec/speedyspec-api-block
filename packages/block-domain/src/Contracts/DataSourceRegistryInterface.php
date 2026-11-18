@@ -34,4 +34,14 @@ interface DataSourceRegistryInterface
      * @since 0.1.0
      */
     public function get(string $name): ?DataSourceInterface;
+
+    /**
+     * Lists every registered source, so a builder can offer them when binding a setting.
+     *
+     * @return list<DataSourceInterface>
+     *   Sorted by name.
+     *
+     * @since 0.1.0
+     */
+    public function all(): array;
 }

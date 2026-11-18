@@ -26,6 +26,7 @@ use SpeedySpec\Block\Domain\Contracts\AssetRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
 use SpeedySpec\Block\Domain\Contracts\CollectionSourceRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
@@ -38,6 +39,7 @@ use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\BlockTree;
 use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\ValueObjects\AssetKind;
+use SpeedySpec\Block\Domain\ValueObjects\Binding;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BuilderAbility;
 use SpeedySpec\Block\Domain\ValueObjects\Crumb;
@@ -50,6 +52,7 @@ use SpeedySpec\Block\Domain\ValueObjects\SearchTarget;
 use SpeedySpec\Block\Infra\Filesystem\FilesystemMediaLibrary;
 use SpeedySpec\Block\Infra\Filesystem\FilesystemServiceProvider;
 use SpeedySpec\Block\Infra\Memory\ArrayCollectionSource;
+use SpeedySpec\Block\Infra\Memory\ArrayDataSource;
 use SpeedySpec\Block\Infra\Memory\InMemorySiteMap;
 use SpeedySpec\Block\Interactive\Domain\InteractiveTypesPackage;
 use SpeedySpec\Block\Interactive\InteractivePackage;
@@ -184,6 +187,12 @@ $container->get(CollectionSourceRegistryInterface::class)->add(new ArrayCollecti
     ['title' => 'Pictures and video', 'excerpt' => 'Media are stored by id, so moving files breaks nothing.', 'url' => '/view#photo'],
     ['title' => 'Find your way', 'excerpt' => 'Menus, breadcrumbs and a table of contents.', 'url' => '/view#contents'],
 ]));
+// A source for the inspector's Bind button: the site's name and tagline, which the seed's tagline is bound to.
+$container->get(DataSourceRegistryInterface::class)->add(new ArrayDataSource(
+    'demo/site',
+    ['name' => 'SpeedySpec demo', 'tagline' => 'Blocks for any editor'],
+    ['type' => 'string'],
+));
 $loader->load(SiteTypesPackage::from($container));
 $loader->load(new SitePackage());
 $container->get(DesignTokenRegistryInterface::class)->set('color.primary', '#2456d6');
@@ -289,6 +298,9 @@ if ($documents->find('home') === null)
         $text('find', 'core/search', ['placeholder' => 'Search the demo']),
         $text('contents', 'core/table-of-contents', ['from' => 1, 'to' => 3]),
         $text('title', 'core/heading', ['level' => 1, 'text' => 'A page made of blocks']),
+        new Block('tagline', BlockName::fromString('core/paragraph'), 1, ['text' => 'A tagline'], [], [
+            'text' => Binding::to('demo/site', ['key' => 'tagline']),
+        ]),
         $text('again', 'core/heading', ['level' => 2, 'text' => 'A page made of blocks']),
         $text('intro', 'core/paragraph', ['text' => 'Click any text and type. Select words to make them <strong>bold</strong>, <em>italic</em> or a link.']),
         $text('enter', 'core/paragraph', ['text' => 'Press Enter at the end of a paragraph for a new one; Backspace in an empty one removes it.']),

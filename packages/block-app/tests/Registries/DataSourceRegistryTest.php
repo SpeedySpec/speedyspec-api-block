@@ -51,6 +51,20 @@ test('sources can be added, replaced by name, read and removed', function () {
     expect($registry->get('acme/title'))->toBeNull();
 });
 
+test('every source is listed, by name', function () {
+    $registry = new DataSourceRegistry(new SubsetSchemaValidator());
+    $registry->add(source('zeta/b'));
+    $registry->add(source('acme/a'));
+
+    expect(array_map(static fn (DataSourceInterface $source): string => $source->name(), $registry->all()))
+        ->toBe(['acme/a', 'zeta/b']);
+
+    $registry->remove('acme/a');
+    $registry->remove('zeta/b');
+
+    expect($registry->all())->toBe([]);
+});
+
 test('a source whose schema is unsupported is rejected', function () {
     $registry = new DataSourceRegistry(new SubsetSchemaValidator());
     expect(fn () => $registry->add(source('acme/bad', ['type' => 'string', 'format' => 'email'])))
