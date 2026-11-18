@@ -20,6 +20,7 @@ use SpeedySpec\Block\App\Output\BlockOutputRegistry;
 use SpeedySpec\Block\App\Output\DocumentRenderer;
 use SpeedySpec\Block\App\Output\HtmlEscaper;
 use SpeedySpec\Block\App\Output\OutputEscaperRegistry;
+use SpeedySpec\Block\App\Output\RichTextSanitizer;
 use SpeedySpec\Block\App\Packages\BlockPackageLoader;
 use SpeedySpec\Block\App\Presentation\BreakpointRegistry;
 use SpeedySpec\Block\App\Presentation\DesignTokenRegistry;
@@ -73,6 +74,7 @@ use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
+use SpeedySpec\Block\Domain\Contracts\RichTextSanitizerInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
@@ -175,12 +177,16 @@ class AppServiceProvider
             $c->get(PlacementRulesInterface::class),
             $c->get(BlockPackageLoaderInterface::class),
         ));
-        $container->add(OutputEscaperRegistryInterface::class, function (): OutputEscaperRegistryInterface {
-            $escapers = new OutputEscaperRegistry();
-            $escapers->add(new HtmlEscaper());
+        $container->add(RichTextSanitizerInterface::class, fn () => new RichTextSanitizer());
+        $container->add(
+            OutputEscaperRegistryInterface::class,
+            function (BlockServiceContainer $c): OutputEscaperRegistryInterface {
+                $escapers = new OutputEscaperRegistry();
+                $escapers->add(new HtmlEscaper($c->get(RichTextSanitizerInterface::class)));
 
-            return $escapers;
-        });
+                return $escapers;
+            },
+        );
         $container->add(BlockOutputRegistryInterface::class, fn () => new BlockOutputRegistry());
         $container->add(DocumentRendererInterface::class, fn (BlockServiceContainer $c) => new DocumentRenderer(
             $c->get(DocumentResolverInterface::class),
@@ -248,6 +254,7 @@ class AppServiceProvider
             $c->get(BlockDuplicatorInterface::class),
             $c->get(SettingsMigrationRegistryInterface::class),
             $c->get(StepRegistryInterface::class),
+            $c->get(RichTextSanitizerInterface::class),
         ));
     }
 }

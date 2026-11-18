@@ -52,6 +52,11 @@ if (!function_exists('renderInput'))
             {
                 return '';
             }
+
+            public function richText(string $value): string
+            {
+                return $value;
+            }
         };
 
         return new \SpeedySpec\Block\Domain\ValueObjects\RenderInput(

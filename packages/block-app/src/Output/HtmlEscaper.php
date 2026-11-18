@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SpeedySpec\Block\App\Output;
 
 use SpeedySpec\Block\Domain\Contracts\OutputEscaperInterface;
+use SpeedySpec\Block\Domain\Contracts\RichTextSanitizerInterface;
 use SpeedySpec\Block\Domain\ValueObjects\AttributeBag;
 
 /**
@@ -32,6 +33,21 @@ class HtmlEscaper implements OutputEscaperInterface
     public function target(): string
     {
         return 'html';
+    }
+
+    /**
+     * @param RichTextSanitizerInterface|null $richText
+     *   Cleans formatted text; the default sanitizer when none is given.
+     *
+     * @since 0.1.0
+     */
+    public function __construct(private readonly ?RichTextSanitizerInterface $richText = null)
+    {
+    }
+
+    public function richText(string $value): string
+    {
+        return ($this->richText ?? new RichTextSanitizer())->clean($value);
     }
 
     public function text(string $value): string

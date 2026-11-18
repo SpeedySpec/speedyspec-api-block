@@ -35,6 +35,23 @@ function outputEscaperContract(Closure $make): void
                 ->and($make()->url("java\tscript:alert(1)"))->toBe('');
         });
 
+        it('never lets a script or an event attribute through formatted text', function () use ($make) {
+            $escaper = $make();
+
+            foreach ([
+                '<script>alert(1)</script>',
+                '<img src=x onerror=alert(1)>',
+                '<a href="javascript:alert(1)">x</a>',
+                '<svg onload=alert(1)>',
+                '<strong onmouseover="x">y</strong>',
+            ] as $hostile)
+            {
+                $out = strtolower($escaper->richText($hostile));
+
+                expect($out)->not->toContain('<script')->not->toMatch('/\son[a-z]+\s*=/')->not->toContain('javascript:');
+            }
+        });
+
         it('renders nothing for an empty attribute bag', function () use ($make) {
             expect($make()->attributes(AttributeBag::empty()))->toBe('');
         });

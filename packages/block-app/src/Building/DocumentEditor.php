@@ -12,6 +12,7 @@ use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
 use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
+use SpeedySpec\Block\Domain\Contracts\RichTextSanitizerInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
@@ -60,6 +61,7 @@ class DocumentEditor implements DocumentEditorInterface
         private readonly BlockDuplicatorInterface $duplicator,
         private readonly SettingsMigrationRegistryInterface $migrations,
         private readonly StepRegistryInterface $steps,
+        private readonly ?RichTextSanitizerInterface $richText = null,
     )
     {
     }
@@ -81,6 +83,7 @@ class DocumentEditor implements DocumentEditorInterface
             return EditResult::refused($this->unknownType($type, null));
         }
 
+        $settings = $this->cleaned($settings, $blockType->settingsSchema);
         $refusals = [
             ...$this->placementRefusals($type, $this->parentType($document->tree, $position), null),
             ...$this->settingsRefusals($settings, $blockType->settingsSchema, null),
@@ -278,6 +281,7 @@ class DocumentEditor implements DocumentEditorInterface
             return EditResult::refused($this->unknownType($block->type, $blockId));
         }
 
+        $settings = $this->cleaned($settings, $type->settingsSchema);
         $changed = $block->withSettings($settings)->withTypeVersion($type->version);
         $refusals = $this->settingsRefusals($settings, $type->settingsSchema, $blockId);
         $refusals = $refusals !== [] ? $refusals : $this->stepRefusals($changed, $type, $blockId);
@@ -419,6 +423,7 @@ class DocumentEditor implements DocumentEditorInterface
 
             if ($settings !== null)
             {
+                $settings = $this->cleaned($settings, $type->settingsSchema);
                 $refusals = [...$refusals, ...$this->settingsRefusals($settings, $type->settingsSchema, $block->id)];
                 $block = $block->withSettings($settings)->withTypeVersion($type->version);
             }
@@ -496,6 +501,48 @@ class DocumentEditor implements DocumentEditorInterface
         }
 
         return $refusals;
+    }
+
+    /**
+     * Cleans every formatted-text value in settings, wherever the schema declares one, so only clean text is stored.
+     *
+     * @param array<array-key, mixed> $values
+     * @param array<string, mixed> $schema
+     *
+     * @return array<array-key, mixed>
+     *
+     * @since 0.1.0
+     */
+    private function cleaned(array $values, array $schema): array
+    {
+        if ($this->richText === null)
+        {
+            return $values;
+        }
+
+        $properties = is_array($schema['properties'] ?? null) ? $schema['properties'] : [];
+        $items = is_array($schema['items'] ?? null) ? $schema['items'] : null;
+
+        foreach ($values as $key => $value)
+        {
+            $child = $properties[$key] ?? (array_is_list($values) ? $items : null);
+
+            if (!is_array($child))
+            {
+                continue;
+            }
+
+            if (is_string($value) && ($child['x-control'] ?? null) === 'rich-text')
+            {
+                $values[$key] = $this->richText->clean($value);
+            }
+            elseif (is_array($value))
+            {
+                $values[$key] = $this->cleaned($value, $child);
+            }
+        }
+
+        return $values;
     }
 
     /**
