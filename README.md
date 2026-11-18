@@ -11,9 +11,31 @@ its directory and run `composer install && vendor/bin/pest --colors=never`.
 |---|---|
 | `block-domain` | Every contract, value objects, entities and a per-contract service container. Requires only PHP. |
 | `block-app` | Framework-free defaults: schema validation, registries, resolving, drawing, serialization, package loading. |
-| `block-infra-memory` | In-memory document repository and data source, for tests and storage-less hosts. |
+| `block-infra-memory` | In-memory repositories, record store and data source, for tests and storage-less hosts. |
+| `block-infra-filesystem` | A record store that keeps documents and saved templates as files. |
+| `block-infra-pdo` | A record store that keeps them in one database table (SQLite, MySQL, MariaDB, PostgreSQL). |
 | `block-contract-tests` | Shared Pest suites that any replacement implementation or block package runs. |
 | `block-example` | A small block package; the model for writing one. See its README. |
+
+## Storage
+
+Documents and saved templates are stored through one small contract, `RecordStoreInterface`: named text records
+grouped into collections, with `get`, `put`, `delete` and `keys`. The repositories that use it
+(`StoredDocumentRepository`, `StoredBlockTemplateRepository`) live in `block-app` and turn documents and templates
+into text and back, so a host that wants its own storage implements the record store and nothing else.
+
+```php
+$container = new BlockServiceContainer();
+(new AppServiceProvider())->register($container);
+(new StorageServiceProvider())->register($container);                  // repositories over a record store
+(new FilesystemServiceProvider('/var/app/blocks'))->register($container); // or PdoServiceProvider, or your own
+```
+
+- `block-infra-filesystem` writes one file per record under a directory that must not be served to visitors.
+- `block-infra-pdo` uses one table; call `PdoRecordStore::install()` once to create it.
+- A replacement record store runs `recordStoreContract()` from `block-contract-tests` to prove it behaves the same.
+- A host can still replace a repository outright by binding `DocumentRepositoryInterface` or
+  `BlockTemplateRepositoryInterface` itself.
 
 ## For builders
 
