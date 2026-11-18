@@ -93,3 +93,20 @@ test('a setting that may be text or something else takes plain text as text', ()
     assert.throws(() => parseField(count, 'many'), FieldError);
 });
 
+test('a field says when its value may differ by width, and what kind of value it then holds', () => {
+    const schema = {
+        properties: {
+            columns: { type: ['integer', 'object'], 'x-control': 'responsive' },
+            padding: { type: ['string', 'object'], 'x-control': 'responsive' },
+            stackBelow: { type: 'string', 'x-control': 'breakpoint' },
+            plain: { type: 'string' },
+        },
+    };
+    const [columns, padding, stackBelow, plain] = fields(schema, {});
+
+    assert.deepEqual([columns.hint, columns.kind], ['responsive', 'integer']);
+    assert.deepEqual([padding.hint, padding.kind], ['responsive', 'string']);
+    assert.deepEqual([stackBelow.hint, stackBelow.kind], ['breakpoint', 'string']);
+    assert.deepEqual([plain.hint, plain.kind], ['', 'string']);
+});
+

@@ -364,7 +364,7 @@ test('one block is previewed on its own, in either mode', function () use ($host
     [$mode] = $call($api, 'POST', '/documents/home/preview', [], ['block' => 't', 'mode' => 'sideways']);
 
     expect($status)->toBe(200)
-        ->and($body['output'])->toBe('<p>Hi</p>')
+        ->and($body['output'])->toBe('<p data-block-id="t">Hi</p>')
         ->and($body['block'])->toBe('t')
         ->and($missing)->toBe(404)
         ->and($mode)->toBe(400);
@@ -478,3 +478,16 @@ test('a template saved from a block does not carry its private settings', functi
     expect($json)->not->toContain('secret')
         ->and($list['libraries'][1]['templates'][0]['blocks'][0]['children'][0]['settings'])->toBe(['text' => 'Hi']);
 });
+
+test('an editor\'s drawing names each block on its element, and a visitor\'s does not', function () use ($host, $call) {
+    [$api] = $host();
+
+    [, $admin] = $call($api, 'GET', '/documents/home/render', ['mode' => 'admin']);
+    [, $front] = $call($api, 'GET', '/documents/home/render');
+    [, $preview] = $call($api, 'POST', '/documents/home/preview', [], ['block' => 't', 'mode' => 'admin']);
+
+    expect($admin['output'])->toBe('<div data-block-id="b"><p data-block-id="t">Hi</p></div>')
+        ->and($front['output'])->toBe('<div><p>Hi</p></div>')
+        ->and($preview['output'])->toBe('<p data-block-id="t">Hi</p>');
+});
+

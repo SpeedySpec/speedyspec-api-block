@@ -20,6 +20,7 @@ export function createBuilder({ client, documentId }) {
         selected: null,
         refusals: [],
         error: null,
+        saving: false,
         preview: { output: '', css: '' },
     };
     const listeners = new Set();
@@ -47,6 +48,8 @@ export function createBuilder({ client, documentId }) {
      */
     function edit(operation, after = () => ({})) {
         queue = queue.then(async () => {
+            set({ saving: true });
+
             try {
                 const result = await client.operate(documentId, operation);
                 const selected = find(result.document, state.selected) === null ? null : state.selected;
@@ -66,6 +69,8 @@ export function createBuilder({ client, documentId }) {
                 } else {
                     set({ error: error.message });
                 }
+            } finally {
+                set({ saving: false });
             }
         });
 

@@ -229,3 +229,18 @@ test('a subscriber stops hearing after it unsubscribes', async () => {
 
     assert.equal(count, heard);
 });
+
+test('the store says when an edit is on its way and when it has landed', async () => {
+    const client = fakeClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+    const seen = [];
+    builder.subscribe((state) => seen.push(state.saving));
+
+    await builder.duplicate('a');
+
+    assert.equal(seen[0], true);
+    assert.equal(seen.at(-1), false);
+    assert.equal(builder.state().saving, false);
+});
+
