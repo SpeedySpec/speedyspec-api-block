@@ -10,6 +10,9 @@ use SpeedySpec\Block\App\Building\BlockTemplateRegistry;
 use SpeedySpec\Block\App\Building\DocumentEditor;
 use SpeedySpec\Block\App\Building\PlaceholderOutput;
 use SpeedySpec\Block\App\Building\PlacementRules;
+use SpeedySpec\Block\App\Documents\DocumentIncluder;
+use SpeedySpec\Block\App\Documents\RegisteredTemplateLibrary;
+use SpeedySpec\Block\App\Documents\SavedTemplateLibrary;
 use SpeedySpec\Block\App\Ids\BlockDuplicator;
 use SpeedySpec\Block\App\Ids\RandomBlockIdGenerator;
 use SpeedySpec\Block\App\Output\BlockOutputRegistry;
@@ -21,6 +24,7 @@ use SpeedySpec\Block\App\Presentation\BreakpointRegistry;
 use SpeedySpec\Block\App\Presentation\DesignTokenRegistry;
 use SpeedySpec\Block\App\Presentation\StyleCollector;
 use SpeedySpec\Block\App\Registries\BlockBehaviourRegistry;
+use SpeedySpec\Block\App\Registries\BlockTemplateLibraryRegistry;
 use SpeedySpec\Block\App\Registries\BlockTypeRegistry;
 use SpeedySpec\Block\App\Registries\CollectionSourceRegistry;
 use SpeedySpec\Block\App\Registries\ConditionRegistry;
@@ -46,7 +50,9 @@ use SpeedySpec\Block\Domain\Contracts\BlockIdGeneratorInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockTemplateLibraryRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockTemplateRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BreakpointRegistryInterface;
@@ -57,7 +63,9 @@ use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
+use SpeedySpec\Block\Domain\Contracts\DocumentIncluderInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
+use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface;
@@ -194,6 +202,20 @@ class AppServiceProvider
             $c->get(BlockTemplateRegistryInterface::class),
         ));
         $container->add(BlockTemplateRegistryInterface::class, fn () => new BlockTemplateRegistry());
+        $container->add(DocumentIncluderInterface::class, fn (BlockServiceContainer $c) => new DocumentIncluder(
+            $c->get(DocumentRepositoryInterface::class),
+            fn (): DocumentRendererInterface => $c->get(DocumentRendererInterface::class),
+        ));
+        $container->add(
+            BlockTemplateLibraryRegistryInterface::class,
+            // The saved library needs a repository, which only a host with storage binds.
+            fn (BlockServiceContainer $c) => new BlockTemplateLibraryRegistry(
+                new RegisteredTemplateLibrary($c->get(BlockTemplateRegistryInterface::class)),
+                ...($c->has(BlockTemplateRepositoryInterface::class)
+                    ? [new SavedTemplateLibrary($c->get(BlockTemplateRepositoryInterface::class))]
+                    : []),
+            ),
+        );
         $container->add(BreakpointRegistryInterface::class, fn () => new BreakpointRegistry(
             new Breakpoint('tablet', 768),
             new Breakpoint('desktop', 1024),

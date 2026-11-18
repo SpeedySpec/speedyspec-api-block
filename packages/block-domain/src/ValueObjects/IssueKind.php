@@ -28,4 +28,6 @@ enum IssueKind: string
     case InvalidCondition = 'invalid-condition';
     case UnknownCollection = 'unknown-collection';
     case InvalidCollection = 'invalid-collection';
+    case UnknownDocument = 'unknown-document';
+    case DocumentLoop = 'document-loop';
 }

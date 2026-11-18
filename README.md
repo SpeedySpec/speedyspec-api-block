@@ -99,6 +99,26 @@ $container->get(BlockPackageLoaderInterface::class)->load(StructurePackage::from
 Their layout is written through the style collector, and they take the shared `core/style` settings when
 `PresentationPackage` is loaded.
 
+## Documents inside documents
+
+`DocumentsPackage` (in `block-app`) adds `core/include`, a block that shows another stored document in its place:
+a header on every page, a section reused across pages.
+
+```php
+$container->get(BlockPackageLoaderInterface::class)->load(DocumentsPackage::from($container));
+```
+
+- The included document is drawn by the ordinary renderer, in the same mode, with the including block's context.
+- A document that includes itself, directly or through others, is drawn once and then stopped. Inclusions nest
+  at most 8 deep, and one inclusion leads to at most 500 others.
+- A block's output is only markup, so what an included document reports is kept by
+  `DocumentIncluderInterface`: read `issues()` after drawing a page, then call `clear()`. Its assets reach the
+  page's own result.
+
+`BlockTemplateLibraryRegistryInterface` lists template libraries for a builder: the templates defined in code,
+the ones people saved, and any a host adds by implementing `BlockTemplateLibraryInterface`, for example one that
+fetches a collection from a service.
+
 ## For builders
 
 A builder is the interface where someone drops, arranges and configures blocks. It is not part of this repository;
