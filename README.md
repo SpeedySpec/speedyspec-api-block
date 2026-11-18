@@ -15,6 +15,7 @@ its directory and run `composer install && vendor/bin/pest --colors=never`.
 | `block-infra-filesystem` | A record store that keeps documents and saved templates as files. |
 | `block-infra-pdo` | A record store that keeps them in one database table (SQLite, MySQL, MariaDB, PostgreSQL). |
 | `block-contract-tests` | Shared Pest suites that any replacement implementation or block package runs. |
+| `block-structure` | The layout blocks: section, columns, column, grid and element. |
 | `block-example` | A small block package; the model for writing one. See its README. |
 
 ## Storage
@@ -77,6 +78,26 @@ $container->get(BlockPackageLoaderInterface::class)->load(PresentationPackage::f
 $result = $container->get(DocumentRendererInterface::class)->render($document, new RenderRequest());
 $css = $container->get(StyleCollectorInterface::class)->css();
 ```
+
+## Laying out a page
+
+`block-structure` is a block package with the five blocks pages are arranged with, so block packages and builders
+share them instead of each shipping its own container:
+
+| Block | What it is |
+|---|---|
+| `core/section` | A container drawn as `div`, `section`, `article`, `header`, `footer`, `main`, `aside` or `nav`. |
+| `core/columns` | Holds `core/column` blocks; stacked on narrow screens, in a row from a chosen breakpoint. |
+| `core/column` | One column, with a share of the row from 1 to 12 that may differ by breakpoint. |
+| `core/grid` | Equal columns, 1 to 12, that may differ by breakpoint. |
+| `core/element` | One element from a fixed list (headings, paragraph, lists and so on) with text. |
+
+```php
+$container->get(BlockPackageLoaderInterface::class)->load(StructurePackage::from($container));
+```
+
+Their layout is written through the style collector, and they take the shared `core/style` settings when
+`PresentationPackage` is loaded.
 
 ## For builders
 

@@ -52,7 +52,9 @@ test('a style rule keeps safe declarations and the breakpoint they apply from', 
 
     expect($rule->declarations)->toBe(['padding' => '1rem 2rem', 'color' => 'var(--color-primary)'])
         ->and($rule->breakpoint)->toBe('tablet')
-        ->and((new StyleRule(['width' => 'calc(100% - 2rem)']))->breakpoint)->toBeNull();
+        ->and((new StyleRule(['width' => 'calc(100% - 2rem)']))->breakpoint)->toBeNull()
+        ->and((new StyleRule(['grid-template-columns' => 'repeat(3, minmax(0, 1fr))']))->declarations)
+        ->toBe(['grid-template-columns' => 'repeat(3, minmax(0, 1fr))']);
 });
 
 test('a style rule refuses anything that could break out of its declaration', function (

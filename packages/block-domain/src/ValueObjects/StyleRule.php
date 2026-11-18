@@ -16,7 +16,9 @@ use SpeedySpec\Block\Domain\Exceptions\InvalidStyleException;
  */
 class StyleRule
 {
-    private const array FUNCTIONS = ['var', 'calc', 'min', 'max', 'clamp', 'rgb', 'rgba', 'hsl', 'hsla'];
+    private const array FUNCTIONS = [
+        'var', 'calc', 'min', 'max', 'clamp', 'minmax', 'repeat', 'rgb', 'rgba', 'hsl', 'hsla',
+    ];
 
     /**
      * @param array<string, string> $declarations
