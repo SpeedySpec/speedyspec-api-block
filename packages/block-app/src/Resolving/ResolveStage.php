@@ -209,18 +209,18 @@ class ResolveStage
             return null;
         }
 
-        if (!$this->validator->validate($binding->arguments, $source->argumentsSchema())->isValid())
-        {
-            $issues[] = new Issue($blockId, IssueKind::InvalidBinding, sprintf(
-                'The arguments for data source "%s" do not match its schema.',
-                $binding->source,
-            ), $path);
-
-            return null;
-        }
-
         try
         {
+            if (!$this->validator->validate($binding->arguments, $source->argumentsSchema())->isValid())
+            {
+                $issues[] = new Issue($blockId, IssueKind::InvalidBinding, sprintf(
+                    'The arguments for data source "%s" do not match its schema.',
+                    $binding->source,
+                ), $path);
+
+                return null;
+            }
+
             $result = $source->resolve($binding->arguments, $context, $mode);
         }
         catch (Throwable $e)

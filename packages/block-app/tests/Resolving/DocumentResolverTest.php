@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+use SpeedySpec\Block\App\Resolving\DocumentResolver;
+use SpeedySpec\Block\App\Resolving\GateStage;
+use SpeedySpec\Block\App\Resolving\PrepareStage;
+use SpeedySpec\Block\App\Resolving\ResolveStage;
+use SpeedySpec\Block\App\Resolving\ValidateStage;
+use SpeedySpec\Block\App\Resolving\ViewStage;
+use SpeedySpec\Block\Domain\BlockServiceContainer;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourInterface;
 use SpeedySpec\Block\Domain\Contracts\GateStepInterface;
 use SpeedySpec\Block\Domain\Contracts\ViewStepInterface;
@@ -329,4 +336,75 @@ test('no resolved block has an admin context in front mode, stopped or not', fun
     [$resolver] = resolver(function ($c) { types($c)->add(type('acme/box')); });
     $result = $resolver->resolve(doc(block('a', 'acme/box'), block('g', 'gone/away')), Mode::Front);
     expect($result->find('a')->admin)->toBeNull()->and($result->find('g')->admin)->toBeNull();
+});
+
+/**
+ * Builds a document resolver over the container's stages with the given block budget.
+ */
+function budgeted(BlockServiceContainer $c, int $budget): DocumentResolver
+{
+    return new DocumentResolver(
+        $c->get(PrepareStage::class),
+        $c->get(GateStage::class),
+        $c->get(ResolveStage::class),
+        $c->get(ValidateStage::class),
+        $c->get(ViewStage::class),
+        types($c),
+        $budget,
+    );
+}
+
+test('an exhausted budget records one issue on the block where it ran out and resolves nothing further', function () {
+    [, $c] = resolver(function ($c) {
+        types($c)->add(type('acme/wrap', ['children' => true]));
+        types($c)->add(type('acme/box'));
+    });
+    $resolver = budgeted($c, 3);
+    $document = doc(block('w', 'acme/wrap', [], block('a'), block('b'), block('x'), block('y')), block('z', 'gone/away'));
+    $result = $resolver->resolve($document, Mode::Admin);
+    $wrap = $result->find('w');
+    expect(idsAndKinds($result->issues))->toBe([['x', IssueKind::BudgetExceeded]])
+        ->and(array_map(fn ($r) => $r->block->id, $wrap->children()))->toBe(['a', 'b', 'x'])
+        ->and($result->find('x')->isResolved())->toBeFalse()
+        ->and(kinds($result->find('x')->admin->issues))->toBe([IssueKind::BudgetExceeded])
+        ->and($result->find('b')->isResolved())->toBeTrue()
+        ->and(count($result->roots))->toBe(1)
+        ->and($result->find('z'))->toBeNull()
+        ->and($resolver->resolve($document, Mode::Admin))->toEqual($result);
+});
+
+test('the budget counts blocks across child passes', function () {
+    [, $c] = resolver(function ($c) {
+        types($c)->add(type('acme/loop', ['children' => true]));
+        types($c)->add(type('acme/item'));
+        behaviours($c)->set(BlockName::fromString('acme/loop'), fixedView(new BlockView([], childPasses: [
+            new CurrentItem('x', 0, 'q'), new CurrentItem('y', 1, 'q'), new CurrentItem('z', 2, 'q'), new CurrentItem('w', 3, 'q'),
+        ])));
+    });
+    $result = budgeted($c, 3)->resolve(doc(block('l', 'acme/loop', [], block('i', 'acme/item'))), Mode::Front);
+    $passes = $result->find('l')->passes;
+    expect(idsAndKinds($result->issues))->toBe([['i', IssueKind::BudgetExceeded]])
+        ->and(count($passes))->toBe(3)
+        ->and($passes[2][0]->isResolved())->toBeFalse()
+        ->and($passes[1][0]->isResolved())->toBeTrue();
+});
+
+test('the default budget resolves a large flat document', function () {
+    [$resolver] = resolver(function ($c) { types($c)->add(type('acme/box')); });
+    $blocks = array_map(fn (int $i) => block('b' . $i), range(1, 2000));
+    expect($resolver->resolve(doc(...$blocks), Mode::Front)->hasIssues())->toBeFalse();
+});
+
+test('in admin mode a block hidden by a gate step still resolves its bindings', function () {
+    $calls = 0;
+    [$resolver] = resolver(function ($c) use (&$calls) {
+        types($c)->add(type('acme/box', ['settings' => ['type' => 'object', 'properties' => ['n' => ['type' => 'string']]]]));
+        sources($c)->add(countingSource('acme/count', $calls));
+        steps($c)->add(GateStepInterface::class, gateStep(false));
+    });
+    $b = block('a', 'acme/box')->withBinding(SettingPath::fromString('n'), Binding::to('acme/count'));
+    $resolved = $resolver->resolve(doc($b), Mode::Admin)->find('a');
+    expect($calls)->toBe(1)->and($resolved->settings)->toBe(['n' => 'x'])
+        ->and($resolved->admin->hiddenOnFront)->toBeTrue()
+        ->and($resolved->admin->bindings['n'])->toBe(['source' => 'acme/count', 'used' => 'source']);
 });

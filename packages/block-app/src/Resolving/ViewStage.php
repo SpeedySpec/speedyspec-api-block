@@ -45,6 +45,8 @@ class ViewStage
     /**
      * Builds one block's view; a failing behaviour or view schema yields no view and an issue, never an exception.
      *
+     * A view step that throws records an issue and only its contribution is skipped.
+     *
      * The view carries no editor information: the behaviour's admin values are handed back separately so the
      * resolver can attach the editor information to the resolved block, whether or not it reached a view.
      *
@@ -123,7 +125,21 @@ class ViewStage
 
         foreach ($this->steps->for(ViewStepInterface::class) as $step)
         {
-            $extended = $step->extend($view, $block, $type, $validated->extensions, $context, $mode);
+            try
+            {
+                $extended = $step->extend($view, $block, $type, $validated->extensions, $context, $mode);
+            }
+            catch (Throwable $e)
+            {
+                $issues[] = new Issue($blockId, IssueKind::StepFailed, sprintf(
+                    'View step %s failed with %s.',
+                    get_debug_type($step),
+                    $e::class,
+                ));
+
+                continue;
+            }
+
             $view = new BlockView(
                 $view->values,
                 array_replace($view->extensions, $extended->extensions),

@@ -22,6 +22,7 @@ use SpeedySpec\Block\Domain\ValueObjects\ResolvedDocument;
  * Walks a document's tree running the five resolving stages on each block, passing context down to the children.
  *
  * Children are resolved only under a block that reached its view, so nothing below a hidden or broken block runs.
+ * Each call resolves at most a budget of blocks, because nested repeating blocks multiply their per-block passes.
  *
  * @since 0.1.0
  */
@@ -47,6 +48,8 @@ class DocumentResolver implements DocumentResolverInterface
      *   Builds each block's view.
      * @param BlockTypeRegistryInterface $types
      *   Finds the types whose placement rules are checked.
+     * @param int $budget
+     *   The most blocks one call resolves; the block that finds it spent gets an issue and nothing further runs.
      */
     public function __construct(
         private readonly PrepareStage $prepare,
@@ -55,6 +58,7 @@ class DocumentResolver implements DocumentResolverInterface
         private readonly ValidateStage $validate,
         private readonly ViewStage $view,
         private readonly BlockTypeRegistryInterface $types,
+        private readonly int $budget = 50000,
     )
     {
     }
@@ -69,12 +73,18 @@ class DocumentResolver implements DocumentResolverInterface
         $context ??= Context::empty();
         $issues = [];
         $roots = [];
+        $remaining = $this->budget;
 
         foreach ($document->tree->roots() as $root)
         {
+            if ($remaining < 0)
+            {
+                break;
+            }
+
             if ($this->placed($root, null, $issues))
             {
-                $roots[] = $this->block($root, $context, $mode, $issues);
+                $roots[] = $this->block($root, $context, $mode, $issues, $remaining);
             }
         }
 
@@ -86,9 +96,39 @@ class DocumentResolver implements DocumentResolverInterface
      *
      * @param list<Issue> $issues
      *   Receives the block's issues, then its descendants'.
+     * @param int $remaining
+     *   The blocks this call may still resolve; set below zero once the budget is spent, so callers stop.
      */
-    private function block(Block $stored, Context $context, Mode $mode, array &$issues): ResolvedBlock
+    private function block(
+        Block $stored,
+        Context $context,
+        Mode $mode,
+        array &$issues,
+        int &$remaining,
+    ): ResolvedBlock
     {
+        if ($remaining === 0)
+        {
+            $remaining = -1;
+            $issue = new Issue($stored->id, IssueKind::BudgetExceeded, sprintf(
+                'Resolving stopped at block "%s": the document resolves at most %d blocks.',
+                $stored->id,
+                $this->budget,
+            ));
+            $issues[] = $issue;
+
+            return new ResolvedBlock(
+                $stored,
+                $this->types->get($stored->type),
+                $stored->settings,
+                $stored->extensions,
+                null,
+                $context,
+                $mode === Mode::Admin ? new AdminContext(issues: [$issue]) : null,
+            );
+        }
+
+        $remaining--;
         $outcome = $this->prepare->run($stored, $context, $mode);
         $type = $this->types->get($stored->type);
 
@@ -134,10 +174,20 @@ class DocumentResolver implements DocumentResolverInterface
 
         foreach ($passContexts as $index => $passContext)
         {
+            if ($remaining < 0)
+            {
+                break;
+            }
+
             $children = [];
 
             foreach ($stored->children as $child)
             {
+                if ($remaining < 0)
+                {
+                    break;
+                }
+
                 // Placement does not depend on the pass, so it is reported once rather than once per pass.
                 $discard = [];
 
@@ -147,7 +197,7 @@ class DocumentResolver implements DocumentResolverInterface
 
                 if ($allowed)
                 {
-                    $children[] = $this->block($child, $passContext, $mode, $issues);
+                    $children[] = $this->block($child, $passContext, $mode, $issues, $remaining);
                 }
             }
 

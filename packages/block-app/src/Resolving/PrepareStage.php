@@ -15,6 +15,7 @@ use SpeedySpec\Block\Domain\ValueObjects\Context;
 use SpeedySpec\Block\Domain\ValueObjects\Issue;
 use SpeedySpec\Block\Domain\ValueObjects\IssueKind;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
+use Throwable;
 
 /**
  * Brings a stored block up to its type's current shape: migrated, adjusted by prepare steps and filled with defaults.
@@ -48,7 +49,7 @@ class PrepareStage
     }
 
     /**
-     * Prepares one block; an unknown type or a version that cannot be migrated stops it with an issue.
+     * Prepares one block; an unknown type, a version that cannot be migrated or a failing step stops it with an issue.
      *
      * @since 0.1.0
      */
@@ -80,7 +81,19 @@ class PrepareStage
 
         foreach ($chain as $migration)
         {
-            $settings = $migration->migrate($settings);
+            try
+            {
+                $settings = $migration->migrate($settings);
+            }
+            catch (Throwable $e)
+            {
+                return $this->stopped($block, IssueKind::MigrationFailed, sprintf(
+                    'Migrating the settings of "%s" from version %d failed with %s.',
+                    $block->type->toString(),
+                    $migration->from(),
+                    $e::class,
+                ));
+            }
         }
 
         $block = $block->withSettings($settings)->withTypeVersion($type->version);
@@ -88,7 +101,19 @@ class PrepareStage
 
         foreach ($this->steps->for(PrepareStepInterface::class) as $step)
         {
-            $returned = $step->prepare($working, $type, $context, $mode);
+            try
+            {
+                $returned = $step->prepare($working, $type, $context, $mode);
+            }
+            catch (Throwable $e)
+            {
+                return $this->stopped($block, IssueKind::StepFailed, sprintf(
+                    'Prepare step %s failed with %s.',
+                    get_debug_type($step),
+                    $e::class,
+                ));
+            }
+
             $working = new Block(
                 $working->id,
                 $working->type,

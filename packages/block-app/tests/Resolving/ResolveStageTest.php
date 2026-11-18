@@ -185,3 +185,17 @@ test('no candidate validating leaves the setting alone and records none', functi
     expect($out->settings['code'])->toBe('stored')->and($out->bindingInfo['code']['used'])->toBe('none')
         ->and(kinds($out->issues))->toBe([IssueKind::InvalidBinding, IssueKind::InvalidBinding, IssueKind::InvalidBinding]);
 });
+
+test('a binding to a path below a private object setting is a private binding and writes nothing', function () {
+    $type = type('acme/form', ['settings' => ['type' => 'object', 'properties' => [
+        'to' => ['type' => 'object', 'x-private' => true, 'properties' => ['sub' => ['type' => 'string']]]]]]);
+    $s = stages(function ($s) use ($type) {
+        $s->types->add($type);
+        $s->sources->add(new ArrayDataSource('acme/values', ['v' => 'attacker@example.test']));
+    });
+    $block = block('a', 'acme/form', ['to' => ['sub' => 'owner@example.test']])
+        ->withBinding(SettingPath::fromString('to.sub'), Binding::to('acme/values', ['key' => 'v']));
+    $out = $s->resolve->run($s->prepare->run($block, Context::empty(), Mode::Front), $type, Context::empty(), Mode::Front);
+    expect(kinds($out->issues))->toBe([IssueKind::PrivateBinding])
+        ->and($out->settings['to'])->toBe(['sub' => 'owner@example.test']);
+});

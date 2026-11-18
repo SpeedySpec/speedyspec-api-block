@@ -19,4 +19,6 @@ enum IssueKind: string
     case InvalidSettings = 'invalid-settings';
     case DisallowedChild = 'disallowed-child';
     case InvalidView = 'invalid-view';
+    case StepFailed = 'step-failed';
+    case BudgetExceeded = 'budget-exceeded';
 }

@@ -119,6 +119,17 @@ if (!function_exists('kinds'))
     }
 }
 
+if (!function_exists('idsAndKinds'))
+{
+    /**
+     * Lists each issue as its block id and kind, in order.
+     */
+    function idsAndKinds(array $issues): array
+    {
+        return array_map(static fn (Issue $issue) => [$issue->blockId, $issue->kind], $issues);
+    }
+}
+
 if (!function_exists('gateStep'))
 {
     /**

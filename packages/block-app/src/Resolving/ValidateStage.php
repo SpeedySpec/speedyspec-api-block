@@ -13,6 +13,7 @@ use SpeedySpec\Block\Domain\ValueObjects\Context;
 use SpeedySpec\Block\Domain\ValueObjects\Issue;
 use SpeedySpec\Block\Domain\ValueObjects\IssueKind;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
+use Throwable;
 
 /**
  * Checks resolved settings and extensions against their schemas, so a block that cannot be drawn is stopped.
@@ -40,7 +41,7 @@ class ValidateStage
     }
 
     /**
-     * Validates one block; schema failures stop it, while issues from validate steps are only appended.
+     * Validates one block; schema failures stop it, while issues from validate steps, or their failures, are appended.
      *
      * Validate steps run only when the schema checks passed, so they can rely on well-formed settings.
      *
@@ -75,7 +76,28 @@ class ValidateStage
 
         foreach ($this->steps->for(ValidateStepInterface::class) as $step)
         {
-            array_push($found, ...$step->validate($block, $type, $resolved->settings, $context, $mode));
+            try
+            {
+                $returned = $step->validate($block, $type, $resolved->settings, $context, $mode);
+            }
+            catch (Throwable $e)
+            {
+                $found[] = new Issue($blockId, IssueKind::StepFailed, sprintf(
+                    'Validate step %s failed with %s.',
+                    get_debug_type($step),
+                    $e::class,
+                ));
+
+                continue;
+            }
+
+            foreach ($returned as $issue)
+            {
+                if ($issue instanceof Issue)
+                {
+                    $found[] = $issue;
+                }
+            }
         }
 
         return $resolved->with(issues: [...$resolved->issues, ...$found]);
@@ -83,6 +105,8 @@ class ValidateStage
 
     /**
      * Turns each failed rule into an issue, prefixing the path with `@namespace:` for an extension.
+     *
+     * A failure at the root of the settings has no single setting at fault, so its path is null.
      *
      * @param array<string, mixed> $schema
      *
@@ -94,11 +118,13 @@ class ValidateStage
 
         foreach ($this->validator->validate($value, $schema)->errors() as $error)
         {
-            $path = $error->path;
-
-            if ($namespace !== null)
+            if ($namespace === null)
             {
-                $path = $path === '' ? '@' . $namespace : '@' . $namespace . ':' . $path;
+                $path = $error->path === '' ? null : $error->path;
+            }
+            else
+            {
+                $path = $error->path === '' ? '@' . $namespace : '@' . $namespace . ':' . $error->path;
             }
 
             $issues[] = new Issue($blockId, IssueKind::InvalidSettings, $error->message, $path);

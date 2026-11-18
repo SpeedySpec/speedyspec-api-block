@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use SpeedySpec\Block\App\Resolving\StageOutcome;
 use SpeedySpec\Block\Domain\Contracts\ValidateStepInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
@@ -90,4 +91,11 @@ test('issues accumulate in order across prepare, resolve and validate', function
     $out = $s->validate->run($resolved, $field(), Context::empty(), Mode::Front);
     expect($out->issues[0])->toBe($earlier)
         ->and(kinds($out->issues))->toBe([IssueKind::UnknownDataSource, IssueKind::InvalidBinding, IssueKind::InvalidSettings]);
+});
+
+test('a settings error at the schema root has no path', function () {
+    $type = type('acme/box', ['settings' => ['type' => 'object']]);
+    $outcome = new StageOutcome(block('a'), ['x', 'y'], [], [], true);
+    $out = stages(fn ($s) => $s->types->add($type))->validate->run($outcome, $type, Context::empty(), Mode::Front);
+    expect(kinds($out->issues))->toBe([IssueKind::InvalidSettings])->and($out->issues[0]->path)->toBeNull();
 });
