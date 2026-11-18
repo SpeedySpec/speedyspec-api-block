@@ -556,3 +556,25 @@ if (!function_exists('refusals'))
         );
     }
 }
+
+if (!function_exists('previewer'))
+{
+    /**
+     * Builds the default block previewer over a fresh container, after letting the test register what it needs.
+     *
+     * @return array{0: \SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface, 1: BlockServiceContainer}
+     */
+    function previewer(?callable $setup = null): array
+    {
+        $container = new BlockServiceContainer();
+        (new MemoryServiceProvider())->register($container);
+        (new AppServiceProvider())->register($container);
+
+        if ($setup !== null)
+        {
+            $setup($container);
+        }
+
+        return [$container->get(\SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface::class), $container];
+    }
+}

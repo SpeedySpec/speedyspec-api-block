@@ -7,7 +7,9 @@ use SpeedySpec\Block\Domain\Contracts\BlockOutputInterface;
 use SpeedySpec\Block\Domain\Contracts\CollectStepInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
+use SpeedySpec\Block\Domain\Contracts\OutputEscaperInterface;
 use SpeedySpec\Block\Domain\Contracts\RenderStepInterface;
+use SpeedySpec\Block\Domain\Contracts\UnresolvedBlockOutputInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Exceptions\UnsupportedTargetException;
 use SpeedySpec\Block\Domain\ValueObjects\AdminContext;
@@ -21,6 +23,7 @@ use SpeedySpec\Block\Domain\ValueObjects\IssueKind;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
 use SpeedySpec\Block\Domain\ValueObjects\RenderInput;
 use SpeedySpec\Block\Domain\ValueObjects\RenderRequest;
+use SpeedySpec\Block\Domain\ValueObjects\ResolvedBlock;
 
 $text = ['type' => 'object', 'properties' => ['text' => ['type' => 'string']]];
 
@@ -259,3 +262,44 @@ test('the renderer and its registries can be replaced one contract at a time', f
     expect($c->get(DocumentRendererInterface::class))->toBeInstanceOf(DocumentRendererInterface::class)
         ->and($c->get(\SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface::class)->has('html'))->toBeTrue();
 });
+
+test('in admin mode an unresolved block is drawn as a placeholder, and for a visitor it is not', function () {
+    [$renderer] = renderer(function ($c) {
+        types($c)->add(type('acme/ok'));
+        outputs($c)->set(BlockName::fromString('acme/ok'), fixedOutput('ok'));
+    });
+    $document = doc(block('1', 'gone/away'), block('2', 'acme/ok'));
+
+    expect($renderer->render($document, new RenderRequest(Mode::Admin))->output)
+        ->toBe('<div class="block-placeholder" data-block-id="1" data-block-type="gone/away"></div>ok')
+        ->and($renderer->render($document, new RenderRequest(Mode::Front))->output)->toBe('ok');
+});
+
+test('a block id that holds markup is escaped in the placeholder', function () {
+    [$renderer] = renderer();
+
+    $out = $renderer->render(doc(block('"><script>', 'gone/away')), new RenderRequest(Mode::Admin))->output;
+
+    expect($out)->not->toContain('<script>')->toContain('data-block-id="&quot;&gt;&lt;script&gt;"');
+});
+
+test('a placeholder that fails is recorded on the block and draws nothing', function () {
+    [$renderer] = renderer(function ($c) {
+        $c->add(UnresolvedBlockOutputInterface::class, fn () => new class implements UnresolvedBlockOutputInterface {
+            public function render(
+                ResolvedBlock $block,
+                RenderRequest $request,
+                OutputEscaperInterface $escaper,
+            ): string
+            {
+                throw new RuntimeException('no');
+            }
+        });
+    });
+
+    $result = $renderer->render(doc(block('1', 'gone/away')), new RenderRequest(Mode::Admin));
+
+    expect($result->output)->toBe('')
+        ->and(idsAndKinds($result->issues))->toContain(['1', IssueKind::OutputFailed]);
+});
+
