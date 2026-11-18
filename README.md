@@ -16,6 +16,7 @@ its directory and run `composer install && vendor/bin/pest --colors=never`.
 | `block-infra-pdo` | A record store that keeps them in one database table (SQLite, MySQL, MariaDB, PostgreSQL). |
 | `block-contract-tests` | Shared Pest suites that any replacement implementation or block package runs. |
 | `block-structure` | The layout blocks: section, columns, column, grid and element. |
+| `block-presentation` | The builder contracts as a framework-free JSON API, behind an access rule the host supplies. |
 | `block-example` | A small block package; the model for writing one. See its README. |
 
 ## Storage
@@ -143,3 +144,38 @@ Blocks are drawn in one of two modes. `front` is what a visitor sees. `admin` is
 may register a separate admin output, the block carries its issues and private settings, and a block that cannot be
 resolved is drawn as a placeholder instead of being left out. A block that sits where its type is not allowed is
 not drawn in either mode; resolving reports it as an issue.
+
+## The builder API
+
+`block-presentation` exposes the builder contracts as JSON so a builder written in JavaScript can use them. It
+knows no framework: a host turns its request into an `ApiRequest`, calls `BuilderApi::handle()`, and sends the
+`ApiResponse`.
+
+```php
+(new PresentationServiceProvider())->register($container);
+$container->add(BuilderAccessInterface::class, fn () => new MyAccess($currentUser));
+
+$response = $container->get(BuilderApi::class)->handle(new ApiRequest($method, $path, $query, $rawBody));
+http_response_code($response->status);
+echo $response->json();
+```
+
+| Route | What it does | Needs |
+|---|---|---|
+| `GET /catalogue` | Block types; with `document`, `parent`, `index` only those that fit there. | edit |
+| `GET /vocabulary` | Breakpoints, tokens, conditions, collections, decorators. | edit |
+| `GET /documents` | Ids of the documents the person may edit. | edit |
+| `POST /documents` | Creates an empty document from `id` and `kind`. | edit |
+| `GET /documents/{id}` | The document as stored, with its issues. | edit |
+| `DELETE /documents/{id}` | Removes it. | edit |
+| `POST /documents/{id}/operations` | One editing operation; saves on success, `422` with every refusal otherwise. | edit |
+| `POST /documents/{id}/preview` | Draws one block; `mode` is `admin` or `front`. | edit, or view for front |
+| `GET /documents/{id}/render` | Draws the page, with its stylesheet. | view, or edit for `mode=admin` |
+| `GET /templates` | Template libraries and their templates. | edit |
+| `POST /templates` | Saves a block of a document as a template. | manage-templates and edit |
+| `DELETE /templates/{vendor}/{name}` | Removes a saved template. | manage-templates |
+
+`BuilderAccessInterface` is the only permission check, and it is the host's to implement: the block system knows
+nothing about users. Until a host binds one, every request is refused. Signing people in, sessions and request
+forgery protection are also the host's.
+

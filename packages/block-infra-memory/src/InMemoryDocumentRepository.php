@@ -32,6 +32,11 @@ class InMemoryDocumentRepository implements DocumentRepositoryInterface
     /**
      * @since 0.1.0
      */
+    public function ids(): array
+    {
+        return array_map(strval(...), array_keys($this->documents));
+    }
+
     public function save(Document $document): void
     {
         $this->documents[$document->id] = $document;

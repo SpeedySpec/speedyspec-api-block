@@ -64,6 +64,11 @@ class StoredDocumentRepository implements DocumentRepositoryInterface
         }
     }
 
+    public function ids(): array
+    {
+        return $this->store->keys($this->collection);
+    }
+
     public function save(Document $document): void
     {
         $this->store->put($this->collection, $document->id, $this->serializer->serialize($document));

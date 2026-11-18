@@ -61,6 +61,24 @@ function documentRepositoryContract(Closure $make, int $formatVersion = 1): void
             expect($repository->find('odd')->formatVersion)->toBe(99);
         });
 
+        it('lists the ids of stored documents in the order they were first saved', function () use (
+            $make,
+            $node,
+            $document,
+        ) {
+            $repository = $make();
+
+            expect($repository->ids())->toBe([]);
+
+            $repository->save($document('m', 'page', $node('r1')));
+            $repository->save($document('a', 'page', $node('r1')));
+            $repository->save($document('10', 'page', $node('r1')));
+            $repository->save($document('m', 'post', $node('r2')));
+            $repository->remove('a');
+
+            expect($repository->ids())->toBe(['m', '10']);
+        });
+
         it('returns null for an unknown id', function () use ($make) {
             expect($make()->find('nope'))->toBeNull();
         });
