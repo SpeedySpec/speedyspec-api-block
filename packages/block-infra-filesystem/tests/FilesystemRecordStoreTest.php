@@ -152,3 +152,135 @@ test('a document saved through the providers is there for the next request', fun
     expect($container()->get(DocumentRepositoryInterface::class)->find('home'))->toEqual($document)
         ->and($container()->get(RecordStoreInterface::class))->toBeInstanceOf(FilesystemRecordStore::class);
 });
+
+test('an empty directory is refused rather than taken for the root of the disk', function (string $directory) {
+    expect(fn () => new FilesystemRecordStore($directory))->toThrow(InvalidArgumentException::class);
+})->with(['', '/', '  ']);
+
+test('a collection directory that appears while a writer is creating it is not an error', function () use ($fresh) {
+    $directory = $fresh();
+    $store = new class($directory) extends FilesystemRecordStore {
+        protected function makeDirectory(string $directory): bool
+        {
+            // Another writer gets there first; this one's mkdir then fails with "File exists".
+            mkdir($directory, 0775, true);
+
+            return parent::makeDirectory($directory);
+        }
+    };
+
+    $store->put('documents', 'a', 'one');
+
+    expect($store->get('documents', 'a'))->toBe('one');
+});
+
+test('storage that cannot be read is reported, never mistaken for empty', function () use ($fresh) {
+    if (function_exists('posix_geteuid') && posix_geteuid() === 0)
+    {
+        $this->markTestSkipped('The superuser can read anything.');
+    }
+
+    $directory = $fresh();
+    $store = new FilesystemRecordStore($directory);
+    $store->put('documents', 'a', 'one');
+    chmod($directory . '/documents', 0000);
+
+    try
+    {
+        expect(fn () => $store->get('documents', 'a'))->toThrow(StorageException::class)
+            ->and(fn () => $store->keys('documents'))->toThrow(StorageException::class)
+            ->and(fn () => $store->delete('documents', 'a'))->toThrow(StorageException::class);
+    }
+    finally
+    {
+        chmod($directory . '/documents', 0775);
+    }
+
+    $file = $fresh();
+    file_put_contents($file, 'a file where the directory should be');
+    $blocked = new FilesystemRecordStore($file . '/inside');
+
+    expect(fn () => $blocked->get('documents', 'a'))->toThrow(StorageException::class)
+        ->and(fn () => $blocked->keys('documents'))->toThrow(StorageException::class);
+
+    unlink($file);
+});
+
+test('an interrupted write never leaves a record that can be read but is not listed', function () use ($fresh) {
+    $directory = $fresh();
+    $failing = new class($directory) extends FilesystemRecordStore {
+        public int $failAt = 0;
+
+        private int $writes = 0;
+
+        protected function replace(string $file, string $contents): void
+        {
+            if (++$this->writes === $this->failAt)
+            {
+                throw new ErrorException('the disk is full');
+            }
+
+            parent::replace($file, $contents);
+        }
+    };
+    $failing->put('documents', 'a', 'one');
+    $failing->failAt = 4;
+
+    expect(fn () => $failing->put('documents', 'b', 'two'))->toThrow(StorageException::class);
+
+    $store = new FilesystemRecordStore($directory);
+
+    expect($store->get('documents', 'b'))->toBeNull()
+        ->and(in_array('a', $store->keys('documents'), true))->toBeTrue()
+        ->and($store->get('documents', 'a'))->toBe('one');
+});
+
+test('a damaged index stops a write before anything changes', function () use ($fresh) {
+    $directory = $fresh();
+    $store = new FilesystemRecordStore($directory);
+    $store->put('documents', 'a', 'one');
+    file_put_contents($directory . '/documents/index', "not base64 !!\n");
+
+    expect(fn () => $store->put('documents', 'b', 'two'))->toThrow(StorageException::class)
+        ->and($store->get('documents', 'b'))->toBeNull();
+});
+
+test('a deleted record is gone even if the index could not be updated', function () use ($fresh) {
+    $directory = $fresh();
+    $failing = new class($directory) extends FilesystemRecordStore {
+        public bool $fail = false;
+
+        protected function replace(string $file, string $contents): void
+        {
+            if ($this->fail)
+            {
+                throw new ErrorException('the disk is full');
+            }
+
+            parent::replace($file, $contents);
+        }
+    };
+    $failing->put('documents', 'a', 'one');
+    $failing->fail = true;
+
+    expect(fn () => $failing->delete('documents', 'a'))->toThrow(StorageException::class)
+        ->and((new FilesystemRecordStore($directory))->get('documents', 'a'))->toBeNull();
+});
+
+test('a failed write leaves no temporary file behind, and blank or repeated index lines are ignored', function () use (
+    $fresh,
+    $files,
+) {
+    $directory = $fresh();
+    $store = new FilesystemRecordStore($directory);
+    $store->put('documents', 'a', 'one');
+    mkdir($directory . '/documents/' . hash('sha256', 'b') . '.record');
+
+    expect(fn () => $store->put('documents', 'b', 'two'))->toThrow(StorageException::class)
+        ->and(array_filter($files($directory), fn (string $path) => str_ends_with($path, '.tmp')))->toBe([]);
+
+    $line = ':' . base64_encode('a');
+    file_put_contents($directory . '/documents/index', "{$line}\n\n{$line}\n");
+
+    expect($store->keys('documents'))->toBe(['a']);
+});

@@ -125,3 +125,81 @@ test('a document saved through the providers is there for the next request', fun
     expect($container()->get(DocumentRepositoryInterface::class)->find('home'))->toEqual($document)
         ->and($container()->get(RecordStoreInterface::class))->toBeInstanceOf(PdoRecordStore::class);
 });
+
+test('a write never opens a transaction of its own, so none can be left open or lost', function () use ($store) {
+    $pdo = new class('sqlite::memory:') extends PDO {
+        public int $begun = 0;
+
+        public function beginTransaction(): bool
+        {
+            $this->begun++;
+
+            return parent::beginTransaction();
+        }
+    };
+    $records = $store($pdo);
+    $records->put('documents', 'a', 'one');
+    $records->put('documents', 'a', 'two');
+    $records->delete('documents', 'a');
+
+    expect($pdo->begun)->toBe(0)->and($pdo->inTransaction())->toBeFalse();
+});
+
+test('a failure is a storage failure and nothing else, even when the connection only warns', function () {
+    $pdo = new PDO('sqlite::memory:');
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+    $store = new PdoRecordStore($pdo);
+    $warnings = 0;
+    set_error_handler(function () use (&$warnings): never {
+        $warnings++;
+
+        throw new ErrorException('a host that turns warnings into exceptions');
+    });
+
+    try
+    {
+        expect(fn () => $store->get('documents', 'a'))->toThrow(StorageException::class)
+            ->and(fn () => $store->put('documents', 'a', 'x'))->toThrow(StorageException::class)
+            ->and(fn () => $store->delete('documents', 'a'))->toThrow(StorageException::class)
+            ->and(fn () => $store->keys('documents'))->toThrow(StorageException::class)
+            ->and(fn () => $store->install())->not->toThrow(Throwable::class);
+    }
+    finally
+    {
+        restore_error_handler();
+    }
+
+    expect($warnings)->toBe(0)->and($pdo->inTransaction())->toBeFalse();
+});
+
+test('a key first put by two writers at once is replaced, not refused', function () use ($store) {
+    $pdo = new class('sqlite::memory:') extends PDO {
+        public bool $race = false;
+
+        public function prepare(string $query, array $options = []): PDOStatement|false
+        {
+            // Lets another writer insert the same key between this writer's look and its insert.
+            if ($this->race && str_starts_with($query, 'INSERT'))
+            {
+                $this->race = false;
+                (new PdoRecordStore($this))->put('documents', 'a', 'theirs');
+            }
+
+            return parent::prepare($query, $options);
+        }
+    };
+    $records = $store($pdo);
+    $pdo->race = true;
+
+    $records->put('documents', 'a', 'mine');
+
+    expect($records->get('documents', 'a'))->toBe('mine')->and($records->keys('documents'))->toBe(['a']);
+});
+
+test('on MySQL the table stores four-byte characters and compares keys exactly', function () {
+    $store = new PdoRecordStore(new PDO('sqlite::memory:'));
+
+    expect($store->tableSql('mysql'))->toContain('LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin')
+        ->and($store->tableSql('sqlite'))->not->toContain('utf8mb4')
+        ->and($store->tableSql('pgsql'))->not->toContain('LONGTEXT');
+});
