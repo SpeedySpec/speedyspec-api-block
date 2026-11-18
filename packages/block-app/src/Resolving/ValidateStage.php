@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace SpeedySpec\Block\App\Resolving;
 
-use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
@@ -25,20 +24,17 @@ class ValidateStage
     /**
      * Wires the stage to what it checks against.
      *
-     * @param BlockTypeRegistryInterface $types
-     *   The registered types; kept so the stage is built like the others, the type itself is passed to run().
+     * @param DecoratorRegistryInterface $decorators
+     *   Supplies the extension schemas for the type.
      * @param SchemaValidatorInterface $validator
      *   Checks values against schemas.
      * @param StepRegistryInterface $steps
      *   Supplies the validate steps.
-     * @param DecoratorRegistryInterface $decorators
-     *   Supplies the extension schemas for the type.
      */
     public function __construct(
-        private readonly BlockTypeRegistryInterface $types,
+        private readonly DecoratorRegistryInterface $decorators,
         private readonly SchemaValidatorInterface $validator,
         private readonly StepRegistryInterface $steps,
-        private readonly DecoratorRegistryInterface $decorators,
     )
     {
     }

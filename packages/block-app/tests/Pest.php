@@ -85,7 +85,7 @@ if (!function_exists('stages'))
         $s->prepare = new PrepareStage($s->types, $s->migrations, $s->decorators, $validator, $s->steps);
         $s->gate = new GateStage($s->steps);
         $s->resolve = new ResolveStage($s->sources, $s->decorators, $validator);
-        $s->validate = new ValidateStage($s->types, $validator, $s->steps, $s->decorators);
+        $s->validate = new ValidateStage($s->decorators, $validator, $s->steps);
 
         if ($setup !== null)
         {
