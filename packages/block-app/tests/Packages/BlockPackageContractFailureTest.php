@@ -16,6 +16,7 @@ use SpeedySpec\Block\Domain\ValueObjects\Mode;
 use SpeedySpec\Block\Domain\ValueObjects\RenderInput;
 
 use function SpeedySpec\Block\ContractTests\adminLeakFindings;
+use function SpeedySpec\Block\ContractTests\packageDrawnByFindings;
 use function SpeedySpec\Block\ContractTests\packageExampleFindings;
 use function SpeedySpec\Block\ContractTests\packageHost;
 use function SpeedySpec\Block\ContractTests\packageRuntimeRequirements;
@@ -345,3 +346,15 @@ test('a package must have a title', function () {
         ->and(packageTitleFindings(package('acme/x', fn () => null, 'X')))->toBe([]);
 });
 
+test('an outputs package is judged by what it draws itself, not by outputs loaded before it', function () {
+    [$container, , $drawn] = packageHost(
+        fn () => package('acme/nothing', fn () => null, 'Nothing'),
+        [fn () => typesOnlyPackage(), fn () => tabOutputsPackage(['acme/tabs', 'acme/tab'])],
+    );
+    $package = package('acme/nothing', fn () => null, 'Nothing');
+
+    expect(packageDrawnByFindings($container, $drawn, 'acme/nothing'))->toBe([
+        'acme/tabs is not drawn by acme/nothing.',
+        'acme/tab is not drawn by acme/nothing.',
+    ]);
+});

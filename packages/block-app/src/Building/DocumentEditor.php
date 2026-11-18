@@ -308,6 +308,8 @@ class DocumentEditor implements DocumentEditorInterface
             return EditResult::refused($this->unknownBlock($blockId));
         }
 
+        $decorator = $this->decorators->get($namespace);
+        $settings = $decorator === null ? $settings : $this->cleaned($settings, $decorator->settingsSchema);
         $changed = $block->withExtension($namespace, $settings);
         $type = $this->types->get($block->type);
         $refusals = $this->extensionRefusals($block->type, $blockId, $namespace, $settings);
@@ -430,6 +432,14 @@ class DocumentEditor implements DocumentEditorInterface
 
             foreach ($block->extensions as $namespace => $extension)
             {
+                $decorator = $this->decorators->get((string) $namespace);
+
+                if ($decorator !== null)
+                {
+                    $extension = $this->cleaned($extension, $decorator->settingsSchema);
+                    $block = $block->withExtension((string) $namespace, $extension);
+                }
+
                 $refusals = [
                     ...$refusals,
                     ...$this->extensionRefusals($block->type, $block->id, (string) $namespace, $extension),
@@ -522,10 +532,11 @@ class DocumentEditor implements DocumentEditorInterface
 
         $properties = is_array($schema['properties'] ?? null) ? $schema['properties'] : [];
         $items = is_array($schema['items'] ?? null) ? $schema['items'] : null;
+        $extra = is_array($schema['additionalProperties'] ?? null) ? $schema['additionalProperties'] : null;
 
         foreach ($values as $key => $value)
         {
-            $child = $properties[$key] ?? (array_is_list($values) ? $items : null);
+            $child = $properties[$key] ?? (array_is_list($values) ? $items : $extra);
 
             if (!is_array($child))
             {
