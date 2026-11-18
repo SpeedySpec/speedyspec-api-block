@@ -71,3 +71,9 @@ test('an accordion\'s items share one group only when one may be open at a time'
     expect($single->find('i')?->view?->values)->toBe(['title' => 'Question', 'open' => false, 'group' => 'b-a-group'])
         ->and($many->find('i')?->view?->values)->toBe(['title' => 'Question', 'open' => true, 'group' => '']);
 });
+
+test('a date the calendar does not have is unavailable rather than rolled into the next month', function () {
+    $resolved = resolve(block('c', 'core/countdown', ['target' => '2026-02-30T10:00', 'timeZone' => 'UTC']));
+
+    expect(issuesOf('c', $resolved))->toBe([[IssueKind::InvalidSettings, 'That date does not exist.', 'target']]);
+});
