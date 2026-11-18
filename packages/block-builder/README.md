@@ -17,10 +17,11 @@ It has no dependencies and no build step: plain ES modules.
 | `src/drag.js` | Where a dragged block lands: the part of the target under the pointer, and the position to send. |
 | `src/view.js` | What the interface shows: block types by category, where a new block goes, values by width. |
 | `src/inline.js` | Typing on the page: tidying typed or pasted markup, what a key does, which links are safe. |
+| `src/media.js` | Media settings: what to ask the library for, and changing a list of chosen ids. |
 | `src/builder-element.js` | The interface, as a `<block-builder>` element. |
 | `src/styles.js` | The interface's appearance, scoped to the element. |
 
-The first seven have no interface and can drive one of your own.
+The first eight have no interface and can drive one of your own.
 
 ## The interface
 
@@ -47,6 +48,10 @@ It is laid out the way the block editors people already know are:
   Italic, Code and Link; a link must be http, https, mailto, tel, a path on this site or an anchor, and a bare
   domain gets `https://`. Pasted text keeps only the formatting the block allows. Each stop is one ordinary
   settings change, so it can be undone.
+- **Media.** A media setting shows the chosen file, with Replace and Remove; a gallery's images are listed in order
+  with buttons to move or remove each. Choosing opens a picker in the inspector: search by name, upload from your
+  computer, or pick from the library, newest first, a page at a time. Only files of the setting's kind are offered.
+  An upload the server refuses is shown with its reason. A chosen file that has left the library says so.
 - **The inspector** on the right has three tabs. *Block* holds the block's own settings; a table
   has buttons to add or remove a row or column, and code gets a monospace box. *Style* holds the shared
   style settings in sections, with a switch for which widths a value applies from, colour pickers that offer the

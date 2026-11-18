@@ -179,3 +179,17 @@ test('typing into a top-level setting only sets that setting', () => {
     assert.deepEqual(withTyped(stored, tableSchema, 'caption', 'new'), { rows: [['a']], caption: 'new' });
     assert.deepEqual(stored, { rows: [['a']], caption: 'old' });
 });
+
+test('a media setting says which kind of media it holds', () => {
+    const media = fields({
+        type: 'object',
+        properties: {
+            photo: { type: 'string', 'x-control': 'media', 'x-media-kind': 'image' },
+            name: { type: 'string' },
+        },
+    }, {});
+
+    assert.equal(media[0].mediaKind, 'image');
+    assert.equal(media[0].hint, 'media');
+    assert.equal(media[1].mediaKind, '');
+});

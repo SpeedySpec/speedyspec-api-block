@@ -33,7 +33,14 @@ use SpeedySpec\Block\Domain\ValueObjects\AssetKind;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BuilderAbility;
 use SpeedySpec\Block\Domain\ValueObjects\EditorRequest;
+use SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface;
+use SpeedySpec\Block\Domain\Contracts\MediaUploadPolicyInterface;
+use SpeedySpec\Block\Domain\ValueObjects\MediaKind;
+use SpeedySpec\Block\Domain\ValueObjects\MediaQuery;
+use SpeedySpec\Block\Infra\Filesystem\FilesystemMediaLibrary;
 use SpeedySpec\Block\Infra\Filesystem\FilesystemServiceProvider;
+use SpeedySpec\Block\Media\Domain\MediaTypesPackage;
+use SpeedySpec\Block\Media\MediaPackage;
 use SpeedySpec\Block\Presentation\ApiRequest;
 use SpeedySpec\Block\Presentation\BuilderApi;
 use SpeedySpec\Block\Presentation\PresentationServiceProvider;
@@ -45,11 +52,39 @@ use SpeedySpec\Block\Text\TextPackage;
 require __DIR__ . '/vendor/autoload.php';
 
 $path = (string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+$storage = sys_get_temp_dir() . '/speedyspec-block-builder-demo';
+$mediaUrl = '/media-files/';
 
 // The demo answers only to the machine it runs on.
 if (!in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true))
 {
     http_response_code(403);
+
+    return;
+}
+
+// Uploaded media are served from the library's own directory, under the type found in their content when they were
+// uploaded, and never sniffed again by the browser.
+if (str_starts_with($path, $mediaUrl))
+{
+    $library = new FilesystemMediaLibrary($storage . '/media', $mediaUrl);
+    $name = substr($path, strlen($mediaUrl));
+    $id = preg_match('/^([0-9a-f]{16})\.[a-z0-9]{2,4}$/', $name, $match) === 1 ? $match[1] : '';
+    $item = $id === '' ? null : $library->find($id);
+    $file = $item === null ? null : $library->path($id);
+
+    if ($item === null || $file === null || basename($file) !== $name)
+    {
+        http_response_code(404);
+
+        return;
+    }
+
+    header('Content-Type: ' . $item->mimeType);
+    header('X-Content-Type-Options: nosniff');
+    header('Content-Disposition: inline');
+    header('Content-Length: ' . (string) filesize($file));
+    readfile($file);
 
     return;
 }
@@ -78,7 +113,7 @@ if ($path !== '/' && !str_starts_with($path, '/api/'))
 $container = new BlockServiceContainer();
 (new AppServiceProvider())->register($container);
 (new StorageServiceProvider())->register($container);
-(new FilesystemServiceProvider(sys_get_temp_dir() . '/speedyspec-block-builder-demo'))->register($container);
+(new FilesystemServiceProvider($storage, $mediaUrl))->register($container);
 (new PresentationServiceProvider())->register($container);
 (new ReferenceEditorServiceProvider())->register($container);
 $container->add(AssetLocatorInterface::class, fn () => new class implements AssetLocatorInterface {
@@ -103,13 +138,56 @@ $loader->load(new StructureTypesPackage());
 $loader->load(StructurePackage::from($container));
 $loader->load(new TextTypesPackage());
 $loader->load(TextPackage::from($container));
+$loader->load(MediaTypesPackage::from($container));
+$loader->load(MediaPackage::from($container));
 $container->get(DesignTokenRegistryInterface::class)->set('color.primary', '#2456d6');
 $container->get(DesignTokenRegistryInterface::class)->set('space.md', '1.5rem');
 
 $documents = $container->get(DocumentRepositoryInterface::class);
+$media = $container->get(MediaLibraryInterface::class);
+
+// The library starts with three pictures drawn here, so there is something to choose; they are flat shapes, made
+// for the demo.
+if ($media->search(new MediaQuery())->total === 0 && function_exists('imagecreatetruecolor'))
+{
+    $policy = $container->get(MediaUploadPolicyInterface::class);
+    $samples = [
+        ['Teal circle.png', [15, 123, 108], [227, 243, 240], 'circle'],
+        ['Blue squares.png', [36, 86, 214], [228, 235, 252], 'squares'],
+        ['Sun stripes.png', [214, 140, 36], [252, 241, 222], 'stripes'],
+    ];
+
+    foreach ($samples as [$name, $ink, $paper, $shape])
+    {
+        $image = imagecreatetruecolor(960, 640);
+        imagefill($image, 0, 0, (int) imagecolorallocate($image, ...$paper));
+        $colour = (int) imagecolorallocate($image, ...$ink);
+
+        match ($shape)
+        {
+            'circle' => imagefilledellipse($image, 480, 320, 380, 380, $colour),
+            'squares' => array_map(
+                static fn (int $i): bool => imagefilledrectangle($image, 140 + $i * 240, 200, 320 + $i * 240, 440, $colour),
+                [0, 1, 2],
+            ),
+            default => array_map(
+                static fn (int $i): bool => imagefilledrectangle($image, 0, 80 + $i * 140, 960, 140 + $i * 140, $colour),
+                [0, 1, 2, 3],
+            ),
+        };
+
+        ob_start();
+        imagepng($image);
+        $media->upload($policy->check($name, (string) ob_get_clean()));
+    }
+}
 
 if ($documents->find('home') === null)
 {
+    $pictures = array_reverse(array_map(
+        static fn ($item): string => $item->id,
+        $media->search(new MediaQuery(kind: MediaKind::Image, perPage: 3))->items,
+    ));
     $element = fn (string $id, string $tag, string $text) => new Block(
         $id,
         BlockName::fromString('core/element'),
@@ -154,6 +232,19 @@ if ($documents->find('home') === null)
         $text('code', 'core/code', ['code' => "echo 'Hello';", 'language' => 'php']),
         $text('table', 'core/table', ['rows' => [['Tea', 'Price'], ['Green', '3'], ['Black', '2']], 'caption' => 'Prices']),
         $text('rule', 'core/separator', []),
+        $text('video', 'core/embed', ['url' => 'https://www.youtube.com/watch?v=aqz-KE-bpKQ', 'title' => 'Big Buck Bunny']),
+        $text(
+            'features',
+            'core/icon-list',
+            ['icon' => 'check'],
+            $text('feature-one', 'core/icon-list-item', ['text' => 'Media are stored by id, so moving files breaks nothing.']),
+            $text('feature-two', 'core/icon-list-item', ['icon' => 'star', 'text' => 'Uploads are checked by what they contain.']),
+        ),
+        $text('map', 'core/map', ['latitude' => 51.5074, 'longitude' => -0.1278, 'zoom' => 13, 'title' => 'London']),
+        ...array_values(array_filter([
+            $pictures === [] ? null : $text('photo', 'core/image', ['media' => $pictures[0], 'caption' => 'Choose another image in the inspector.']),
+            $pictures === [] ? null : $text('gallery', 'core/gallery', ['media' => $pictures, 'columns' => ['base' => 1, 'tablet' => 3]]),
+        ])),
     )));
 }
 

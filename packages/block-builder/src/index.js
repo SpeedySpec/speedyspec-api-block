@@ -7,3 +7,4 @@ export { find, indentPosition, movePosition, outdentPosition, positionOf, walk }
 export * from './view.js';
 export { dropPosition, dropZone } from './drag.js';
 export { keyAction, removableWhenEmpty, safeLink, settingSchema, startsNewBlock, tidyTyped } from './inline.js';
+export { accepts, mediaQuery, movedMedia, withMedia, withoutMediaAt } from './media.js';

@@ -19,6 +19,8 @@ its directory and run `composer install && vendor/bin/pest --colors=never`.
 | `block-structure` | The standard way to draw the layout blocks. |
 | `block-text-domain` | The text blocks' definitions: heading, paragraph, lists, quote, code, table, separator, spacer. |
 | `block-text` | The standard way to draw the text blocks. |
+| `block-media-domain` | The media blocks' definitions: image, gallery, video, audio, embed, icons, map. |
+| `block-media` | The standard way to draw the media blocks, with its own icon set. |
 | `block-presentation` | The builder contracts as a framework-free JSON API, behind an access rule the host supplies. |
 | `block-infra-wp` | The WordPress adapter: posts as documents, WordPress's block types and binding sources. |
 | `block-builder` | A reference builder in plain JavaScript, written against the builder API. See its README. |
@@ -156,6 +158,46 @@ $loader->load(TextPackage::from($container));   // how they are drawn
 Formatted text keeps only strong, em, s, code, sub, sup, mark, line breaks and links to http, https, mailto, tel,
 same-site paths and anchors. It is cleaned when stored and again when drawn.
 
+## Media
+
+Files belong to the host. `MediaLibraryInterface` in `block-domain` finds an item by id, searches the library a page
+at a time and accepts an upload; an item has an id, URL, kind (image, video, audio or file), type, title, alt text,
+size where known, and the smaller sizes the host made. There are three implementations:
+
+| Package | Library |
+|---|---|
+| `block-infra-memory` | `InMemoryMediaLibrary`, for tests; it forgets everything at the end of the request. |
+| `block-infra-filesystem` | `FilesystemMediaLibrary`, files in one directory the host serves, with an index beside them. |
+| `block-infra-wp` | `WpMediaLibrary`, over WordPress attachments, through a port so it is tested without WordPress. |
+
+Uploads are checked by `MediaUploadPolicyInterface` before any library sees them. The default, in `block-app`,
+decides a file's type from its first bytes, never from its name or declared type, and accepts only JPEG, PNG, GIF,
+WebP, AVIF, MP4, WebM, MP3, Ogg, WAV and PDF, up to 20 MB. SVG and HTML are refused. Serve uploaded files with the
+type the library recorded and `X-Content-Type-Options: nosniff`.
+
+`block-media-domain` defines the Media section of the block list, and `block-media` draws it:
+
+| Block | What it is |
+|---|---|
+| `core/image` | An image from the library, with alt text that may override the library's, a caption, a link and a size. |
+| `core/gallery` | Several images in a grid of 1 to 6 columns, which may differ by breakpoint. |
+| `core/video`, `core/audio` | A file from the library, with controls, looping and playing by itself (always muted); a video may have a poster. |
+| `core/embed` | A YouTube or Vimeo video, framed sandboxed, with a plain link after it. |
+| `core/icon` | One of the outputs package's icons, decorative or with a label. |
+| `core/icon-list`, `core/icon-list-item` | A list with an icon before each item; items use the list's icon unless they set one. |
+| `core/map` | An OpenStreetMap map around coordinates, or a link to search for an address. |
+
+```php
+$loader->load(MediaTypesPackage::from($container));   // needs a MediaLibraryInterface bound
+$loader->load(MediaPackage::from($container));
+```
+
+Blocks store media ids, not URLs: the URL is looked up when the page is drawn, so moving files breaks nothing. A
+block with nothing chosen yet draws nothing for visitors and a prompt for editors. A chosen file that has gone, or
+is of the wrong kind, makes the block unavailable: visitors get nothing, editors get the placeholder and an
+`unavailable-media` issue. A behaviour reports this by throwing `UnavailableBlockException`, which any block type
+may use. A gallery leaves out images that have gone and is unavailable only when none are left.
+
 ## For builders
 
 A builder is the interface where someone drops, arranges and configures blocks. It is not part of this repository;
@@ -209,10 +251,14 @@ echo $response->json();
 | `GET /templates` | Template libraries and their templates. | edit |
 | `POST /templates` | Saves a block of a document as a template. | manage-templates and edit |
 | `DELETE /templates/{vendor}/{name}` | Removes a saved template. | manage-templates |
+| `GET /media` | One page of the media library; `search`, `kind`, `page`, `perPage` (at most 100). | edit |
+| `GET /media/{id}` | One media item. | edit |
+| `POST /media?name=` | Uploads the request body as a file; `201` with the item, or `400`, `413` or `415` with the reason. | upload-media |
 
 `BuilderAccessInterface` is the only permission check, and it is the host's to implement: the block system knows
 nothing about users. Until a host binds one, every request is refused. Signing people in, sessions and request
-forgery protection are also the host's.
+forgery protection are also the host's. The media routes answer `501` until the host binds a media library, and
+`ApiRequest` takes the request's headers as its fifth argument.
 
 ## WordPress
 
