@@ -46,18 +46,22 @@ class ResolvedDocument
      */
     public function find(string $id): ?ResolvedBlock
     {
-        $pending = $this->roots;
+        // A stack holding siblings in reverse keeps the search linear: popping never re-indexes the array.
+        $pending = array_reverse($this->roots);
 
         while ($pending !== [])
         {
-            $block = array_shift($pending);
+            $block = array_pop($pending);
 
             if ($block->block->id === $id)
             {
                 return $block;
             }
 
-            array_unshift($pending, ...$block->children());
+            foreach (array_reverse($block->children()) as $child)
+            {
+                $pending[] = $child;
+            }
         }
 
         return null;

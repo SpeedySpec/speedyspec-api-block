@@ -19,6 +19,8 @@ class BlockType
     public readonly ParentPolicy $parents;
 
     /**
+     * Declares a block type, checking the shape of its context, asset and example lists so code cannot bypass them.
+     *
      * @param array<string, mixed> $settingsSchema
      *   Schema for the block's settings.
      * @param array<string, mixed>|null $viewSchema
@@ -31,6 +33,9 @@ class BlockType
      *   Asset handles the block needs.
      * @param list<array<string, mixed>> $examples
      *   Sample settings arrays.
+     *
+     * @throws InvalidBlockTypeException
+     *   When `provides`, `uses`, `assets` or `examples` has the wrong shape.
      */
     public function __construct(
         public readonly BlockName $name,
@@ -46,6 +51,33 @@ class BlockType
         public readonly array $examples = [],
     )
     {
+        $subject = sprintf('Block type "%s"', $name->toString());
+
+        if (!self::isStringMap($provides))
+        {
+            throw new InvalidBlockTypeException(sprintf(
+                '%s needs "provides" to map non-empty context keys to non-empty view keys.',
+                $subject,
+            ));
+        }
+
+        foreach (['uses' => $uses, 'assets' => $assets] as $field => $list)
+        {
+            if (!self::isStringList($list))
+            {
+                throw new InvalidBlockTypeException(
+                    sprintf('%s needs "%s" to be a list of strings.', $subject, $field)
+                );
+            }
+        }
+
+        if (!array_is_list($examples) || array_filter($examples, 'is_array') !== $examples)
+        {
+            throw new InvalidBlockTypeException(
+                sprintf('%s needs "examples" to be a list of settings arrays.', $subject)
+            );
+        }
+
         $this->children = $children ?? ChildrenPolicy::none();
         $this->parents = $parents ?? ParentPolicy::any();
     }
@@ -57,7 +89,7 @@ class BlockType
      *   The serialised type; `name` and `title` are required.
      *
      * @throws InvalidBlockTypeException
-     *   When the name or title is missing, or the version is below one.
+     *   When a field is missing or has the wrong shape; the message names the field.
      *
      * @since 0.1.0
      */
@@ -78,7 +110,7 @@ class BlockType
         if (!is_int($version) || $version < 1)
         {
             throw new InvalidBlockTypeException(
-                sprintf('Block type "%s" needs a version of 1 or more.', $data['name'])
+                sprintf('Block type "%s" needs an integer "version" of 1 or more.', $data['name'])
             );
         }
 
@@ -105,7 +137,9 @@ class BlockType
         {
             if (isset($data[$key]) && !is_array($data[$key]))
             {
-                throw new InvalidBlockTypeException(sprintf('Block type "%s" needs an array "%s".', $data['name'], $key));
+                throw new InvalidBlockTypeException(
+                    sprintf('Block type "%s" needs an array "%s".', $data['name'], $key)
+                );
             }
         }
 
@@ -122,6 +156,37 @@ class BlockType
             $data['assets'] ?? [],
             $data['examples'] ?? [],
         );
+    }
+
+    /**
+     * Tells whether a value maps non-empty keys to non-empty strings.
+     *
+     * Integer keys are accepted because PHP turns a key such as `"1"` into an integer.
+     */
+    private static function isStringMap(array $map): bool
+    {
+        if ($map !== [] && array_is_list($map))
+        {
+            return false;
+        }
+
+        foreach ($map as $key => $value)
+        {
+            if ((string) $key === '' || !is_string($value) || $value === '')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Tells whether a value is a list holding only strings.
+     */
+    private static function isStringList(array $list): bool
+    {
+        return array_is_list($list) && array_filter($list, 'is_string') === $list;
     }
 
     /**

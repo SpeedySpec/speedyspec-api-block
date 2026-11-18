@@ -46,9 +46,55 @@ function schemaValidatorContract(Closure $make): void
                 ->and($validator->withDefaults(['label' => 'x', 'size' => 3], $schema)['size'])->toBe(3);
         });
 
-        it('rejects an unsupported keyword', function () use ($make) {
-            expect(fn () => $make()->assertSupported(['oneOf' => []]))
+        it('rejects a keyword no validator implements', function () use ($make) {
+            expect(fn () => $make()->assertSupported(['x-not-a-keyword-anyone-supports' => true]))
                 ->toThrow(UnsupportedSchemaException::class);
+        });
+
+        $private = [
+            'type' => 'object',
+            'properties' => [
+                'to' => ['type' => 'string', 'x-private' => true],
+                'token' => ['type' => 'string', 'x-private' => true],
+                'shown' => ['type' => 'string', 'x-private' => false],
+                'title' => ['type' => 'string'],
+                'style' => ['type' => 'object', 'properties' => ['color' => ['type' => 'string']]],
+            ],
+        ];
+
+        it('lists exactly the top-level properties marked private', function () use ($make, $private) {
+            expect($make()->privateProperties($private))->toEqualCanonicalizing(['to', 'token'])
+                ->and($make()->privateProperties(['type' => 'object']))->toBe([]);
+        });
+
+        it('accepts top-level x-private only when private settings are allowed', function () use ($make, $private) {
+            $validator = $make();
+            $validator->assertSupported($private, allowPrivate: true);
+
+            expect(fn () => $validator->assertSupported($private))->toThrow(UnsupportedSchemaException::class);
+        });
+
+        it('rejects x-private below the top level even when private settings are allowed', function () use ($make) {
+            $nested = ['type' => 'object', 'properties' => [
+                'style' => ['type' => 'object', 'properties' => ['color' => ['type' => 'string', 'x-private' => true]]],
+            ]];
+            $items = ['type' => 'object', 'properties' => [
+                'list' => ['type' => 'array', 'items' => ['type' => 'string', 'x-private' => true]],
+            ]];
+
+            expect(fn () => $make()->assertSupported($nested, allowPrivate: true))
+                ->toThrow(UnsupportedSchemaException::class)
+                ->and(fn () => $make()->assertSupported($items, allowPrivate: true))
+                ->toThrow(UnsupportedSchemaException::class);
+        });
+
+        it('finds top-level and nested subschemas, or null when undeclared', function () use ($make, $private) {
+            $validator = $make();
+
+            expect($validator->subschema($private, ['title']))->toBe(['type' => 'string'])
+                ->and($validator->subschema($private, ['style', 'color']))->toBe(['type' => 'string'])
+                ->and($validator->subschema($private, ['missing']))->toBeNull()
+                ->and($validator->subschema($private, ['style', 'missing']))->toBeNull();
         });
     });
 }

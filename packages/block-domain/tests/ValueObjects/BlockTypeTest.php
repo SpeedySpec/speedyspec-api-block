@@ -6,6 +6,7 @@ use SpeedySpec\Block\Domain\Exceptions\InvalidBlockTypeException;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
+use SpeedySpec\Block\Domain\ValueObjects\CatalogueMetadata;
 use SpeedySpec\Block\Domain\ValueObjects\ChildrenPolicy;
 use SpeedySpec\Block\Domain\ValueObjects\Decorator;
 use SpeedySpec\Block\Domain\ValueObjects\ParentPolicy;
@@ -94,3 +95,50 @@ test('block type array fields must have the right shape', function (array $extra
 test('Binding::fromArray needs a string source', function (array $data) {
     expect(fn () => Binding::fromArray($data))->toThrow(InvalidArgumentException::class);
 })->with([[[]], [['source' => 5]]]);
+
+test('a block type defined by data rejects a bad value in any field, naming the field', function (string $field, mixed $value) {
+    expect(fn () => BlockType::fromArray(['name' => 'acme/x', 'title' => 'T', $field => $value]))
+        ->toThrow(InvalidBlockTypeException::class, sprintf('"%s"', $field));
+})->with([
+    'provides with a list value' => ['provides', ['acme/k' => ['x']]],
+    'provides with an empty view key' => ['provides', ['acme/k' => '']],
+    'provides with an empty context key' => ['provides', ['' => 'x']],
+    'provides as a list' => ['provides', ['x']],
+    'uses with a non-string' => ['uses', [5]],
+    'uses as a map' => ['uses', ['a' => 'acme/k']],
+    'assets with a nested array' => ['assets', [['x']]],
+    'keywords with a non-string' => ['keywords', [true]],
+    'keywords as a string' => ['keywords', 'x'],
+    'examples with a string' => ['examples', ['oops']],
+    'examples as a map' => ['examples', ['a' => []]],
+    'title as an array' => ['title', ['T']],
+    'description as an array' => ['description', ['d']],
+    'category as an int' => ['category', 3],
+    'icon as an array' => ['icon', ['i']],
+    'children with a bad name' => ['children', ['Bad Name']],
+    'children with a nested array' => ['children', [['acme/y']]],
+    'children as a string' => ['children', 'acme/y'],
+    'children as a map' => ['children', ['a' => 'acme/y']],
+    'parents with a bad name' => ['parents', ['Bad Name']],
+    'parents as false' => ['parents', false],
+    'parents as a string' => ['parents', 'acme/y'],
+    'version as a string' => ['version', '2'],
+    'version as a float' => ['version', 2.0],
+]);
+
+test('a block type defined by data accepts null and boolean policies and a null icon', function () {
+    $type = BlockType::fromArray(['name' => 'acme/x', 'title' => 'T', 'children' => null, 'parents' => null, 'icon' => null]);
+    $any = BlockType::fromArray(['name' => 'acme/x', 'title' => 'T', 'children' => true, 'parents' => true]);
+    expect($type->children->toArray())->toBeFalse()->and($type->parents->toArray())->toBeTrue()
+        ->and($type->catalogue->icon)->toBeNull()->and($any->children->toArray())->toBeTrue();
+});
+
+test('a block type built in code cannot bypass the shape of its lists and maps', function (array $named) {
+    expect(fn () => new BlockType(BlockName::fromString('acme/x'), new CatalogueMetadata('T'), ...$named))
+        ->toThrow(InvalidBlockTypeException::class);
+})->with([
+    'provides' => [['provides' => ['acme/k' => ['x']]]],
+    'uses' => [['uses' => [5]]],
+    'assets' => [['assets' => [null]]],
+    'examples' => [['examples' => ['oops']]],
+]);

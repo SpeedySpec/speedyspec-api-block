@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SpeedySpec\Block\Domain\ValueObjects;
 
+use SpeedySpec\Block\Domain\Exceptions\InvalidBlockTypeException;
+
 /**
  * Describes a block type for humans, so editors can list and search it without touching its behaviour.
  *
@@ -49,16 +51,43 @@ class CatalogueMetadata
      * @param array<string, mixed> $data
      *   The serialised metadata.
      *
+     * @throws InvalidBlockTypeException
+     *   When a field has the wrong shape; the message names the field.
+     *
      * @since 0.1.0
      */
     public static function fromArray(array $data): self
     {
+        foreach (['title' => null, 'description' => '', 'category' => ''] as $field => $default)
+        {
+            $value = $data[$field] ?? $default;
+
+            if (!is_string($value))
+            {
+                throw new InvalidBlockTypeException(sprintf('Block type metadata needs a string "%s".', $field));
+            }
+        }
+
+        $keywords = $data['keywords'] ?? [];
+
+        if (!is_array($keywords) || !array_is_list($keywords) || array_filter($keywords, 'is_string') !== $keywords)
+        {
+            throw new InvalidBlockTypeException('Block type metadata needs "keywords" to be a list of strings.');
+        }
+
+        $icon = $data['icon'] ?? null;
+
+        if ($icon !== null && !is_string($icon))
+        {
+            throw new InvalidBlockTypeException('Block type metadata needs a string or null "icon".');
+        }
+
         return new self(
-            (string) $data['title'],
-            (string) ($data['description'] ?? ''),
-            (string) ($data['category'] ?? ''),
-            array_values((array) ($data['keywords'] ?? [])),
-            isset($data['icon']) ? (string) $data['icon'] : null,
+            $data['title'],
+            $data['description'] ?? '',
+            $data['category'] ?? '',
+            $keywords,
+            $icon,
         );
     }
 }
