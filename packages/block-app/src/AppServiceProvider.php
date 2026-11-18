@@ -31,6 +31,7 @@ use SpeedySpec\Block\App\Resolving\ValidateStage;
 use SpeedySpec\Block\App\Resolving\ViewStage;
 use SpeedySpec\Block\App\Schema\SubsetSchemaValidator;
 use SpeedySpec\Block\App\Serialization\ClientExport;
+use SpeedySpec\Block\App\Serialization\JsonBlockTemplateSerializer;
 use SpeedySpec\Block\App\Serialization\JsonDocumentSerializer;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
@@ -41,6 +42,7 @@ use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockTemplateSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
@@ -97,6 +99,12 @@ class AppServiceProvider
             fn (BlockServiceContainer $c) => new BlockDuplicator($c->get(BlockIdGeneratorInterface::class)),
         );
         $container->add(DocumentSerializerInterface::class, fn () => new JsonDocumentSerializer());
+        $container->add(
+            BlockTemplateSerializerInterface::class,
+            fn (BlockServiceContainer $c) => new JsonBlockTemplateSerializer(
+                $c->get(DocumentSerializerInterface::class),
+            ),
+        );
         $container->add(ClientExportInterface::class, fn (BlockServiceContainer $c) => new ClientExport(
             $c->get(BlockTypeRegistryInterface::class),
             $c->get(SchemaValidatorInterface::class),

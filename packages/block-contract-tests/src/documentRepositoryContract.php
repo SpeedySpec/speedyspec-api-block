@@ -34,7 +34,6 @@ function documentRepositoryContract(Closure $make): void
             $id,
             $kind,
             new BlockTree(...$roots),
-            2,
         );
 
         it('returns null for an unknown id', function () use ($make) {
@@ -54,7 +53,7 @@ function documentRepositoryContract(Closure $make): void
             expect($found)->not->toBeNull()
                 ->and($found->id)->toBe('a')
                 ->and($found->kind)->toBe('page')
-                ->and($found->formatVersion)->toBe(2)
+                ->and($found->formatVersion)->toBe(1)
                 ->and($found->tree->ids())->toBe(['r1', 'c1', 'r2']);
         });
 

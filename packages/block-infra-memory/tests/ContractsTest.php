@@ -35,3 +35,17 @@ test('the memory provider binds the template repository', function () {
     expect($container->get(\SpeedySpec\Block\Domain\Contracts\BlockTemplateRepositoryInterface::class))
         ->toBeInstanceOf(\SpeedySpec\Block\Infra\Memory\InMemoryBlockTemplateRepository::class);
 });
+
+describe('InMemoryRecordStore', function () {
+    \SpeedySpec\Block\ContractTests\recordStoreContract(
+        fn () => new \SpeedySpec\Block\Infra\Memory\InMemoryRecordStore()
+    );
+});
+
+test('the memory provider binds the record store', function () {
+    $container = new \SpeedySpec\Block\Domain\BlockServiceContainer();
+    (new \SpeedySpec\Block\Infra\Memory\MemoryServiceProvider())->register($container);
+
+    expect($container->get(\SpeedySpec\Block\Domain\Contracts\RecordStoreInterface::class))
+        ->toBeInstanceOf(\SpeedySpec\Block\Infra\Memory\InMemoryRecordStore::class);
+});
