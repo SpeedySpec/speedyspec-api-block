@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use SpeedySpec\Block\App\AppServiceProvider;
 use SpeedySpec\Block\App\Registries\BlockTypeRegistry;
 use SpeedySpec\Block\App\Registries\DataSourceRegistry;
 use SpeedySpec\Block\App\Registries\DecoratorRegistry;
@@ -12,14 +13,25 @@ use SpeedySpec\Block\App\Resolving\PrepareStage;
 use SpeedySpec\Block\App\Resolving\ResolveStage;
 use SpeedySpec\Block\App\Resolving\ValidateStage;
 use SpeedySpec\Block\App\Schema\SubsetSchemaValidator;
+use SpeedySpec\Block\Domain\BlockServiceContainer;
+use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DataSourceInterface;
+use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\GateStepInterface;
 use SpeedySpec\Block\Domain\Contracts\SettingsMigrationInterface;
+use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
+use SpeedySpec\Block\Domain\Entities\BlockTree;
+use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\Context;
+use SpeedySpec\Block\Domain\ValueObjects\DataSourceResult;
 use SpeedySpec\Block\Domain\ValueObjects\Issue;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
+use SpeedySpec\Block\Infra\Memory\MemoryServiceProvider;
 
 if (!function_exists('type'))
 {
@@ -122,6 +134,122 @@ if (!function_exists('gateStep'))
             public function shown(Block $block, BlockType $type, Context $context, Mode $mode): bool
             {
                 return $this->shown;
+            }
+        };
+    }
+}
+
+if (!function_exists('resolver'))
+{
+    /**
+     * Builds a document resolver from a fresh container with the memory and application providers registered.
+     *
+     * $setup receives the container before the resolver is resolved, so fixtures and replacements can be bound.
+     *
+     * @return array{0: DocumentResolverInterface, 1: BlockServiceContainer}
+     */
+    function resolver(?callable $setup = null): array
+    {
+        $container = new BlockServiceContainer();
+        (new MemoryServiceProvider())->register($container);
+        (new AppServiceProvider())->register($container);
+
+        if ($setup !== null)
+        {
+            $setup($container);
+        }
+
+        return [$container->get(DocumentResolverInterface::class), $container];
+    }
+}
+
+if (!function_exists('doc'))
+{
+    /**
+     * Builds a page document holding the given root blocks.
+     */
+    function doc(Block ...$roots): Document
+    {
+        return new Document('d', 'page', new BlockTree(...array_values($roots)));
+    }
+}
+
+if (!function_exists('types'))
+{
+    /**
+     * Gets the block type registry bound in the container.
+     */
+    function types(BlockServiceContainer $container): BlockTypeRegistryInterface
+    {
+        return $container->get(BlockTypeRegistryInterface::class);
+    }
+}
+
+if (!function_exists('sources'))
+{
+    /**
+     * Gets the data source registry bound in the container.
+     */
+    function sources(BlockServiceContainer $container): DataSourceRegistryInterface
+    {
+        return $container->get(DataSourceRegistryInterface::class);
+    }
+}
+
+if (!function_exists('behaviours'))
+{
+    /**
+     * Gets the block behaviour registry bound in the container.
+     */
+    function behaviours(BlockServiceContainer $container): BlockBehaviourRegistryInterface
+    {
+        return $container->get(BlockBehaviourRegistryInterface::class);
+    }
+}
+
+if (!function_exists('steps'))
+{
+    /**
+     * Gets the step registry bound in the container.
+     */
+    function steps(BlockServiceContainer $container): StepRegistryInterface
+    {
+        return $container->get(StepRegistryInterface::class);
+    }
+}
+
+if (!function_exists('countingSource'))
+{
+    /**
+     * Builds a data source that counts how often it is asked for a value and always answers "x".
+     */
+    function countingSource(string $name, int &$calls): DataSourceInterface
+    {
+        return new class($name, $calls) implements DataSourceInterface {
+            public function __construct(private readonly string $name, private int &$calls)
+            {
+            }
+
+            public function name(): string
+            {
+                return $this->name;
+            }
+
+            public function argumentsSchema(): array
+            {
+                return ['type' => 'object'];
+            }
+
+            public function valueSchema(): array
+            {
+                return [];
+            }
+
+            public function resolve(array $arguments, Context $context, Mode $mode): DataSourceResult
+            {
+                $this->calls++;
+
+                return DataSourceResult::value('x');
             }
         };
     }
