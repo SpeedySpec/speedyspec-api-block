@@ -37,6 +37,25 @@ $container = new BlockServiceContainer();
 - A host can still replace a repository outright by binding `DocumentRepositoryInterface` or
   `BlockTemplateRepositoryInterface` itself.
 
+## Showing by rule and repeating
+
+`FlowPackage` (in `block-app`) is an ordinary block package a host loads when it wants these:
+
+```php
+$container->get(BlockPackageLoaderInterface::class)->load(FlowPackage::from($container));
+```
+
+- **Visibility rules on any block.** The `core/visibility` decorator stores groups of rules; a block is shown when
+  every rule of any one group holds. A rule names a condition from `ConditionRegistryInterface` and passes it
+  arguments. There are no expressions. A rule that cannot be judged hides the block from visitors, and an editor
+  sees the reason as an issue.
+- **A repeating block.** `core/repeat` draws its children once per item of a collection from
+  `CollectionSourceRegistryInterface`, up to a limit. Inside it, the `core/current-item` data source binds a setting
+  to a field of the item, and the `core/current-item-is` condition shows a block only for matching items.
+
+A host adds its own conditions (signed in, a role, a date range) and collections (posts, products, rows) by
+implementing `ConditionInterface` and `CollectionSourceInterface` and adding them to the registries.
+
 ## For builders
 
 A builder is the interface where someone drops, arranges and configures blocks. It is not part of this repository;

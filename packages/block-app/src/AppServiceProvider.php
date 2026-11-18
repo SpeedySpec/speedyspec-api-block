@@ -19,6 +19,8 @@ use SpeedySpec\Block\App\Output\OutputEscaperRegistry;
 use SpeedySpec\Block\App\Packages\BlockPackageLoader;
 use SpeedySpec\Block\App\Registries\BlockBehaviourRegistry;
 use SpeedySpec\Block\App\Registries\BlockTypeRegistry;
+use SpeedySpec\Block\App\Registries\CollectionSourceRegistry;
+use SpeedySpec\Block\App\Registries\ConditionRegistry;
 use SpeedySpec\Block\App\Registries\DataSourceRegistry;
 use SpeedySpec\Block\App\Registries\DecoratorRegistry;
 use SpeedySpec\Block\App\Registries\SettingsMigrationRegistry;
@@ -45,6 +47,8 @@ use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
+use SpeedySpec\Block\Domain\Contracts\CollectionSourceRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\ConditionRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
@@ -183,6 +187,13 @@ class AppServiceProvider
             $c->get(BlockTemplateRegistryInterface::class),
         ));
         $container->add(BlockTemplateRegistryInterface::class, fn () => new BlockTemplateRegistry());
+        $container->add(ConditionRegistryInterface::class, fn (BlockServiceContainer $c) => new ConditionRegistry(
+            $c->get(SchemaValidatorInterface::class),
+        ));
+        $container->add(
+            CollectionSourceRegistryInterface::class,
+            fn (BlockServiceContainer $c) => new CollectionSourceRegistry($c->get(SchemaValidatorInterface::class)),
+        );
         $container->add(DocumentEditorInterface::class, fn (BlockServiceContainer $c) => new DocumentEditor(
             $c->get(BlockTypeRegistryInterface::class),
             $c->get(PlacementRulesInterface::class),
