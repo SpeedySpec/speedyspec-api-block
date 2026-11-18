@@ -1,54 +1,40 @@
 import { createClient } from './api.js';
 import { FieldError, fields, parseField, withValue } from './forms.js';
 import { createBuilder } from './store.js';
+import { CANVAS_STYLE, STYLE } from './styles.js';
 import { find, positionOf, walk } from './tree.js';
+import {
+    breadcrumb,
+    devices,
+    fieldRefusal,
+    groupCatalogue,
+    insertTargets,
+    readResponsive,
+    styleSections,
+    withGroup,
+    withRule,
+    withRuleChange,
+    withoutRule,
+    writeResponsive,
+} from './view.js';
 
-const STYLE = `
-block-builder { display: grid; grid-template: auto 1fr / 17rem 1fr 20rem; height: 100%; min-height: 32rem;
-    font: 14px/1.4 system-ui, sans-serif; color: #1c1e21; background: #f4f5f7; }
-block-builder * { box-sizing: border-box; }
-block-builder .bb-notice { grid-row: 1; grid-column: 1 / -1; margin: 0; padding: .5rem .9rem; background: #fdecea;
-    color: #8a1c13; border-bottom: 1px solid #f5c2bc; }
-block-builder .bb-notice ul { margin: 0; padding-left: 1.1rem; }
-block-builder .bb-pane { grid-row: 2; overflow: auto; padding: .75rem; background: #fff; }
-block-builder .bb-inspector .bb-notice { margin: .5rem 0; border: 1px solid #f5c2bc; border-radius: 4px; }
-block-builder .bb-structure { border-right: 1px solid #dfe1e6; }
-block-builder .bb-inspector { border-left: 1px solid #dfe1e6; }
-block-builder .bb-preview { padding: 0; background: #f4f5f7; }
-block-builder .bb-preview iframe { width: 100%; height: 100%; border: 0; background: #fff; }
-block-builder h2 { margin: 0 0 .5rem; font-size: .75rem; letter-spacing: .06em; text-transform: uppercase;
-    color: #5e6c84; }
-block-builder h3 { margin: 1rem 0 .4rem; font-size: .85rem; }
-block-builder .bb-row { display: flex; align-items: center; gap: .35rem; width: 100%; padding: .3rem .4rem;
-    border: 1px solid transparent; border-radius: 4px; background: none; font: inherit; text-align: left;
-    cursor: pointer; }
-block-builder .bb-row:hover { background: #f4f5f7; }
-block-builder .bb-row[aria-current="true"] { background: #e6efff; border-color: #4c7dff; }
-block-builder .bb-row > span { flex: none; }
-block-builder .bb-row small { flex: 1; min-width: 0; overflow: hidden; color: #5e6c84; text-overflow: ellipsis;
-    white-space: nowrap; }
-block-builder .bb-badge { margin-left: auto; padding: 0 .4rem; border-radius: 999px; background: #c9372c; color: #fff;
-    font-size: .7rem; }
-block-builder .bb-tools { display: flex; flex-wrap: wrap; gap: .3rem; margin: .6rem 0; }
-block-builder button.bb-tool, block-builder .bb-add button { padding: .3rem .55rem; border: 1px solid #c1c7d0;
-    border-radius: 4px; background: #fff; font: inherit; cursor: pointer; }
-block-builder button.bb-tool:hover, block-builder .bb-add button:hover { background: #f4f5f7; }
-block-builder button:disabled { opacity: .45; cursor: default; }
-block-builder button.bb-danger { color: #a3271e; border-color: #e6aaa4; }
-block-builder .bb-add { display: grid; gap: .3rem; margin-top: .4rem; }
-block-builder .bb-add button { text-align: left; }
-block-builder label.bb-field { display: block; margin: .55rem 0; }
-block-builder label.bb-field > span { display: block; margin-bottom: .2rem; font-weight: 600; }
-block-builder label.bb-field em { display: block; color: #5e6c84; font-style: normal; font-size: .8rem; }
-block-builder label.bb-field .bb-error { color: #a3271e; }
-block-builder input[type="text"], block-builder input[type="number"], block-builder select, block-builder textarea {
-    width: 100%; padding: .35rem .45rem; border: 1px solid #c1c7d0; border-radius: 4px; font: inherit; }
-block-builder textarea { min-height: 3.2rem; font-family: ui-monospace, monospace; font-size: .8rem; }
-block-builder .bb-empty { color: #5e6c84; }
-`;
+const STYLE_NS = 'core/style';
+const RULES_NS = 'core/visibility';
+const NAMED = 'data-block-id';
+
+// Drawn with strokes on a 16-unit grid; the markup is fixed text written here, never anything from a document.
+const ICONS = {
+    add: '<path d="M8 3v10M3 8h10"/>',
+    outline: '<path d="M3 4h10M6 8h7M6 12h7"/>',
+    up: '<path d="M8 13V3M4 7l4-4 4 4"/>',
+    down: '<path d="M8 3v10M4 9l4 4 4-4"/>',
+    parent: '<path d="M12 13V8a3 3 0 0 0-3-3H4M7 2 4 5l3 3"/>',
+    copy: '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M3 10.5V4a1.5 1.5 0 0 1 1.5-1.5H10"/>',
+    remove: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/>',
+};
 
 /**
- * Creates an element with text and attributes, never markup, so nothing from a document is run as HTML.
+ * Creates an element from text and attributes, never markup, so nothing in a document is run as HTML.
  */
 function el(tag, { text, ...attributes } = {}, ...children) {
     const node = document.createElement(tag);
@@ -67,17 +53,28 @@ function el(tag, { text, ...attributes } = {}, ...children) {
         }
     }
 
-    node.append(...children.filter((child) => child !== null));
+    node.append(...children.flat(Infinity).filter((child) => child !== null && child !== undefined));
 
     return node;
 }
 
+function icon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = ICONS[name];
+
+    return svg;
+}
+
+const words = (name) => name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (letter) => letter.toUpperCase());
+
 /**
- * A reference builder: the structure of a document, an inspector for the selected block, and a live preview.
+ * A reference builder, laid out the way block editors people already know are: the page in the middle, edited by
+ * clicking what you see; blocks added from a searchable panel; settings in tabs on the right.
  *
- * It is one way to build on the builder API, not the only one. It has no knowledge of any block type: what can
- * be added comes from the catalogue, the settings form from each type's schema, and what is valid from the
- * server, which refuses anything else and says why.
+ * It knows no block type. What can be added comes from the catalogue, the settings from each type's schema, and
+ * what is valid from the server, which refuses anything else and says why.
  *
  * Attributes: `api`, the address the API is mounted at, and `document`, the id of the document to edit.
  */
@@ -87,61 +84,259 @@ export class BlockBuilderElement extends HTMLElement {
             document.head.append(el('style', { id: 'block-builder-style', text: STYLE }));
         }
 
-        this.adding = null;
-        this.fieldErrors = {};
+        this.ui = {
+            drawer: 'outline',
+            query: '',
+            target: 0,
+            allowed: null,
+            allowedFor: '',
+            device: 'full',
+            tab: 'block',
+            width: '',
+            errors: {},
+            rules: null,
+        };
         this.builder = createBuilder({
             client: this.client ?? createClient({ baseUrl: this.getAttribute('api') ?? '/api' }),
             documentId: this.getAttribute('document') ?? '',
         });
+
+        this.frame = el('iframe', { sandbox: 'allow-same-origin', title: 'The page being edited' });
+        this.frame.addEventListener('load', () => this.wireCanvas());
+        this.bar = el('div', { class: 'bb-bar', hidden: true });
+        this.page = el('div', { class: 'bb-page' }, this.frame, this.bar);
+        this.toast = el('div', { class: 'bb-toast', role: 'alert', hidden: true });
+        this.blank = el('div', { class: 'bb-blank', hidden: true });
+        this.regions = {
+            top: el('header', { class: 'bb-top' }),
+            drawer: el('aside', { class: 'bb-drawer' }),
+            stage: el('main', { class: 'bb-stage' }, this.page, this.blank, this.toast),
+            side: el('aside', { class: 'bb-side' }),
+            trail: el('nav', { class: 'bb-trail', 'aria-label': 'Where the selected block sits' }),
+        };
+        this.replaceChildren(...Object.values(this.regions));
+
         this.stop = this.builder.subscribe(() => this.render());
+        this.resize = () => this.placeBar();
+        window.addEventListener('resize', this.resize);
         this.builder.load();
     }
 
     disconnectedCallback() {
         this.stop?.();
+        window.removeEventListener('resize', this.resize);
     }
 
+    /**
+     * Redraws the panels around the page. The page's frame is kept, and so are focus and scroll positions, so
+     * changing one setting does not throw the person out of the field they were in.
+     */
     render() {
         const state = this.builder.state();
+        const focused = this.contains(document.activeElement) ? document.activeElement.dataset.key : undefined;
+        const scroll = [...this.querySelectorAll('.bb-drawer, .bb-side-body')].map((node) => [node.className, node.scrollTop]);
 
-        // The preview is kept between renders so the page does not flash on every keystroke elsewhere.
-        const preview = this.querySelector('.bb-preview') ?? el('section', { class: 'bb-pane bb-preview' });
-        this.updatePreview(preview, state.preview);
+        this.regions.top.replaceChildren(...this.top(state));
+        this.regions.drawer.hidden = this.ui.drawer === null || state.document === null;
+        this.regions.drawer.replaceChildren(...(this.ui.drawer === 'add' ? this.adder(state) : this.outline(state)));
+        this.regions.side.replaceChildren(...this.inspector(state));
+        this.regions.trail.replaceChildren(...this.trail(state));
+        this.canvas(state);
+        this.notices(state);
 
-        this.replaceChildren(
-            this.notice(state),
-            el('section', { class: 'bb-pane bb-structure' }, ...this.structure(state)),
-            preview,
-            el('section', { class: 'bb-pane bb-inspector' }, ...this.inspector(state)),
-        );
-    }
+        scroll.forEach(([name, top]) => {
+            const node = this.querySelector(`.${name.split(' ').join('.')}`);
 
-    notice(state) {
-        if (state.status === 'failed' || state.error !== null) {
-            return el('p', { class: 'bb-notice', role: 'alert', text: state.error });
-        }
-
-        if (state.refusals.length === 0) {
-            return el('span', { hidden: true });
-        }
-
-        return el(
-            'div',
-            { class: 'bb-notice', role: 'alert' },
-            el('ul', {}, ...state.refusals.map((refusal) => el('li', { text: refusal.message }))),
-        );
-    }
-
-    structure(state) {
-        if (state.document === null) {
-            return [el('p', { class: 'bb-empty', text: state.status === 'failed' ? '' : 'Loading…' })];
-        }
-
-        const titles = Object.fromEntries(state.catalogue.map((entry) => [entry.name, entry.title]));
-        const counts = {};
-        state.issues.forEach((issue) => {
-            counts[issue.block] = (counts[issue.block] ?? 0) + 1;
+            if (node !== null) {
+                node.scrollTop = top;
+            }
         });
+
+        if (focused !== undefined) {
+            this.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus();
+        }
+    }
+
+    // ---- Top bar -------------------------------------------------------------------------------------------
+
+    top(state) {
+        const toggle = (name, label, glyph) =>
+            el(
+                'button',
+                {
+                    class: 'bb-topbtn',
+                    type: 'button',
+                    'aria-pressed': String(this.ui.drawer === name),
+                    onclick: () => this.openDrawer(this.ui.drawer === name ? null : name),
+                },
+                icon(glyph),
+                el('span', { text: label }),
+            );
+        const sizes = devices(state.vocabulary).map((device) =>
+            el('button', {
+                type: 'button',
+                text: device.label,
+                'aria-pressed': String(this.ui.device === device.name),
+                onclick: () => {
+                    this.ui.device = device.name;
+                    this.render();
+                },
+            }),
+        );
+        const problems = state.issues.length;
+        const status = state.status === 'failed'
+            ? ['bad', state.error ?? 'The page could not be opened.']
+            : state.error !== null
+              ? ['bad', state.error]
+              : state.status !== 'ready'
+                ? ['', 'Opening…']
+                : state.saving
+                  ? ['', 'Saving…']
+                  : ['', 'All changes saved'];
+
+        return [
+            el(
+                'div',
+                { class: 'bb-top-left' },
+                el('span', { class: 'bb-name', text: state.document?.id ?? this.getAttribute('document') ?? '' }),
+                toggle('add', 'Add block', 'add'),
+                toggle('outline', 'Outline', 'outline'),
+            ),
+            el('div', { class: 'bb-seg', role: 'group', 'aria-label': 'Preview width' }, sizes),
+            el(
+                'div',
+                { class: 'bb-top-right' },
+                problems === 0
+                    ? null
+                    : el('button', {
+                          class: 'bb-problems',
+                          type: 'button',
+                          text: problems === 1 ? '1 problem' : `${problems} problems`,
+                          onclick: () => {
+                              this.openDrawer('outline');
+                              this.select(state.issues[0].block);
+                          },
+                      }),
+                el('span', { class: 'bb-status', 'data-kind': status[0], role: 'status', text: status[1] }),
+            ),
+        ];
+    }
+
+    openDrawer(name) {
+        this.ui.drawer = name;
+        this.ui.target = 0;
+        this.render();
+    }
+
+    // ---- Drawer: add a block -------------------------------------------------------------------------------
+
+    adder(state) {
+        const targets = insertTargets(state.document, state.selected, state.catalogue);
+        const target = targets[Math.min(this.ui.target, targets.length - 1)];
+        this.askAllowed(target.position);
+        const allowed = this.ui.allowed;
+        const groups = groupCatalogue(state.catalogue, this.ui.query);
+
+        return [
+            el(
+                'div',
+                { class: 'bb-drawer-head' },
+                el('h2', { text: 'Add a block' }),
+                targets.length === 1
+                    ? el('p', { class: 'bb-where-only', text: target.label })
+                    : el(
+                          'div',
+                          { class: 'bb-where', role: 'group', 'aria-label': 'Where to add it' },
+                          targets.map((option, index) =>
+                              el('button', {
+                                  type: 'button',
+                                  text: option.label,
+                                  'aria-pressed': String(option === target),
+                                  onclick: () => {
+                                      this.ui.target = index;
+                                      this.render();
+                                  },
+                              }),
+                          ),
+                      ),
+                el('input', {
+                    class: 'bb-input',
+                    type: 'search',
+                    placeholder: 'Search blocks',
+                    'aria-label': 'Search blocks',
+                    'data-key': 'search',
+                    value: this.ui.query,
+                    oninput: (event) => {
+                        this.ui.query = event.target.value;
+                        this.render();
+                    },
+                }),
+            ),
+            el(
+                'div',
+                { class: 'bb-drawer-body' },
+                groups.length === 0 ? el('p', { class: 'bb-none', text: 'No block matches that search.' }) : null,
+                groups.flatMap((group) => [
+                    el('h3', { text: group.category }),
+                    el(
+                        'div',
+                        { class: 'bb-tiles' },
+                        group.entries.map((entry) => {
+                            const fits = allowed === null || allowed.has(entry.name);
+
+                            return el(
+                                'button',
+                                {
+                                    class: 'bb-tile',
+                                    type: 'button',
+                                    disabled: !fits,
+                                    title: fits ? entry.description : `${entry.title} cannot go there.`,
+                                    onclick: () => this.builder.insert(entry.name, target.position),
+                                },
+                                el('strong', { text: entry.title }),
+                                el('span', { text: entry.description }),
+                            );
+                        }),
+                    ),
+                ]),
+            ),
+        ];
+    }
+
+    /**
+     * Asks the server which blocks may go at a place, once per place and per version of the document.
+     */
+    askAllowed(position) {
+        const state = this.builder.state();
+        const key = JSON.stringify([position, walk(state.document).map((entry) => entry.block.id)]);
+
+        if (this.ui.allowedFor === key) {
+            return;
+        }
+
+        this.ui.allowedFor = key;
+        this.ui.allowed = null;
+        this.builder
+            .placeable(position)
+            .then((entries) => new Set(entries.map((entry) => entry.name)))
+            .catch(() => new Set())
+            .then((names) => {
+                if (this.ui.allowedFor === key) {
+                    this.ui.allowed = names;
+                    this.render();
+                }
+            });
+    }
+
+    // ---- Drawer: outline -----------------------------------------------------------------------------------
+
+    outline(state) {
+        if (state.document === null) {
+            return [];
+        }
+
+        const titles = this.titles(state);
+        const troubled = new Set(state.issues.map((issue) => issue.block));
         const rows = walk(state.document).map(({ block, depth }) =>
             el(
                 'button',
@@ -149,264 +344,643 @@ export class BlockBuilderElement extends HTMLElement {
                     class: 'bb-row',
                     type: 'button',
                     style: `padding-left: ${0.4 + depth * 1.1}rem`,
-                    'aria-current': state.selected === block.id ? 'true' : 'false',
-                    onclick: () => this.select(block.id),
+                    'aria-current': String(state.selected === block.id),
+                    onclick: () => this.select(block.id, true),
                 },
-                el('span', { text: titles[block.type] ?? block.type }),
+                el('b', { text: titles[block.type] ?? block.type }),
                 el('small', { text: this.hint(block) }),
-                counts[block.id] ? el('span', { class: 'bb-badge', text: String(counts[block.id]) }) : null,
+                troubled.has(block.id) ? el('span', { class: 'bb-dot', title: 'This block has a problem' }) : null,
             ),
         );
-        const selected = state.selected === null ? null : find(state.document, state.selected);
-        const here = selected === null ? null : positionOf(state.document, selected.id);
-        const tool = (text, run, extra = {}) =>
-            el('button', {
-                class: 'bb-tool',
-                type: 'button',
-                text,
-                disabled: selected === null,
-                onclick: run,
-                ...extra,
-            });
 
         return [
-            el('h2', { text: 'Structure' }),
-            ...(rows.length === 0 ? [el('p', { class: 'bb-empty', text: 'This document has no blocks yet.' })] : rows),
+            el('div', { class: 'bb-drawer-head' }, el('h2', { text: 'Outline' })),
             el(
                 'div',
-                { class: 'bb-tools' },
-                tool('Up', () => this.builder.moveBy(selected.id, -1)),
-                tool('Down', () => this.builder.moveBy(selected.id, 1)),
-                tool('Indent', () => this.builder.indent(selected.id)),
-                tool('Outdent', () => this.builder.outdent(selected.id)),
-                tool('Duplicate', () => this.builder.duplicate(selected.id)),
-                tool('Remove', () => this.builder.remove(selected.id), { class: 'bb-tool bb-danger' }),
+                { class: 'bb-drawer-body' },
+                rows.length === 0 ? el('p', { class: 'bb-none', text: 'Nothing on this page yet.' }) : rows,
             ),
-            el('h2', { text: 'Add a block' }),
-            el(
-                'div',
-                { class: 'bb-tools' },
-                selected === null
-                    ? null
-                    : el('button', {
-                          class: 'bb-tool',
-                          type: 'button',
-                          text: 'Inside',
-                          onclick: () => this.offer({ parent: selected.id, index: (selected.children ?? []).length }),
-                      }),
-                selected === null
-                    ? null
-                    : el('button', {
-                          class: 'bb-tool',
-                          type: 'button',
-                          text: 'After',
-                          onclick: () => this.offer({ parent: here.parent, index: here.index + 1 }),
-                      }),
-                el('button', {
-                    class: 'bb-tool',
-                    type: 'button',
-                    text: 'At the end',
-                    onclick: () => this.offer({ parent: null, index: state.document.blocks.length }),
-                }),
-            ),
-            this.offered(),
         ];
     }
 
+    titles(state) {
+        return Object.fromEntries(state.catalogue.map((entry) => [entry.name, entry.title]));
+    }
+
     /**
-     * Picks a few words to tell blocks of one type apart in the structure: their text, title or label if they
-     * have one, otherwise their first piece of text.
+     * Picks a few words to tell blocks of one type apart: their text, title or label, else their first text.
      */
     hint(block) {
         const settings = block.settings ?? {};
         const text = [settings.text, settings.title, settings.label, ...Object.values(settings)]
             .find((value) => typeof value === 'string' && value.trim() !== '');
 
-        return text === undefined ? '' : text.slice(0, 40);
+        return text === undefined ? '' : text.slice(0, 48);
+    }
+
+    // ---- Canvas --------------------------------------------------------------------------------------------
+
+    canvas(state) {
+        const device = devices(state.vocabulary).find((entry) => entry.name === this.ui.device);
+        this.page.style.width = device?.width ? `${device.width}px` : '';
+        this.page.style.maxWidth = device?.width ? 'none' : '';
+
+        const empty = state.document !== null && state.document.blocks.length === 0;
+        this.page.hidden = state.document === null || empty;
+        this.blank.hidden = !empty;
+
+        if (empty) {
+            this.blank.replaceChildren(
+                el('p', { text: 'This page is empty.' }),
+                el('button', {
+                    class: 'bb-primary',
+                    type: 'button',
+                    text: 'Add the first block',
+                    onclick: () => this.openDrawer('add'),
+                }),
+            );
+        }
+
+        const source = `<!doctype html><meta charset="utf-8"><style>${CANVAS_STYLE}</style>`
+            + `<style>${state.preview.css.replaceAll('</', '<\\/')}</style>${state.preview.output}`;
+
+        if (this.frame.srcdoc !== source) {
+            this.frame.srcdoc = source;
+        } else {
+            this.markPicked();
+        }
     }
 
     /**
-     * Shows the block types the server allows at the position being added to.
+     * Makes the freshly drawn page respond to the pointer. The frame may run no script of its own, so the page's
+     * content can do nothing; the builder listens from outside.
      */
-    offered() {
-        if (this.adding === null) {
-            return null;
+    wireCanvas() {
+        const page = this.frame.contentDocument;
+
+        if (page === null) {
+            return;
         }
 
-        if (this.adding.entries.length === 0) {
-            return el('p', { class: 'bb-empty', text: 'Nothing can be added there.' });
+        const named = (event) => event.target.closest?.(`[${NAMED}]`) ?? null;
+
+        page.addEventListener('click', (event) => {
+            event.preventDefault();
+            const block = named(event);
+
+            if (block !== null) {
+                this.select(block.getAttribute(NAMED));
+            }
+        });
+        page.addEventListener('mouseover', (event) => {
+            page.querySelectorAll('[data-bb-over]').forEach((node) => node.removeAttribute('data-bb-over'));
+            named(event)?.setAttribute('data-bb-over', '');
+        });
+        page.addEventListener('mouseleave', () => {
+            page.querySelectorAll('[data-bb-over]').forEach((node) => node.removeAttribute('data-bb-over'));
+        });
+
+        this.frame.style.height = `${Math.max(page.documentElement.scrollHeight, 288)}px`;
+        this.markPicked();
+    }
+
+    /**
+     * Shows which block is selected on the page, and puts its toolbar on it.
+     */
+    markPicked() {
+        const page = this.frame.contentDocument;
+        const selected = this.builder.state().selected;
+
+        if (page === null) {
+            return;
         }
 
-        return el(
-            'div',
-            { class: 'bb-add' },
-            ...this.adding.entries.map((entry) =>
-                el('button', {
-                    type: 'button',
-                    text: entry.title,
-                    title: entry.description,
-                    onclick: () => {
-                        const { position } = this.adding;
-                        this.adding = null;
-                        this.builder.insert(entry.name, position);
-                    },
-                }),
-            ),
+        page.querySelectorAll('[data-bb-picked]').forEach((node) => node.removeAttribute('data-bb-picked'));
+
+        if (selected !== null) {
+            page.querySelector(`[${NAMED}="${CSS.escape(selected)}"]`)?.setAttribute('data-bb-picked', '');
+        }
+
+        this.placeBar();
+    }
+
+    placeBar() {
+        const state = this.builder.state();
+        const block = state.selected === null || state.document === null ? null : find(state.document, state.selected);
+
+        if (block === null) {
+            this.bar.hidden = true;
+
+            return;
+        }
+
+        const here = positionOf(state.document, block.id);
+        const beside = here.parent === null ? state.document.blocks : find(state.document, here.parent).children;
+        const tool = (label, glyph, run, disabled = false) =>
+            el('button', { type: 'button', title: label, 'aria-label': label, disabled, onclick: run }, icon(glyph));
+
+        this.bar.replaceChildren(
+            el('strong', { text: this.titles(state)[block.type] ?? block.type }),
+            tool('Select the block this is inside', 'parent', () => this.select(here.parent), here.parent === null),
+            tool('Move up', 'up', () => this.builder.moveBy(block.id, -1), here.index === 0),
+            tool('Move down', 'down', () => this.builder.moveBy(block.id, 1), here.index === beside.length - 1),
+            tool('Duplicate', 'copy', () => this.builder.duplicate(block.id)),
+            tool('Add a block', 'add', () => this.openDrawer('add')),
+            tool('Remove', 'remove', () => this.builder.remove(block.id)),
+        );
+        this.bar.hidden = false;
+
+        const node = this.frame.contentDocument?.querySelector(`[${NAMED}="${CSS.escape(block.id)}"]`);
+        const box = node?.getBoundingClientRect();
+        const top = box === undefined ? 4 : Math.max(4, box.top - 38);
+        const left = box === undefined ? 4 : Math.max(4, Math.min(box.left, this.page.clientWidth - this.bar.offsetWidth - 4));
+
+        this.bar.style.top = `${top}px`;
+        this.bar.style.left = `${left}px`;
+    }
+
+    select(id, reveal = false) {
+        this.ui.errors = {};
+        this.ui.target = 0;
+        this.ui.rules = null;
+        this.builder.select(id);
+
+        if (reveal && id !== null) {
+            this.frame.contentDocument
+                ?.querySelector(`[${NAMED}="${CSS.escape(id)}"]`)
+                ?.scrollIntoView({ block: 'nearest' });
+        }
+    }
+
+    /**
+     * Shows what the server refused that no field on screen can show, and anything else that went wrong.
+     */
+    notices(state) {
+        const loose = state.refusals.filter((refusal) => refusal.path === null || refusal.block !== state.selected);
+
+        if (loose.length === 0) {
+            this.toast.hidden = true;
+
+            return;
+        }
+
+        this.toast.hidden = false;
+        this.toast.replaceChildren(
+            loose.length === 1
+                ? el('p', { text: loose[0].message })
+                : el('ul', {}, loose.map((refusal) => el('li', { text: refusal.message }))),
         );
     }
 
-    async offer(position) {
-        try {
-            this.adding = { position, entries: await this.builder.placeable(position) };
-        } catch {
-            this.adding = { position, entries: [] };
-        }
-
-        this.render();
-    }
-
-    select(id) {
-        this.adding = null;
-        this.fieldErrors = {};
-        this.builder.select(id);
-    }
+    // ---- Inspector -----------------------------------------------------------------------------------------
 
     inspector(state) {
         const block = state.selected === null || state.document === null ? null : find(state.document, state.selected);
 
         if (block === null) {
             return [
-                el('h2', { text: 'Settings' }),
-                el('p', { class: 'bb-empty', text: 'Select a block to change it.' }),
+                el(
+                    'div',
+                    { class: 'bb-side-head' },
+                    el('h2', { text: 'Nothing selected' }),
+                    el('p', { text: 'Click a block on the page to change it.' }),
+                ),
             ];
         }
 
         const entry = state.catalogue.find((candidate) => candidate.name === block.type);
+        const applies = (decorator) => decorator.appliesTo === null || decorator.appliesTo.includes(block.type);
+        const decorators = (state.vocabulary?.decorators ?? []).filter(applies);
+        const style = decorators.find((decorator) => decorator.namespace === STYLE_NS);
+        const rules = decorators.find((decorator) => decorator.namespace === RULES_NS);
+        const others = decorators.filter((decorator) => decorator !== style && decorator !== rules);
+        const tabs = [
+            ['block', 'Block', true],
+            ['style', 'Style', style !== undefined],
+            ['visibility', 'Visibility', rules !== undefined],
+        ].filter(([, , shown]) => shown);
+        const tab = tabs.some(([name]) => name === this.ui.tab) ? this.ui.tab : 'block';
         const issues = state.issues.filter((issue) => issue.block === block.id);
-        const decorators = (state.vocabulary?.decorators ?? []).filter(
-            (decorator) => decorator.appliesTo === null || decorator.appliesTo.includes(block.type),
-        );
+        const body = tab === 'style'
+            ? this.styleTab(state, block, style)
+            : tab === 'visibility'
+              ? this.rulesTab(state, block)
+              : this.blockTab(state, block, entry, others);
 
         return [
-            el('h2', { text: entry?.title ?? block.type }),
-            entry?.description ? el('p', { class: 'bb-empty', text: entry.description }) : null,
-            issues.length === 0
-                ? null
-                : el(
-                      'div',
-                      { class: 'bb-notice', role: 'status' },
-                      el('ul', {}, ...issues.map((issue) => el('li', { text: issue.message }))),
-                  ),
-            ...this.form(fields(entry?.settings, block.settings), 'settings', (name, value) =>
-                this.builder.updateSettings(block.id, withValue(block.settings, name, value)),
+            el(
+                'div',
+                { class: 'bb-side-head' },
+                el('h2', { text: entry?.title ?? block.type }),
+                entry?.description ? el('p', { text: entry.description }) : null,
             ),
-            ...decorators.flatMap((decorator) => [
-                el('h3', { text: decorator.namespace }),
-                ...this.form(
-                    fields(decorator.settings, block.extensions?.[decorator.namespace]),
-                    decorator.namespace,
-                    (name, value) =>
-                        this.builder.updateExtension(
-                            block.id,
-                            decorator.namespace,
-                            withValue(block.extensions?.[decorator.namespace] ?? {}, name, value),
-                        ),
+            el(
+                'div',
+                { class: 'bb-tabs', role: 'tablist' },
+                tabs.map(([name, label]) =>
+                    el('button', {
+                        type: 'button',
+                        role: 'tab',
+                        text: label,
+                        'aria-selected': String(tab === name),
+                        onclick: () => {
+                            this.ui.tab = name;
+                            this.render();
+                        },
+                    }),
                 ),
-            ]),
-        ].filter((node) => node !== null);
+            ),
+            el(
+                'div',
+                { class: 'bb-side-body', role: 'tabpanel' },
+                issues.length === 0
+                    ? null
+                    : el('div', { class: 'bb-toast', role: 'status' }, el('ul', {}, issues.map((issue) => el('li', { text: issue.message })))),
+                body,
+            ),
+        ];
+    }
+
+    blockTab(state, block, entry, others) {
+        const own = fields(entry?.settings, block.settings);
+        const save = (name, value) => this.builder.updateSettings(block.id, withValue(block.settings, name, value));
+
+        return [
+            own.length === 0
+                ? el('p', { class: 'bb-none', text: 'This block has nothing of its own to set. Try the Style tab.' })
+                : el('div', { style: 'padding-top:.75rem' }, own.map((field) => this.field(state, block, 'settings', field, save, ''))),
+            others.map((decorator) =>
+                this.group(
+                    words(decorator.namespace.split('/').pop()),
+                    fields(decorator.settings, block.extensions?.[decorator.namespace]).map((field) =>
+                        this.field(state, block, decorator.namespace, field, (name, value) =>
+                            this.extend(block, decorator.namespace, name, value), ''),
+                    ),
+                ),
+            ),
+        ];
+    }
+
+    styleTab(state, block, decorator) {
+        const stored = block.extensions?.[STYLE_NS] ?? {};
+        const points = state.vocabulary?.breakpoints ?? [];
+        const widths = [['', 'All widths'], ...points.map((point) => [point.name, `From ${point.name}`])];
+        const at = widths.some(([name]) => name === this.ui.width) ? this.ui.width : '';
+        const save = (name, value) => this.extend(block, STYLE_NS, name, value);
+
+        return [
+            el(
+                'div',
+                { class: 'bb-choice bb-widths', role: 'group', 'aria-label': 'Which widths these styles apply to' },
+                widths.map(([name, label]) =>
+                    el('button', {
+                        type: 'button',
+                        text: label,
+                        'aria-pressed': String(at === name),
+                        onclick: () => {
+                            this.ui.width = name;
+                            this.render();
+                        },
+                    }),
+                ),
+            ),
+            el('span', {
+                class: 'bb-help',
+                text: at === '' ? 'These apply at every width unless a wider setting replaces them.' : `These replace the general styles from ${words(at).toLowerCase()} width up.`,
+            }),
+            styleSections(fields(decorator.settings, stored)).map((section) =>
+                this.group(section.title, section.fields.map((field) => this.field(state, block, STYLE_NS, field, save, at)), true),
+            ),
+        ];
+    }
+
+    extend(block, namespace, name, value) {
+        return this.builder.updateExtension(block.id, namespace, withValue(block.extensions?.[namespace] ?? {}, name, value));
+    }
+
+    group(title, children, open = false) {
+        return el('details', { class: 'bb-group', open }, el('summary', { text: title }), el('div', {}, children));
     }
 
     /**
-     * Draws one group of fields; a change is sent when the person leaves the field.
+     * Draws one setting with the control that suits it; a change is sent when the person leaves the control.
+     *
+     * @param {string} at For a setting that may differ by width, the width being edited; empty for every width.
      */
-    form(list, group, save) {
-        if (list.length === 0) {
-            return [el('p', { class: 'bb-empty', text: 'Nothing to set here.' })];
+    field(state, block, group, field, save, at) {
+        const key = `${group}:${field.name}:${at}`;
+        const responsive = field.hint === 'responsive';
+        const shown = responsive ? readResponsive(field.isDefault ? undefined : field.value, at) : field.value;
+        const commit = (raw) => {
+            try {
+                const parsed = parseField({ ...field, control: this.controlKind(field) }, raw);
+                delete this.ui.errors[key];
+                save(field.name, responsive ? writeResponsive(field.isDefault ? undefined : field.value, at, parsed ?? '') : parsed);
+            } catch (error) {
+                if (!(error instanceof FieldError)) {
+                    throw error;
+                }
+
+                this.ui.errors[key] = error.message;
+                this.render();
+            }
+        };
+        const wrong = this.ui.errors[key] ?? fieldRefusal(state.refusals, block.id, group, field.name);
+        const overridden = responsive && at === '' && field.value !== null && typeof field.value === 'object'
+            && Object.keys(field.value).some((name) => name !== 'base');
+        const label = field.title === field.name ? words(field.name) : field.title;
+        const control = this.control(state, field, shown, commit, key, wrong !== null);
+
+        if (control.type === 'checkbox') {
+            return el('label', { class: 'bb-field bb-check' }, control, el('span', { text: label }));
         }
 
-        return list.map((field) => {
-            const key = `${group}:${field.name}`;
-            const commit = (raw) => {
-                try {
-                    const value = parseField(field, raw);
-                    delete this.fieldErrors[key];
-                    save(field.name, value);
-                } catch (error) {
-                    if (!(error instanceof FieldError)) {
-                        throw error;
-                    }
-
-                    this.fieldErrors[key] = error.message;
-                    this.render();
-                }
-            };
-
-            return el(
+        return el(
+            'div',
+            { class: 'bb-field' },
+            el(
                 'label',
-                { class: 'bb-field' },
-                el('span', { text: field.private ? `${field.title} (private)` : field.title }),
-                this.control(field, commit),
-                field.description ? el('em', { text: field.description }) : null,
-                this.fieldErrors[key] ? el('em', { class: 'bb-error', text: this.fieldErrors[key] }) : null,
-            );
-        });
+                { class: 'bb-label', for: `bb-${key}` },
+                el('span', { text: field.private ? `${label} (only editors see this)` : label }),
+                overridden ? el('i', { title: 'Has a different value at some widths' }) : null,
+            ),
+            control,
+            field.description ? el('span', { class: 'bb-help', text: field.description }) : null,
+            wrong === null ? null : el('span', { class: 'bb-wrong', text: wrong }),
+        );
     }
 
-    control(field, commit) {
-        if (field.control === 'checkbox') {
-            return el('input', {
-                type: 'checkbox',
-                checked: field.value === true,
-                onchange: (event) => commit(event.target.checked),
+    /**
+     * Decides how a field's text is turned into a value: a responsive setting is edited one width at a time, as
+     * the plain value it holds at that width.
+     */
+    controlKind(field) {
+        if (field.hint !== 'responsive') {
+            return field.control;
+        }
+
+        return field.kind === 'integer' || field.kind === 'number' ? 'number' : 'text';
+    }
+
+    control(state, field, shown, commit, key, invalid) {
+        const common = { id: `bb-${key}`, 'data-key': key, 'aria-invalid': invalid ? 'true' : null };
+        const text = shown === undefined || shown === null ? '' : typeof shown === 'object' ? JSON.stringify(shown) : String(shown);
+        const kind = this.controlKind(field);
+
+        if (field.name === 'textAlign' && field.hint === 'responsive') {
+            return el(
+                'div',
+                { class: 'bb-choice', role: 'group' },
+                ['left', 'center', 'right', 'justify'].map((side) =>
+                    el('button', {
+                        type: 'button',
+                        text: words(side),
+                        'aria-pressed': String(text === side),
+                        onclick: () => commit(text === side ? '' : side),
+                    }),
+                ),
+            );
+        }
+
+        if (field.name === 'fontWeight' && field.hint === 'responsive') {
+            const weights = [['', 'As inherited'], ['400', 'Regular'], ['500', 'Medium'], ['600', 'Semibold'], ['700', 'Bold']];
+
+            return el(
+                'select',
+                { class: 'bb-input', ...common, onchange: (event) => commit(event.target.value) },
+                weights.map(([value, label]) => el('option', { value, text: label, selected: text === value })),
+            );
+        }
+
+        if ((field.name === 'color' || field.name === 'background') && field.hint === 'responsive') {
+            return this.colour(state, text, commit, common);
+        }
+
+        if (field.hint === 'breakpoint') {
+            const points = state.vocabulary?.breakpoints ?? [];
+
+            return el(
+                'select',
+                { class: 'bb-input', ...common, onchange: (event) => commit(event.target.value) },
+                el('option', { value: '', text: 'Always side by side', selected: text === '' }),
+                points.map((point) =>
+                    el('option', { value: point.name, text: `From ${words(point.name).toLowerCase()} width`, selected: text === point.name }),
+                ),
+            );
+        }
+
+        if (kind === 'checkbox') {
+            return el('input', { type: 'checkbox', ...common, checked: shown === true, onchange: (event) => commit(event.target.checked) });
+        }
+
+        if (kind === 'select') {
+            return el(
+                'select',
+                { class: 'bb-input', ...common, onchange: (event) => commit(field.options[Number(event.target.value)]) },
+                field.options.map((option, index) =>
+                    el('option', { value: String(index), text: words(String(option)), selected: option === shown }),
+                ),
+            );
+        }
+
+        if (kind === 'json') {
+            return el('textarea', {
+                class: 'bb-input bb-code',
+                ...common,
+                text: field.isDefault ? '' : text,
+                onchange: (event) => commit(event.target.value),
             });
         }
 
-        if (field.control === 'select') {
-            const select = el(
-                'select',
-                { onchange: (event) => commit(field.options[Number(event.target.value)]) },
-                ...field.options.map((option, index) =>
-                    el('option', { value: String(index), text: String(option), selected: option === field.value }),
-                ),
-            );
-
-            return select;
-        }
-
-        if (field.control === 'json') {
-            const shown = field.value === undefined || field.isDefault
-                ? ''
-                : typeof field.value === 'string'
-                  ? field.value
-                  : JSON.stringify(field.value);
-
-            return el('textarea', { text: shown, onchange: (event) => commit(event.target.value) });
+        if (kind === 'text' && (field.name === 'text' || text.length > 60)) {
+            return el('textarea', { class: 'bb-input', ...common, text, onchange: (event) => commit(event.target.value) });
         }
 
         return el('input', {
-            type: field.control === 'number' ? 'number' : 'text',
-            value: field.value === undefined || field.value === null ? '' : String(field.value),
+            class: 'bb-input',
+            type: kind === 'number' ? 'number' : 'text',
+            ...common,
+            value: text,
+            placeholder: kind === 'number' || field.hint !== 'responsive' ? null : 'For example 1rem',
             onchange: (event) => commit(event.target.value),
         });
     }
 
     /**
-     * Shows the page in a frame that can run no script, whatever the document contains.
+     * A colour: the site's own colours to pick from first, then any colour.
      */
-    updatePreview(pane, preview) {
-        const page = `<!doctype html><meta charset="utf-8"><style>body{margin:1rem;font:16px/1.5 system-ui,sans-serif}`
-            + `.block-placeholder{min-height:2rem;border:1px dashed #c9372c;background:#fdecea}</style>`
-            + `<style>${preview.css.replaceAll('</', '<\\/')}</style>${preview.output}`;
-        let frame = pane.querySelector('iframe');
+    colour(state, text, commit, common) {
+        const tokens = Object.entries(state.vocabulary?.tokens ?? {}).filter(([name]) => name.startsWith('color.'));
+        const hex = /^#[0-9a-f]{6}$/i.test(text) ? text : '#000000';
 
-        if (frame === null) {
-            frame = el('iframe', { sandbox: '', title: 'Preview' });
-            pane.append(frame);
+        return el(
+            'div',
+            {},
+            el(
+                'div',
+                { class: 'bb-colour' },
+                el('input', { type: 'color', value: hex, 'aria-label': 'Pick a colour', onchange: (event) => commit(event.target.value) }),
+                el('input', {
+                    class: 'bb-input',
+                    type: 'text',
+                    ...common,
+                    value: text,
+                    placeholder: 'A colour, such as #1b6ac9',
+                    onchange: (event) => commit(event.target.value),
+                }),
+            ),
+            tokens.length === 0
+                ? null
+                : el(
+                      'div',
+                      { class: 'bb-chips' },
+                      tokens.map(([name, value]) =>
+                          el(
+                              'button',
+                              {
+                                  type: 'button',
+                                  'aria-pressed': String(text === `token:${name}`),
+                                  title: `The site's ${words(name.slice(6)).toLowerCase()} colour`,
+                                  onclick: () => commit(text === `token:${name}` ? '' : `token:${name}`),
+                              },
+                              el('i', { style: `background:${/^#[0-9a-f]{3,8}$/i.test(value) ? value : 'transparent'}` }),
+                              el('span', { text: words(name.slice(6)) }),
+                          ),
+                      ),
+                  ),
+        );
+    }
+
+    // ---- Visibility ----------------------------------------------------------------------------------------
+
+    rulesTab(state, block) {
+        const conditions = state.vocabulary?.conditions ?? [];
+        // Rules are kept as the person left them until the server accepts them: a rule that still needs filling
+        // in is refused, and must stay on screen to be finished rather than vanish.
+        const draft = this.ui.rules?.block === block.id ? this.ui.rules.groups : null;
+        const groups = draft ?? block.extensions?.[RULES_NS]?.groups ?? [];
+        const save = (next) => {
+            this.ui.rules = { block: block.id, groups: next };
+            this.extend(block, RULES_NS, 'groups', next.length === 0 ? undefined : next).then(() => {
+                if (this.builder.state().refusals.length === 0) {
+                    this.ui.rules = null;
+                }
+
+                this.render();
+            });
+            this.render();
+        };
+        const label = (name) => words(name.split('/').pop().replaceAll('-', ' '));
+
+        if (conditions.length === 0) {
+            return [
+                el('p', {
+                    class: 'bb-none',
+                    text: 'This block is always shown. Rules for when to show it need conditions, and this site has none yet.',
+                }),
+            ];
         }
 
-        if (frame.srcdoc !== page) {
-            frame.srcdoc = page;
+        const chooser = (text, key, pick) =>
+            el(
+                'select',
+                {
+                    class: 'bb-input',
+                    'aria-label': text,
+                    'data-key': key,
+                    onchange: (event) => event.target.value !== '' && pick(event.target.value),
+                },
+                el('option', { value: '', text }),
+                conditions.map((condition) => el('option', { value: condition.name, text: label(condition.name) })),
+            );
+
+        return [
+            el('p', {
+                class: 'bb-none',
+                text: groups.length === 0 ? 'This block is always shown.' : 'This block is shown only when the rules below say so.',
+            }),
+            groups.flatMap((rules, g) => [
+                g === 0 ? null : el('p', { class: 'bb-or', text: 'or' }),
+                el(
+                    'div',
+                    { class: 'bb-rules' },
+                    el('p', { text: 'Show when all of these are true' }),
+                    rules.map((rule, r) => this.rule(state, block, conditions, groups, g, r, rule, save, label)),
+                    chooser('Add a rule…', `rule-add-${g}`, (name) => save(withRule(groups, g, name))),
+                ),
+            ]),
+            el('div', { style: 'margin-top:.6rem' }, chooser(
+                groups.length === 0 ? 'Show only when…' : 'Or show when…',
+                'group-add',
+                (name) => save(withGroup(groups, name)),
+            )),
+        ];
+    }
+
+    rule(state, block, conditions, groups, g, r, rule, save, label) {
+        const condition = conditions.find((candidate) => candidate.name === rule.condition);
+        const change = (changes) => save(withRuleChange(groups, g, r, changes));
+        const wrong = fieldRefusal(state.refusals, block.id, RULES_NS, `groups.${g}.${r}`)
+            ?? state.issues.find((issue) => issue.block === block.id && issue.path === `@${RULES_NS}:groups.${g}.${r}`)?.message
+            ?? null;
+
+        return el(
+            'div',
+            { class: 'bb-rule' },
+            el(
+                'div',
+                { class: 'bb-rule-top' },
+                el(
+                    'select',
+                    {
+                        class: 'bb-input',
+                        'aria-label': 'Condition',
+                        'data-key': `rule-${g}-${r}`,
+                        onchange: (event) => change({ condition: event.target.value, arguments: {} }),
+                    },
+                    condition === undefined ? el('option', { value: rule.condition, text: `${rule.condition} (missing)`, selected: true }) : null,
+                    conditions.map((option) =>
+                        el('option', { value: option.name, text: label(option.name), selected: option.name === rule.condition }),
+                    ),
+                ),
+                el('button', { class: 'bb-icon', type: 'button', title: 'Remove this rule', 'aria-label': 'Remove this rule', onclick: () => save(withoutRule(groups, g, r)) }, icon('remove')),
+            ),
+            fields(condition?.arguments, rule.arguments).map((field) =>
+                this.field(state, block, `rule-${g}-${r}`, field, (name, value) =>
+                    change({ arguments: withValue(rule.arguments ?? {}, name, value) }), ''),
+            ),
+            el(
+                'label',
+                { class: 'bb-check' },
+                el('input', { type: 'checkbox', checked: rule.negate === true, onchange: (event) => change({ negate: event.target.checked }) }),
+                el('span', { text: 'Show when this is not true' }),
+            ),
+            wrong === null
+                ? null
+                : el('span', {
+                      class: 'bb-wrong',
+                      text: wrong.includes('do not match its schema') ? 'Fill in what this rule needs.' : wrong,
+                  }),
+        );
+    }
+
+    // ---- Trail ---------------------------------------------------------------------------------------------
+
+    trail(state) {
+        if (state.document === null) {
+            return [];
         }
+
+        const titles = this.titles(state);
+        const steps = state.selected === null ? [] : breadcrumb(state.document, state.selected);
+
+        return [
+            el('button', { type: 'button', text: 'Page', onclick: () => this.select(null) }),
+            ...steps.flatMap((block) => [
+                el('span', { text: '›', 'aria-hidden': 'true' }),
+                el('button', { type: 'button', text: titles[block.type] ?? block.type, onclick: () => this.select(block.id, true) }),
+            ]),
+        ];
     }
 }
 

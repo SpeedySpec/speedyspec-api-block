@@ -59,6 +59,10 @@ export function fields(schema, values) {
             control: controlFor(definition),
             options: Array.isArray(definition.enum) ? definition.enum : [],
             integer: definition.type === 'integer',
+            // What the schema suggests for the control, and the kind of value once "object" is set aside: a
+            // responsive setting is "a string, or a map of strings", and its control edits the strings.
+            hint: typeof definition['x-control'] === 'string' ? definition['x-control'] : '',
+            kind: [].concat(definition.type ?? []).find((type) => type !== 'object') ?? '',
             allowsText: Array.isArray(definition.type) && definition.type.includes('string'),
             required: required.includes(name),
             private: definition['x-private'] === true,
