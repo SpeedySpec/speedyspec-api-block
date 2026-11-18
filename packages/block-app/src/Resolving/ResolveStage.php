@@ -160,6 +160,14 @@ class ResolveStage
                     continue;
                 }
 
+                // A value from a binding is data. Where the setting is formatted text, it is turned into text, so a
+                // data source can never put markup on the page however its value is drawn.
+                if (($used === 'source' || $used === 'fallback') && is_string($value)
+                    && ($schema['x-control'] ?? null) === 'rich-text')
+                {
+                    $value = htmlspecialchars($value, ENT_NOQUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
+                }
+
                 $target = $this->set($target, $path->segments(), $value);
                 $info[$rawPath]['used'] = $used;
 

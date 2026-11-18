@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace SpeedySpec\Block\App\Output;
 
 use InvalidArgumentException;
+use SpeedySpec\Block\Domain\Contracts\BlockOutputInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\CollectStepInterface;
+use SpeedySpec\Block\Domain\Contracts\DeclaresAssetsInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\OutputEscaperInterface;
@@ -179,7 +181,7 @@ class DocumentRenderer implements DocumentRendererInterface
             return '';
         }
 
-        $this->collect($block, $request, $issues, $assets);
+        $this->collect($block, $output, $request, $issues, $assets);
 
         return $html;
     }
@@ -258,16 +260,49 @@ class DocumentRenderer implements DocumentRendererInterface
     }
 
     /**
-     * Records the assets a drawn block needs: those its type declares, then those collect steps name.
+     * Records the assets a drawn block needs: those its type declares, then its output's, then those collect steps
+     * name.
      *
      * @param list<Issue> $issues
      * @param list<string> $assets
      *
      * @since 0.1.0
      */
-    private function collect(ResolvedBlock $block, RenderRequest $request, array &$issues, array &$assets): void
+    private function collect(
+        ResolvedBlock $block,
+        BlockOutputInterface $output,
+        RenderRequest $request,
+        array &$issues,
+        array &$assets,
+    ): void
     {
         $names = $block->type?->assets ?? [];
+
+        if ($output instanceof DeclaresAssetsInterface)
+        {
+            try
+            {
+                $declared = $output->assets();
+
+                foreach ($declared as $name)
+                {
+                    if (!is_string($name))
+                    {
+                        throw new InvalidArgumentException('Asset names must be strings.');
+                    }
+                }
+
+                $names = [...$names, ...array_values($declared)];
+            }
+            catch (Throwable $e)
+            {
+                $issues[] = new Issue($block->block->id, IssueKind::StepFailed, sprintf(
+                    'The output of "%s" named its assets wrongly: %s.',
+                    $block->block->type->toString(),
+                    $e::class,
+                ));
+            }
+        }
 
         foreach ($this->steps->for(CollectStepInterface::class) as $step)
         {

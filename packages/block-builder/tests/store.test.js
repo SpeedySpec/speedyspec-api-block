@@ -23,7 +23,7 @@ function fakeClient(answer = (operation, document) => ({ document, affected: [],
         catalogue: async (position) => {
             calls.push(['catalogue', position]);
 
-            return [{ name: 'acme/box', title: 'Box' }];
+            return { packages: [{ name: 'acme/blocks', title: 'Acme', description: '' }], blocks: [{ name: 'acme/box', title: 'Box' }] };
         },
         vocabulary: async () => ({ breakpoints: [{ name: 'tablet', minWidth: 768 }] }),
         render: async (id, mode) => {
@@ -400,5 +400,13 @@ test('undoing keeps the selection when the block is still there, and drops it wh
     await builder.redo();
 
     assert.equal(builder.state().selected, 'a');
+});
+
+test('loading keeps the packages that head the add-block panel sections', async () => {
+    const builder = createBuilder({ client: fakeClient(), documentId: 'home' });
+
+    await builder.load();
+
+    assert.deepEqual(builder.state().packages, [{ name: 'acme/blocks', title: 'Acme', description: '' }]);
 });
 

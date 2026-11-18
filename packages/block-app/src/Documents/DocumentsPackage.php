@@ -53,6 +53,16 @@ class DocumentsPackage implements BlockPackageInterface
         return 'core/documents';
     }
 
+    public function title(): string
+    {
+        return 'Included documents';
+    }
+
+    public function description(): string
+    {
+        return 'Show another stored document, such as a header, inside a page.';
+    }
+
     public function register(BlockPackageRegistrarInterface $registrar): void
     {
         $include = new IncludeBlock($this->documents, $this->includer, $this->access);

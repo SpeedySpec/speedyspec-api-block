@@ -22,6 +22,20 @@ interface BlockPackageInterface
     public function name(): string;
 
     /**
+     * Names the package for people, as the heading of its section where a builder lists blocks to add.
+     *
+     * @since 0.1.0
+     */
+    public function title(): string;
+
+    /**
+     * Says in a sentence what the package offers, shown under its title.
+     *
+     * @since 0.1.0
+     */
+    public function description(): string;
+
+    /**
      * Registers everything the package offers through the registrar it is handed.
      *
      * @since 0.1.0

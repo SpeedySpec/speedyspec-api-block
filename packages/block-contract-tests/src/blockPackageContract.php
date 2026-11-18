@@ -24,62 +24,109 @@ use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\Issue;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
 use SpeedySpec\Block\Domain\ValueObjects\RenderRequest;
+use SpeedySpec\Block\Domain\ValueObjects\ResolvedBlock;
 use SpeedySpec\Block\Infra\Memory\MemoryServiceProvider;
 
 /**
  * Registers the checks every block package must pass, so a block written once works under any host and builder.
+ *
+ * Block packages come in three kinds, checked differently:
+ *
+ * - `complete`: defines block types and draws them.
+ * - `definitions`: defines block types (names, settings, behaviours) and draws nothing, so any plugin can draw them.
+ *   Its types are checked for shape, examples that resolve, and private settings kept out of the front view.
+ * - `outputs`: draws the types of the definitions packages in `$with`, defining none of its own. Those types are
+ *   checked for front output, examples that draw, escaping, and private and admin values kept from visitors.
  *
  * @param Closure $makePackage
  *   Builds a fresh BlockPackageInterface for each test.
  * @param string $composerJsonPath
  *   The path to the package's own composer.json.
  * @param list<Closure> $with
- *   Builders of other packages to load first, for parent block types the package under test does not define.
+ *   Builders of other packages to load first: parent block types the package does not define, or, for an outputs
+ *   package, the definitions it draws.
+ * @param 'complete'|'definitions'|'outputs' $kind
  *
  * @since 0.1.0
  */
-function blockPackageContract(Closure $makePackage, string $composerJsonPath, array $with = []): void
+function blockPackageContract(
+    Closure $makePackage,
+    string $composerJsonPath,
+    array $with = [],
+    string $kind = 'complete',
+): void
 {
-    describe('BlockPackageInterface contract', function () use ($makePackage, $composerJsonPath, $with) {
-        it('depends on nothing but the contracts package at runtime', function () use ($composerJsonPath) {
+    describe('BlockPackageInterface contract', function () use ($makePackage, $composerJsonPath, $with, $kind) {
+        // An outputs package is judged by the types it draws, which its definitions package defines.
+        $checked = function () use ($makePackage, $with, $kind): array {
+            [$container, $own, $drawn] = packageHost($makePackage, $with);
+
+            return [$container, $kind === 'outputs' ? $drawn : $own, $own];
+        };
+
+        it('depends on nothing but contracts and definitions at runtime', function () use ($composerJsonPath) {
             expect(packageRuntimeRequirements($composerJsonPath))->toBe([]);
         });
 
-        it('adds at least one block type', function () use ($makePackage, $with) {
-            [, $types] = packageHost($makePackage, $with);
+        it('has a title', function () use ($makePackage) {
+            expect(packageTitleFindings($makePackage()))->toBe([]);
+        });
+
+        if ($kind === 'outputs')
+        {
+            it('defines no block types of its own', function () use ($checked) {
+                [, , $own] = $checked();
+
+                expect($own)->toBe([]);
+            });
+        }
+
+        it('has block types to check', function () use ($checked) {
+            [, $types] = $checked();
 
             expect($types)->not->toBe([]);
         });
 
-        it('gives every block type catalogue details, an example and front-end output', function () use (
-            $makePackage,
-            $with,
+        it('gives every block type catalogue details and an example, and output where it draws', function () use (
+            $checked,
+            $kind,
         ) {
-            [$container, $types] = packageHost($makePackage, $with);
+            [$container, $types] = $checked();
 
-            expect(packageShapeFindings($container, $types))->toBe([]);
+            expect(packageShapeFindings($container, $types, $kind !== 'definitions'))->toBe([]);
         });
 
-        it('resolves and draws every example in both modes without issues', function () use ($makePackage, $with) {
-            [$container, $types] = packageHost($makePackage, $with);
+        it('resolves every example in both modes without issues', function () use ($checked, $kind) {
+            [$container, $types] = $checked();
 
-            expect(packageExampleFindings($container, $types))->toBe([]);
+            expect(packageExampleFindings($container, $types, $kind !== 'definitions'))->toBe([]);
         });
 
-        it('escapes markup placed in a text setting', function () use ($makePackage, $with) {
-            [$container, $types] = packageHost($makePackage, $with);
+        if ($kind === 'definitions')
+        {
+            it('keeps private settings out of the front view', function () use ($checked) {
+                [$container, $types] = $checked();
+
+                expect(privateViewFindings($container, $types))->toBe([]);
+            });
+
+            return;
+        }
+
+        it('escapes markup placed in a text setting', function () use ($checked) {
+            [$container, $types] = $checked();
 
             expect(unescapedMarkupFindings($container, $types))->toBe([]);
         });
 
-        it('keeps private settings out of front-end output', function () use ($makePackage, $with) {
-            [$container, $types] = packageHost($makePackage, $with);
+        it('keeps private settings out of front-end output', function () use ($checked) {
+            [$container, $types] = $checked();
 
             expect(privateLeakFindings($container, $types))->toBe([]);
         });
 
-        it('keeps admin-only values out of front-end output', function () use ($makePackage, $with) {
-            [$container, $types] = packageHost($makePackage, $with);
+        it('keeps admin-only values out of front-end output', function () use ($checked) {
+            [$container, $types] = $checked();
 
             expect(adminLeakFindings($container, $types))->toBe([]);
         });
@@ -87,7 +134,104 @@ function blockPackageContract(Closure $makePackage, string $composerJsonPath, ar
 }
 
 /**
- * Lists the runtime requirements a block package declares beyond PHP, extensions and the contracts package.
+ * Checks a package has a title, which a builder heads its section with.
+ *
+ * @return list<string>
+ *
+ * @since 0.1.0
+ */
+function packageTitleFindings(BlockPackageInterface $package): array
+{
+    return trim($package->title()) === '' ? [sprintf('%s has no title.', $package->name())] : [];
+}
+
+/**
+ * Resolves every example for a visitor and checks no private setting is left in the block's view.
+ *
+ * @param list<BlockName> $names
+ *
+ * @return list<string>
+ *
+ * @since 0.1.0
+ */
+function privateViewFindings(BlockServiceContainer $container, array $names): array
+{
+    $types = $container->get(BlockTypeRegistryInterface::class);
+    $resolver = $container->get(DocumentResolverInterface::class);
+    $validator = $container->get(SchemaValidatorInterface::class);
+    $findings = [];
+
+    foreach ($names as $name)
+    {
+        $type = $types->get($name);
+
+        if ($type === null)
+        {
+            continue;
+        }
+
+        $private = $validator->privateProperties($type->settingsSchema);
+
+        foreach ($type->examples as $example)
+        {
+            $document = packageDocument($container, $type, $example);
+            $resolved = $resolver->resolve($document, Mode::Front);
+
+            foreach ($resolved->roots as $root)
+            {
+                $block = packageFindType($root, $name);
+
+                foreach ($private as $setting)
+                {
+                    $finding = sprintf(
+                        '%s keeps its private "%s" setting in its front view.',
+                        $name->toString(),
+                        $setting,
+                    );
+
+                    if ($block?->view !== null && array_key_exists($setting, $block->view->values)
+                        && !in_array($finding, $findings, true))
+                    {
+                        $findings[] = $finding;
+                    }
+                }
+            }
+        }
+    }
+
+    return $findings;
+}
+
+/**
+ * Finds the first resolved block of a type in a subtree, so an example placed inside its parents can be read.
+ *
+ * @since 0.1.0
+ */
+function packageFindType(ResolvedBlock $block, BlockName $name): ?ResolvedBlock
+{
+    if ($block->block->type->toString() === $name->toString())
+    {
+        return $block;
+    }
+
+    foreach ($block->passes as $children)
+    {
+        foreach ($children as $child)
+        {
+            $found = packageFindType($child, $name);
+
+            if ($found !== null)
+            {
+                return $found;
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Lists the runtime requirements a block package declares beyond PHP, extensions, contracts and definitions.
  *
  * @return list<string>
  *   Disallowed requirement names; empty when the package is portable.
@@ -110,7 +254,11 @@ function packageRuntimeRequirements(string $composerJsonPath): array
     {
         $name = (string) $name;
 
-        if ($name === 'php' || str_starts_with($name, 'ext-') || $name === 'speedyspec/block-domain')
+        // Contracts and definitions are what a block package builds on; anything that implements is not.
+        $contracts = $name === 'speedyspec/block-domain'
+            || preg_match('#^speedyspec/[a-z0-9-]+-domain\z#', $name) === 1;
+
+        if ($name === 'php' || str_starts_with($name, 'ext-') || $contracts)
         {
             continue;
         }
@@ -126,8 +274,8 @@ function packageRuntimeRequirements(string $composerJsonPath): array
  *
  * @param list<Closure> $with
  *
- * @return array{0: BlockServiceContainer, 1: list<BlockName>}
- *   The container, and the block types the package under test added.
+ * @return array{0: BlockServiceContainer, 1: list<BlockName>, 2: list<BlockName>}
+ *   The container, the block types the package under test added, and those the packages loaded before it added.
  *
  * @since 0.1.0
  */
@@ -151,8 +299,17 @@ function packageHost(Closure $makePackage, array $with = []): array
     }
 
     $loader->load($package);
+    $drawn = [];
 
-    return [$container, $loader->typesOf($package->name())];
+    foreach ($loader->loaded() as $name)
+    {
+        if ($name !== $package->name())
+        {
+            $drawn = [...$drawn, ...$loader->typesOf($name)];
+        }
+    }
+
+    return [$container, $loader->typesOf($package->name()), $drawn];
 }
 
 /**
@@ -219,7 +376,7 @@ function packageDocument(BlockServiceContainer $container, BlockType $type, arra
  *
  * @since 0.1.0
  */
-function packageShapeFindings(BlockServiceContainer $container, array $names): array
+function packageShapeFindings(BlockServiceContainer $container, array $names, bool $requireOutput = true): array
 {
     $types = $container->get(BlockTypeRegistryInterface::class);
     $outputs = $container->get(BlockOutputRegistryInterface::class);
@@ -247,7 +404,7 @@ function packageShapeFindings(BlockServiceContainer $container, array $names): a
             $findings[] = sprintf('%s has no example.', $label);
         }
 
-        if (!$outputs->has($name, Mode::Front))
+        if ($requireOutput && !$outputs->has($name, Mode::Front))
         {
             $findings[] = sprintf('%s has no front-end html output.', $label);
         }
@@ -257,7 +414,8 @@ function packageShapeFindings(BlockServiceContainer $container, array $names): a
 }
 
 /**
- * Resolves and draws every example of every block type in both modes.
+ * Resolves and draws every example of every block type in both modes; only resolves them when `$draw` is false, for
+ * a definitions package, which has nothing to draw with.
  *
  * @param list<BlockName> $names
  *
@@ -266,10 +424,11 @@ function packageShapeFindings(BlockServiceContainer $container, array $names): a
  *
  * @since 0.1.0
  */
-function packageExampleFindings(BlockServiceContainer $container, array $names): array
+function packageExampleFindings(BlockServiceContainer $container, array $names, bool $draw = true): array
 {
     $types = $container->get(BlockTypeRegistryInterface::class);
     $renderer = $container->get(DocumentRendererInterface::class);
+    $resolver = $container->get(DocumentResolverInterface::class);
     $findings = [];
 
     foreach ($names as $name)
@@ -280,9 +439,12 @@ function packageExampleFindings(BlockServiceContainer $container, array $names):
         {
             foreach (Mode::cases() as $mode)
             {
-                $result = $renderer->render(packageDocument($container, $type, $example), new RenderRequest($mode));
+                $document = packageDocument($container, $type, $example);
+                $issues = $draw
+                    ? $renderer->render($document, new RenderRequest($mode))->issues
+                    : $resolver->resolve($document, $mode)->issues;
 
-                foreach ($result->issues as $issue)
+                foreach ($issues as $issue)
                 {
                     $findings[] = sprintf(
                         '%s example %d (%s): %s on block "%s": %s',

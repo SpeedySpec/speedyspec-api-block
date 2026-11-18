@@ -38,6 +38,7 @@ test('lists every block type with what a builder shows, in registration order', 
             'keywords' => ['memo'],
             'icon' => 'note',
             'package' => 'acme/basic',
+            'packageTitle' => 'Test blocks',
             'acceptsChildren' => true,
             'settings' => $settings,
             'examples' => [[]],
@@ -67,4 +68,15 @@ test('the catalogue reflects a block type registered after it was built', functi
     types($c)->add(type('late/arrival'));
 
     expect(entryNames($catalogue->all()))->toBe(['late/arrival']);
+});
+
+test('a catalogue entry names the package that defined it, by title', function () {
+    [$catalogue] = catalogue(function ($c) {
+        $c->get(BlockPackageLoaderInterface::class)
+            ->load(package('acme/basic', fn ($r) => $r->type(type('acme/box')), 'Acme blocks'));
+        types($c)->add(type('host/added'));
+    });
+
+    expect($catalogue->find(BlockName::fromString('acme/box'))->toArray()['packageTitle'])->toBe('Acme blocks')
+        ->and($catalogue->find(BlockName::fromString('host/added'))->toArray()['packageTitle'])->toBe('');
 });

@@ -16,12 +16,15 @@ class CatalogueEntry
      *
      * @param string|null $package
      *   The name of the package that added the type; null when the host registered it directly.
+     * @param string $packageTitle
+     *   That package's title, empty when there is no package.
      *
      * @since 0.1.0
      */
     public function __construct(
         public readonly BlockType $type,
         public readonly ?string $package,
+        public readonly string $packageTitle = '',
     )
     {
     }
@@ -32,8 +35,8 @@ class CatalogueEntry
      * The settings schema is included with its hints, so a builder can draw controls for a block it has never seen.
      *
      * @return array<string, mixed>
-     *   Name, title, description, category, keywords, icon, package, whether the block takes children, the settings
-     *   schema and the examples.
+     *   Name, title, description, category, keywords, icon, package and its title, whether the block takes children,
+     *   the settings schema and the examples.
      *
      * @since 0.1.0
      */
@@ -47,6 +50,7 @@ class CatalogueEntry
             'keywords' => $this->type->catalogue->keywords,
             'icon' => $this->type->catalogue->icon,
             'package' => $this->package,
+            'packageTitle' => $this->packageTitle,
             'acceptsChildren' => $this->type->children->toArray() !== false,
             'settings' => $this->type->settingsSchema,
             'examples' => $this->type->examples,

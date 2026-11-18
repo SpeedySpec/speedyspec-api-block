@@ -9,7 +9,9 @@
         "speedyspec/block-domain": "^0.1",
         "speedyspec/block-infra-filesystem": "^0.1",
         "speedyspec/block-presentation": "^0.1",
-        "speedyspec/block-structure": "^0.1"
+        "speedyspec/block-structure": "^0.1",
+        "speedyspec/block-builder": "^0.1",
+        "speedyspec/block-structure-domain": "^0.1"
     },
     "repositories": [
         {

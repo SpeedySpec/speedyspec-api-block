@@ -44,6 +44,16 @@ class PresentationPackage implements BlockPackageInterface
         return 'core/presentation';
     }
 
+    public function title(): string
+    {
+        return 'Style settings';
+    }
+
+    public function description(): string
+    {
+        return 'Spacing, size, text and colour settings for every block.';
+    }
+
     public function register(BlockPackageRegistrarInterface $registrar): void
     {
         $registrar->decorator(StyleVocabulary::decorator());

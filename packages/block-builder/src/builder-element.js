@@ -79,7 +79,8 @@ const words = (name) => name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (
  * It knows no block type. What can be added comes from the catalogue, the settings from each type's schema, and
  * what is valid from the server, which refuses anything else and says why.
  *
- * Attributes: `api`, the address the API is mounted at, and `document`, the id of the document to edit.
+ * Attributes: `api`, the address the API is mounted at; `document`, the id of the document to edit; and `headers`,
+ * optionally, a JSON object of headers to send with every request.
  */
 export class BlockBuilderElement extends HTMLElement {
     connectedCallback() {
@@ -100,7 +101,7 @@ export class BlockBuilderElement extends HTMLElement {
             rules: null,
         };
         this.builder = createBuilder({
-            client: this.client ?? createClient({ baseUrl: this.getAttribute('api') ?? '/api' }),
+            client: this.client ?? createClient({ baseUrl: this.getAttribute('api') ?? '/api', headers: this.headers() }),
             documentId: this.getAttribute('document') ?? '',
         });
 
@@ -134,7 +135,20 @@ export class BlockBuilderElement extends HTMLElement {
         this.builder.load();
     }
 
-    disconnectedCallback() {
+    /**
+     * Reads the headers the host asked to send with every request, such as a request-forgery token.
+     */
+    headers() {
+        try {
+            const headers = JSON.parse(this.getAttribute('headers') ?? '{}');
+
+            return headers !== null && typeof headers === 'object' && !Array.isArray(headers) ? headers : {};
+        } catch {
+            return {};
+        }
+    }
+
+        disconnectedCallback() {
         this.stop?.();
         window.removeEventListener('resize', this.resize);
     }
@@ -262,7 +276,7 @@ export class BlockBuilderElement extends HTMLElement {
         const target = targets[Math.min(this.ui.target, targets.length - 1)];
         this.askAllowed(target.position);
         const allowed = this.ui.allowed;
-        const groups = groupCatalogue(state.catalogue, this.ui.query);
+        const sections = groupCatalogue(state.catalogue, state.packages, this.ui.query);
 
         return [
             el(
@@ -302,9 +316,15 @@ export class BlockBuilderElement extends HTMLElement {
             el(
                 'div',
                 { class: 'bb-drawer-body' },
-                groups.length === 0 ? el('p', { class: 'bb-none', text: 'No block matches that search.' }) : null,
-                groups.flatMap((group) => [
-                    el('h3', { text: group.category }),
+                sections.length === 0 ? el('p', { class: 'bb-none', text: 'No block matches that search.' }) : null,
+                sections.map((section) =>
+                    el(
+                        'section',
+                        { class: 'bb-section', 'aria-label': section.title },
+                        el('h3', { class: 'bb-section-title', text: section.title }),
+                        section.description ? el('p', { class: 'bb-section-text', text: section.description }) : null,
+                        section.groups.flatMap((group) => [
+                    group.category === '' ? null : el('h4', { text: group.category }),
                     el(
                         'div',
                         { class: 'bb-tiles' },
@@ -328,7 +348,9 @@ export class BlockBuilderElement extends HTMLElement {
                             );
                         }),
                     ),
-                ]),
+                        ]),
+                    ),
+                ),
             ),
         ];
     }

@@ -7,6 +7,7 @@ namespace SpeedySpec\Block\Presentation;
 use InvalidArgumentException;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
 use SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateLibraryRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateRepositoryInterface;
@@ -18,6 +19,7 @@ use SpeedySpec\Block\Domain\Contracts\ConditionRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
+use SpeedySpec\Block\Domain\Contracts\EditorInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentIncluderInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
@@ -149,7 +151,25 @@ class BuilderApi
             );
         }
 
-        return new ApiResponse(200, ['blocks' => array_map(static fn ($entry): array => $entry->toArray(), $entries)]);
+        $loader = $this->container->get(BlockPackageLoaderInterface::class);
+        $defining = array_flip(array_filter(array_map(static fn ($entry): ?string => $entry->package, $entries)));
+        $packages = [];
+
+        // In load order, so sections appear the way the host arranged its packages.
+        foreach ($loader->loaded() as $name)
+        {
+            $details = $loader->details($name);
+
+            if (isset($defining[$name]) && $details !== null)
+            {
+                $packages[] = ['name' => $name, ...$details];
+            }
+        }
+
+        return new ApiResponse(200, [
+            'packages' => $packages,
+            'blocks' => array_map(static fn ($entry): array => $entry->toArray(), $entries),
+        ]);
     }
 
     private function vocabulary(): ApiResponse
@@ -318,7 +338,7 @@ class BuilderApi
         $document = $this->document($id, $mode === Mode::Admin ? BuilderAbility::Edit : BuilderAbility::View);
         $this->startPage();
         $preview = $this->container->get(BlockPreviewInterface::class)
-            ->preview($document, $this->text($body, 'block'), new RenderRequest($mode));
+            ->preview($document, $this->text($body, 'block'), $this->renderRequest($mode));
 
         if ($preview === null)
         {
@@ -340,7 +360,7 @@ class BuilderApi
         $document = $this->document($id, $mode === Mode::Admin ? BuilderAbility::Edit : BuilderAbility::View);
         $this->startPage();
         $result = $this->container->get(DocumentRendererInterface::class)
-            ->render($document, new RenderRequest($mode));
+            ->render($document, $this->renderRequest($mode));
 
         return new ApiResponse(200, [
             'output' => $result->output,
@@ -348,6 +368,16 @@ class BuilderApi
             'assets' => $result->assets,
             'css' => $this->container->get(StyleCollectorInterface::class)->css(),
         ]);
+    }
+
+    /**
+     * Builds a drawing request, marked for editing when it is an admin drawing and the site has an editor.
+     *
+     * @since 0.1.0
+     */
+    private function renderRequest(Mode $mode): RenderRequest
+    {
+        return new RenderRequest($mode, 'html', $this->container->has(EditorInterface::class));
     }
 
     private function templates(): ApiResponse

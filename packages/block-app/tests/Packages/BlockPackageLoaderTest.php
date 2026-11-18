@@ -236,3 +236,45 @@ test('a template under another vendor is refused, and a failed load leaves no te
         })))->toThrow(RuntimeException::class)
         ->and($c->get(\SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface::class)->all())->toBe([]);
 });
+
+test('a package must have a title, and the loader keeps its details', function () {
+    [, $c] = renderer();
+    $loader = $c->get(BlockPackageLoaderInterface::class);
+    $register = fn ($r) => $r->type(type('acme/one'));
+
+    $loader->load(package('acme/one', $register, 'Acme blocks', 'Boxes.'));
+
+    expect($loader->details('acme/one'))->toBe(['title' => 'Acme blocks', 'description' => 'Boxes.'])
+        ->and($loader->details('acme/nope'))->toBeNull()
+        ->and(fn () => $loader->load(package('acme/two', fn ($r) => $r->type(type('acme/two')), '  ')))
+        ->toThrow(\SpeedySpec\Block\Domain\Exceptions\BlockPackageException::class);
+});
+
+test('the last package to register an output draws the block, and the loader says which', function () {
+    [$renderer, $c] = renderer();
+    $loader = $c->get(BlockPackageLoaderInterface::class);
+    $tab = \SpeedySpec\Block\Domain\ValueObjects\BlockName::fromString('acme/tab');
+    $loader->load(package('acme/types', function ($r) use ($tab) {
+        $r->type(type('acme/tab'));
+        $r->output($tab, fixedOutput('default'));
+    }));
+    $loader->load(package('other/take', fn ($r) => $r->output($tab, fixedOutput('other'))));
+
+    expect($loader->outputOwner($tab, \SpeedySpec\Block\Domain\ValueObjects\Mode::Front))->toBe('other/take')
+        ->and($loader->outputOwner($tab, \SpeedySpec\Block\Domain\ValueObjects\Mode::Admin))->toBeNull()
+        ->and($loader->outputOwner($tab, \SpeedySpec\Block\Domain\ValueObjects\Mode::Front, 'text'))->toBeNull()
+        ->and($renderer->render(doc(block('t', 'acme/tab')), new \SpeedySpec\Block\Domain\ValueObjects\RenderRequest())->output)
+        ->toBe('other');
+});
+
+test('a failed load records no output owner', function () {
+    [, $c] = renderer();
+    $loader = $c->get(BlockPackageLoaderInterface::class);
+    $tab = \SpeedySpec\Block\Domain\ValueObjects\BlockName::fromString('acme/tab');
+
+    expect(fn () => $loader->load(package('acme/broken', function ($r) use ($tab) {
+        $r->output($tab, fixedOutput('x'));
+        $r->type(type('other/stolen'));
+    })))->toThrow(\SpeedySpec\Block\Domain\Exceptions\BlockPackageException::class)
+        ->and($loader->outputOwner($tab, \SpeedySpec\Block\Domain\ValueObjects\Mode::Front))->toBeNull();
+});

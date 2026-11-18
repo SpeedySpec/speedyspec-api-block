@@ -70,6 +70,11 @@ block-builder .bb-where button { flex: 1; padding: .3rem .4rem; border: 1px soli
 block-builder .bb-where button[aria-pressed="true"] { border-color: var(--bb-pick); color: var(--bb-pick);
     background: var(--bb-pick-wash); font-weight: 600; }
 block-builder .bb-where-only { margin: 0 0 .5rem; color: var(--bb-soft); }
+block-builder .bb-section { padding: .25rem 0 .75rem; border-bottom: 1px solid var(--bb-line); }
+block-builder .bb-section:last-child { border-bottom: 0; }
+block-builder h3.bb-section-title { margin: .6rem 0 .1rem; color: var(--bb-text); font-size: 13px; }
+block-builder .bb-section-text { margin: 0 0 .5rem; color: var(--bb-soft); font-size: 12px; }
+block-builder h4 { margin: .6rem 0 .35rem; color: var(--bb-soft); font-size: 12px; font-weight: 500; }
 block-builder .bb-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
 block-builder .bb-tile { display: block; min-height: 4.2rem; padding: .5rem .55rem; border: 1px solid var(--bb-line);
     border-radius: 8px; background: var(--bb-panel); text-align: left; }

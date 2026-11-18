@@ -303,3 +303,54 @@ test('a placeholder that fails is recorded on the block and draws nothing', func
         ->and(idsAndKinds($result->issues))->toContain(['1', IssueKind::OutputFailed]);
 });
 
+if (!function_exists('assetOutput'))
+{
+    /**
+     * Builds an output that draws fixed text and names the assets it needs.
+     */
+    function assetOutput(string $text, array $assets): BlockOutputInterface
+    {
+        return new class($text, $assets) implements BlockOutputInterface,
+            \SpeedySpec\Block\Domain\Contracts\DeclaresAssetsInterface {
+            public function __construct(private readonly string $text, private readonly array $assets)
+            {
+            }
+
+            public function render(RenderInput $input): string
+            {
+                return $this->text;
+            }
+
+            public function assets(): array
+            {
+                return $this->assets;
+            }
+        };
+    }
+}
+
+test('an output names the assets it needs, and a replaced output no longer brings its own', function () {
+    [$renderer, $c] = renderer(function ($c) {
+        types($c)->add(type('acme/tabs', ['assets' => ['acme/type-asset']]));
+        outputs($c)->set(BlockName::fromString('acme/tabs'), assetOutput('default', ['acme/tabs-script', 'acme/type-asset']));
+    });
+    $before = $renderer->render(doc(block('a', 'acme/tabs'), block('b', 'acme/tabs')), new RenderRequest());
+    outputs($c)->set(BlockName::fromString('acme/tabs'), assetOutput('other', ['other/tabs']));
+    $after = $renderer->render(doc(block('a', 'acme/tabs')), new RenderRequest());
+
+    expect($before->assets)->toBe(['acme/type-asset', 'acme/tabs-script'])
+        ->and($after->assets)->toBe(['acme/type-asset', 'other/tabs']);
+});
+
+test('an output that names an asset that is not text is recorded on the block, and drawing goes on', function () {
+    [$renderer] = renderer(function ($c) {
+        types($c)->add(type('acme/tabs'));
+        outputs($c)->set(BlockName::fromString('acme/tabs'), assetOutput('drawn', ['ok', 5]));
+    });
+
+    $result = $renderer->render(doc(block('a', 'acme/tabs')), new RenderRequest());
+
+    expect($result->output)->toBe('drawn')
+        ->and(idsAndKinds($result->issues))->toBe([['a', IssueKind::StepFailed]])
+        ->and($result->assets)->toBe([]);
+});

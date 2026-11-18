@@ -141,8 +141,9 @@ test('columns still sit side by side when the host has other breakpoints', funct
             $registry->add(new \SpeedySpec\Block\Domain\ValueObjects\Breakpoint($name, $width));
         }
 
-        $container->get(\SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface::class)
-            ->load(\SpeedySpec\Block\Structure\StructurePackage::from($container));
+        $loader = $container->get(\SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface::class);
+        $loader->load(new \SpeedySpec\Block\Structure\Domain\StructureTypesPackage());
+        $loader->load(\SpeedySpec\Block\Structure\StructurePackage::from($container));
         $container->get(\SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface::class)->render(
             new \SpeedySpec\Block\Domain\Entities\Document(
                 'd',

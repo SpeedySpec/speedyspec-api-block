@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SpeedySpec\Block\App;
 
+use SpeedySpec\Block\App\Assets\AssetRegistry;
 use SpeedySpec\Block\App\Building\BlockCatalogue;
 use SpeedySpec\Block\App\Building\BlockPreviewer;
 use SpeedySpec\Block\App\Building\BlockTemplateRegistry;
@@ -19,6 +20,7 @@ use SpeedySpec\Block\App\Output\BlockOutputRegistry;
 use SpeedySpec\Block\App\Output\DocumentRenderer;
 use SpeedySpec\Block\App\Output\HtmlEscaper;
 use SpeedySpec\Block\App\Output\OutputEscaperRegistry;
+use SpeedySpec\Block\App\Output\RichTextSanitizer;
 use SpeedySpec\Block\App\Packages\BlockPackageLoader;
 use SpeedySpec\Block\App\Presentation\BreakpointRegistry;
 use SpeedySpec\Block\App\Presentation\DesignTokenRegistry;
@@ -43,6 +45,7 @@ use SpeedySpec\Block\App\Serialization\ClientExport;
 use SpeedySpec\Block\App\Serialization\JsonBlockTemplateSerializer;
 use SpeedySpec\Block\App\Serialization\JsonDocumentSerializer;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
+use SpeedySpec\Block\Domain\Contracts\AssetRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockDuplicatorInterface;
@@ -71,6 +74,7 @@ use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
+use SpeedySpec\Block\Domain\Contracts\RichTextSanitizerInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
@@ -164,6 +168,8 @@ class AppServiceProvider
             $c->get(ViewStage::class),
             $c->get(BlockTypeRegistryInterface::class),
             $c->get(PlacementRulesInterface::class),
+            50000,
+            $c->get(StepRegistryInterface::class),
         ));
         $container->add(PlacementRulesInterface::class, fn (BlockServiceContainer $c) => new PlacementRules(
             $c->get(BlockTypeRegistryInterface::class),
@@ -173,12 +179,16 @@ class AppServiceProvider
             $c->get(PlacementRulesInterface::class),
             $c->get(BlockPackageLoaderInterface::class),
         ));
-        $container->add(OutputEscaperRegistryInterface::class, function (): OutputEscaperRegistryInterface {
-            $escapers = new OutputEscaperRegistry();
-            $escapers->add(new HtmlEscaper());
+        $container->add(RichTextSanitizerInterface::class, fn () => new RichTextSanitizer());
+        $container->add(
+            OutputEscaperRegistryInterface::class,
+            function (BlockServiceContainer $c): OutputEscaperRegistryInterface {
+                $escapers = new OutputEscaperRegistry();
+                $escapers->add(new HtmlEscaper($c->get(RichTextSanitizerInterface::class)));
 
-            return $escapers;
-        });
+                return $escapers;
+            },
+        );
         $container->add(BlockOutputRegistryInterface::class, fn () => new BlockOutputRegistry());
         $container->add(DocumentRendererInterface::class, fn (BlockServiceContainer $c) => new DocumentRenderer(
             $c->get(DocumentResolverInterface::class),
@@ -201,7 +211,9 @@ class AppServiceProvider
             $c->get(DataSourceRegistryInterface::class),
             $c->get(StepRegistryInterface::class),
             $c->get(BlockTemplateRegistryInterface::class),
+            $c->get(AssetRegistryInterface::class),
         ));
+        $container->add(AssetRegistryInterface::class, fn () => new AssetRegistry());
         $container->add(BlockTemplateRegistryInterface::class, fn () => new BlockTemplateRegistry());
         $container->add(DocumentIncluderInterface::class, fn (BlockServiceContainer $c) => new DocumentIncluder(
             $c->get(DocumentRepositoryInterface::class),
@@ -244,6 +256,7 @@ class AppServiceProvider
             $c->get(BlockDuplicatorInterface::class),
             $c->get(SettingsMigrationRegistryInterface::class),
             $c->get(StepRegistryInterface::class),
+            $c->get(RichTextSanitizerInterface::class),
         ));
     }
 }

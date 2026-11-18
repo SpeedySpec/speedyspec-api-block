@@ -53,4 +53,13 @@ interface OutputEscaperInterface
      * @since 0.1.0
      */
     public function attributes(AttributeBag $bag): string;
+
+    /**
+     * Writes formatted text for the target, so an output never prints a stored value's markup unchecked.
+     *
+     * For html this is the value cleaned to the allowed subset; another target writes the text without markup.
+     *
+     * @since 0.1.0
+     */
+    public function richText(string $value): string;
 }
