@@ -350,6 +350,7 @@ function budgeted(BlockServiceContainer $c, int $budget): DocumentResolver
         $c->get(ValidateStage::class),
         $c->get(ViewStage::class),
         types($c),
+        $c->get(\SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface::class),
         $budget,
     );
 }

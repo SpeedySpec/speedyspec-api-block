@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SpeedySpec\Block\App;
 
+use SpeedySpec\Block\App\Building\PlacementRules;
 use SpeedySpec\Block\App\Ids\BlockDuplicator;
 use SpeedySpec\Block\App\Ids\RandomBlockIdGenerator;
 use SpeedySpec\Block\App\Output\BlockOutputRegistry;
@@ -40,6 +41,7 @@ use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
@@ -122,6 +124,10 @@ class AppServiceProvider
             $c->get(ResolveStage::class),
             $c->get(ValidateStage::class),
             $c->get(ViewStage::class),
+            $c->get(BlockTypeRegistryInterface::class),
+            $c->get(PlacementRulesInterface::class),
+        ));
+        $container->add(PlacementRulesInterface::class, fn (BlockServiceContainer $c) => new PlacementRules(
             $c->get(BlockTypeRegistryInterface::class),
         ));
         $container->add(OutputEscaperRegistryInterface::class, function (): OutputEscaperRegistryInterface {
