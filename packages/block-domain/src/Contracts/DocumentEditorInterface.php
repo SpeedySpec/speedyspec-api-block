@@ -90,6 +90,30 @@ interface DocumentEditorInterface
     public function remove(Document $document, string $blockId): EditResult;
 
     /**
+     * Removes several blocks, with their descendants, as one edit.
+     *
+     * A builder removing a selection uses this so the removal is one step to undo. A listed block inside another
+     * listed block simply goes with it. Nothing is removed unless every id is in the document.
+     *
+     * @param list<string> $blockIds
+     *   At least one id.
+     *
+     * @since 0.1.0
+     */
+    public function removeBlocks(Document $document, array $blockIds): EditResult;
+
+    /**
+     * Turns a block into a block of another type, as its own type declares, keeping its id and place.
+     *
+     * Only the settings the transform maps are carried over, and bindings move with them. Decorator settings are
+     * kept where the decorator applies to the new type, and children are kept; when the new type cannot hold them,
+     * the whole edit is refused rather than losing them.
+     *
+     * @since 0.1.0
+     */
+    public function transform(Document $document, string $blockId, BlockName $to): EditResult;
+
+    /**
      * Places a copy of a block, with new ids throughout, directly after it.
      *
      * @since 0.1.0

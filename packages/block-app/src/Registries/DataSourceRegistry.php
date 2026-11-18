@@ -62,4 +62,17 @@ class DataSourceRegistry implements DataSourceRegistryInterface
     {
         return $this->sources[$name] ?? null;
     }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @since 0.1.0
+     */
+    public function all(): array
+    {
+        $sources = $this->sources;
+        ksort($sources, SORT_STRING);
+
+        return array_values($sources);
+    }
 }

@@ -22,6 +22,7 @@ use SpeedySpec\Block\Domain\Entities\BlockTree;
 use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\Exceptions\InvalidSettingPathException;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
+use SpeedySpec\Block\Domain\ValueObjects\BlockLock;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
@@ -207,6 +208,15 @@ class DocumentEditor implements DocumentEditorInterface
             return EditResult::refused($this->unknownBlock($blockId));
         }
 
+        if (BlockLock::of($block)->move)
+        {
+            return EditResult::refused(new EditRefusal(
+                EditRefusalKind::Locked,
+                'This block is locked in place.',
+                $blockId,
+            ));
+        }
+
         if ($position->parentId !== null && in_array($position->parentId, (new BlockTree($block))->ids(), true))
         {
             return EditResult::refused(new EditRefusal(
@@ -236,12 +246,207 @@ class DocumentEditor implements DocumentEditorInterface
 
     public function remove(Document $document, string $blockId): EditResult
     {
-        if ($document->tree->find($blockId) === null)
+        $block = $document->tree->find($blockId);
+
+        if ($block === null)
         {
             return EditResult::refused($this->unknownBlock($blockId));
         }
 
+        $refusals = $this->removalLocks($block);
+
+        if ($refusals !== [])
+        {
+            return EditResult::refused(...$refusals);
+        }
+
         return EditResult::accepted($document->withTree($document->tree->remove($blockId)));
+    }
+
+    /**
+     * Finds the blocks locked against removal in a subtree about to be removed, so removing a parent cannot take a
+     * locked block with it.
+     *
+     * @return list<EditRefusal>
+     */
+    private function removalLocks(Block $block): array
+    {
+        $refusals = BlockLock::of($block)->remove
+            ? [new EditRefusal(EditRefusalKind::Locked, 'This block is locked against removal.', $block->id)]
+            : [];
+
+        foreach ($block->children as $child)
+        {
+            $refusals = [...$refusals, ...$this->removalLocks($child)];
+        }
+
+        return $refusals;
+    }
+
+    public function removeBlocks(Document $document, array $blockIds): EditResult
+    {
+        if ($blockIds === [])
+        {
+            return EditResult::refused(new EditRefusal(
+                EditRefusalKind::UnknownBlock,
+                'Name at least one block to remove.',
+            ));
+        }
+
+        $refusals = [];
+
+        foreach ($blockIds as $blockId)
+        {
+            $block = is_string($blockId) ? $document->tree->find($blockId) : null;
+
+            if ($block === null)
+            {
+                $refusals[] = $this->unknownBlock(is_string($blockId) ? $blockId : get_debug_type($blockId));
+
+                continue;
+            }
+
+            foreach ($this->removalLocks($block) as $refusal)
+            {
+                // A locked block inside two listed blocks is reported once.
+                $refusals[$refusal->blockId] = $refusal;
+            }
+        }
+
+        $refusals = array_values($refusals);
+
+        if ($refusals !== [])
+        {
+            return EditResult::refused(...$refusals);
+        }
+
+        $tree = $document->tree;
+
+        foreach ($blockIds as $blockId)
+        {
+            // A block inside one already removed has gone with it.
+            if ($tree->find($blockId) !== null)
+            {
+                $tree = $tree->remove($blockId);
+            }
+        }
+
+        return EditResult::accepted($document->withTree($tree));
+    }
+
+    public function transform(Document $document, string $blockId, BlockName $to): EditResult
+    {
+        $block = $document->tree->find($blockId);
+
+        if ($block === null)
+        {
+            return EditResult::refused($this->unknownBlock($blockId));
+        }
+
+        $from = $this->types->get($block->type);
+        $target = $this->types->get($to);
+
+        if ($from === null || $target === null)
+        {
+            return EditResult::refused($this->unknownType($from === null ? $block->type : $to, $blockId));
+        }
+
+        $transform = $from->transformTo($to);
+
+        if ($transform === null)
+        {
+            return EditResult::refused(new EditRefusal(
+                EditRefusalKind::NoTransform,
+                sprintf(
+                    'A %s block cannot be turned into a %s block.',
+                    $from->catalogue->title,
+                    $target->catalogue->title,
+                ),
+                $blockId,
+            ));
+        }
+
+        $settings = [];
+
+        foreach ($transform->settings as $setting => $source)
+        {
+            if (array_key_exists($source, $block->settings))
+            {
+                $settings[$setting] = $block->settings[$source];
+            }
+        }
+
+        $extensions = array_filter(
+            $block->extensions,
+            fn (string $namespace): bool => $this->decorators->get($namespace)?->appliesTo($to) === true,
+            ARRAY_FILTER_USE_KEY,
+        );
+        $replacement = new Block(
+            $block->id,
+            $to,
+            $target->version,
+            $settings,
+            $extensions,
+            $this->carriedBindings($block, $transform->settings, $extensions),
+            $block->children,
+        );
+        $refusals = [];
+        $vetted = $this->vetted(
+            $replacement,
+            $this->parentType($document->tree, $document->tree->positionOf($blockId)),
+            $refusals,
+        );
+
+        if ($refusals !== [])
+        {
+            return EditResult::refused(...$refusals);
+        }
+
+        return $this->replaced($document, $vetted);
+    }
+
+    /**
+     * Moves a block's bindings to the settings that take over from the ones they fed.
+     *
+     * A binding on a setting the transform does not carry over is dropped with the setting. A binding on a
+     * decorator's setting stays when that decorator's settings stay.
+     *
+     * @param array<string, string> $map
+     *   The transform's map, new setting to old.
+     * @param array<string, mixed> $extensions
+     *   The decorator settings the new block keeps.
+     * @return array<string, Binding>
+     */
+    private function carriedBindings(Block $block, array $map, array $extensions): array
+    {
+        $bindings = [];
+
+        foreach ($block->bindings as $key => $binding)
+        {
+            $path = SettingPath::fromString((string) $key);
+
+            if ($path->namespace() !== null)
+            {
+                if (array_key_exists($path->namespace(), $extensions))
+                {
+                    $bindings[(string) $key] = $binding;
+                }
+
+                continue;
+            }
+
+            [$first, $rest] = [$path->segments()[0], array_slice($path->segments(), 1)];
+
+            foreach ($map as $setting => $source)
+            {
+                if ($source === $first)
+                {
+                    $bindings[implode('.', [(string) $setting, ...$rest])] = $binding;
+                }
+            }
+        }
+
+        return $bindings;
     }
 
     public function duplicate(Document $document, string $blockId): EditResult

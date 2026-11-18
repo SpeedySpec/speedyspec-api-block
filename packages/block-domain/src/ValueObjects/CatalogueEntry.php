@@ -54,6 +54,11 @@ class CatalogueEntry
             'acceptsChildren' => $this->type->children->toArray() !== false,
             'settings' => $this->type->settingsSchema,
             'examples' => $this->type->examples,
+            // Only the names: a builder offers "Turn into" for these, and the server does the turning.
+            'transforms' => array_map(
+                static fn (BlockTransform $transform): string => $transform->to->toString(),
+                $this->type->transforms,
+            ),
         ];
     }
 }

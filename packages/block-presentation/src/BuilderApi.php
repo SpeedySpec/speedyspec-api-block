@@ -18,6 +18,7 @@ use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
 use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
 use SpeedySpec\Block\Domain\Contracts\CollectionSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ConditionRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
@@ -36,10 +37,12 @@ use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\Exceptions\DuplicateBlockIdException;
 use SpeedySpec\Block\Domain\Exceptions\InvalidBlockNameException;
 use SpeedySpec\Block\Domain\Exceptions\InvalidSettingPathException;
+use SpeedySpec\Block\Domain\Exceptions\InvalidStyleException;
 use SpeedySpec\Block\Domain\Exceptions\MediaUploadRefusedException;
 use SpeedySpec\Block\Domain\ValueObjects\AssetKind;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
+use SpeedySpec\Block\Domain\ValueObjects\Breakpoint;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
 use SpeedySpec\Block\Domain\ValueObjects\BuilderAbility;
 use SpeedySpec\Block\Domain\ValueObjects\EditRefusal;
@@ -139,6 +142,11 @@ class BuilderApi
             $method === 'POST' && $path === ['templates'] => $this->saveTemplate($this->body($request)),
             $method === 'DELETE' && $root === 'templates' && $count === 3
                 => $this->removeTemplate($path[1] . '/' . $path[2]),
+            $method === 'PUT' && $root === 'tokens' && $count === 2 => $this->setToken($path[1], $this->body($request)),
+            $method === 'DELETE' && $root === 'tokens' && $count === 2 => $this->removeToken($path[1]),
+            $method === 'PUT' && $root === 'breakpoints' && $count === 2
+                => $this->setBreakpoint($path[1], $this->body($request)),
+            $method === 'DELETE' && $root === 'breakpoints' && $count === 2 => $this->removeBreakpoint($path[1]),
             $method === 'GET' && $path === ['media'] => $this->mediaList($request),
             $method === 'GET' && $root === 'media' && $count === 2 => $this->mediaItem($path[1]),
             $method === 'POST' && $path === ['media'] => $this->mediaUpload($request),
@@ -190,11 +198,11 @@ class BuilderApi
         $described = static fn ($entry): array => ['name' => $entry->name(), 'arguments' => $entry->argumentsSchema()];
 
         return new ApiResponse(200, [
-            'breakpoints' => array_map(
-                static fn ($breakpoint): array => ['name' => $breakpoint->name, 'minWidth' => $breakpoint->minWidth],
-                $this->container->get(BreakpointRegistryInterface::class)->all(),
-            ),
-            'tokens' => (object) $this->container->get(DesignTokenRegistryInterface::class)->all(),
+            'breakpoints' => $this->breakpointList(),
+            'tokens' => $this->tokenList(),
+            // A builder offers its site styles screen only to people who may change them.
+            'manageStyles' => $this->container->get(BuilderAccessInterface::class)
+                ->allows(BuilderAbility::ManageStyles),
             'conditions' => array_map($described, $this->container->get(ConditionRegistryInterface::class)->all()),
             'collections' => array_map(
                 $described,
@@ -208,7 +216,121 @@ class BuilderApi
                 ],
                 $this->container->get(DecoratorRegistryInterface::class)->all(),
             ),
+            'sources' => array_map(
+                static fn ($source): array => [
+                    'name' => $source->name(),
+                    'arguments' => $source->argumentsSchema(),
+                    'value' => $source->valueSchema(),
+                ],
+                $this->container->get(DataSourceRegistryInterface::class)->all(),
+            ),
         ]);
+    }
+
+    /**
+     * Gives the breakpoints as the vocabulary and the style routes both answer with them.
+     *
+     * @return list<array{name: string, minWidth: int}>
+     *
+     * @since 0.1.0
+     */
+    private function breakpointList(): array
+    {
+        return array_map(
+            static fn ($breakpoint): array => ['name' => $breakpoint->name, 'minWidth' => $breakpoint->minWidth],
+            $this->container->get(BreakpointRegistryInterface::class)->all(),
+        );
+    }
+
+    /**
+     * Gives the design tokens as an object, so an empty set is still `{}` to a builder rather than `[]`.
+     *
+     * @since 0.1.0
+     */
+    private function tokenList(): object
+    {
+        return (object) $this->container->get(DesignTokenRegistryInterface::class)->all();
+    }
+
+    /**
+     * Sets one design token, which every page drawn afterwards uses.
+     *
+     * @param array<string, mixed> $body
+     *
+     * @since 0.1.0
+     */
+    private function setToken(string $name, array $body): ApiResponse
+    {
+        $this->need(BuilderAbility::ManageStyles);
+        $value = $body['value'] ?? null;
+
+        if (!is_string($value))
+        {
+            throw new ApiProblem(400, 'The request needs a "value", as text.');
+        }
+
+        $this->styleChange(fn () => $this->container->get(DesignTokenRegistryInterface::class)->set($name, $value));
+
+        return new ApiResponse(200, ['tokens' => $this->tokenList()]);
+    }
+
+    private function removeToken(string $name): ApiResponse
+    {
+        $this->need(BuilderAbility::ManageStyles);
+        $this->container->get(DesignTokenRegistryInterface::class)->remove($name);
+
+        return new ApiResponse(200, ['tokens' => $this->tokenList()]);
+    }
+
+    /**
+     * Sets one breakpoint; styles already set for it start applying from its new width.
+     *
+     * @param array<string, mixed> $body
+     *
+     * @since 0.1.0
+     */
+    private function setBreakpoint(string $name, array $body): ApiResponse
+    {
+        $this->need(BuilderAbility::ManageStyles);
+        $width = $body['minWidth'] ?? null;
+
+        if (!is_int($width))
+        {
+            throw new ApiProblem(400, 'The request needs a "minWidth", as a whole number of pixels.');
+        }
+
+        $this->styleChange(
+            fn () => $this->container->get(BreakpointRegistryInterface::class)->add(new Breakpoint($name, $width)),
+        );
+
+        return new ApiResponse(200, ['breakpoints' => $this->breakpointList()]);
+    }
+
+    private function removeBreakpoint(string $name): ApiResponse
+    {
+        $this->need(BuilderAbility::ManageStyles);
+        $this->container->get(BreakpointRegistryInterface::class)->remove($name);
+
+        return new ApiResponse(200, ['breakpoints' => $this->breakpointList()]);
+    }
+
+    /**
+     * Makes a style change, answering a token or breakpoint the site cannot use as a refusal with its reason.
+     *
+     * @throws ApiProblem
+     *
+     * @since 0.1.0
+     */
+    private function styleChange(callable $change): void
+    {
+        try
+        {
+            $change();
+        }
+        catch (InvalidStyleException $e)
+        {
+            throw new ApiProblem(422, $e->getMessage());
+        }
     }
 
     private function documents(): ApiResponse
@@ -324,7 +446,9 @@ class BuilderApi
             ),
             'move' => $editor->move($document, $block(), $this->position($body)),
             'remove' => $editor->remove($document, $block()),
+            'removeBlocks' => $editor->removeBlocks($document, $this->ids($body)),
             'duplicate' => $editor->duplicate($document, $block()),
+            'transform' => $editor->transform($document, $block(), BlockName::fromString($this->text($body, 'type'))),
             'updateSettings' => $editor->updateSettings($document, $block(), $this->map($body, 'settings', true)),
             'updateExtension' => $editor->updateExtension(
                 $document,
@@ -439,14 +563,18 @@ class BuilderApi
     {
         $this->need(BuilderAbility::Edit);
 
-        return new ApiResponse(200, ['libraries' => array_map(
-            fn ($library): array => [
-                'name' => $library->name(),
-                'title' => $library->title(),
-                'templates' => array_map($this->templateData(...), $library->all()),
-            ],
-            $this->container->get(BlockTemplateLibraryRegistryInterface::class)->all(),
-        )]);
+        return new ApiResponse(200, [
+            'libraries' => array_map(
+                fn ($library): array => [
+                    'name' => $library->name(),
+                    'title' => $library->title(),
+                    'templates' => array_map($this->templateData(...), $library->all()),
+                ],
+                $this->container->get(BlockTemplateLibraryRegistryInterface::class)->all(),
+            ),
+            // A builder offers saving and removing only to people who may, rather than offering and being refused.
+            'manage' => $this->container->get(BuilderAccessInterface::class)->allows(BuilderAbility::ManageTemplates),
+        ]);
     }
 
     /**
@@ -744,6 +872,36 @@ class BuilderApi
         }
 
         return $value;
+    }
+
+    /**
+     * Reads the list of block ids an operation on several blocks names.
+     *
+     * @param array<string, mixed> $body
+     * @return list<string>
+     *
+     * @throws ApiProblem
+     *
+     * @since 0.1.0
+     */
+    private function ids(array $body): array
+    {
+        $ids = $body['ids'] ?? null;
+
+        if (!is_array($ids) || !array_is_list($ids))
+        {
+            throw new ApiProblem(400, 'The request needs "ids", a list of block ids.');
+        }
+
+        foreach ($ids as $id)
+        {
+            if (!is_string($id) || $id === '')
+            {
+                throw new ApiProblem(400, 'Every entry of "ids" must be a block id.');
+            }
+        }
+
+        return $ids;
     }
 
     /**

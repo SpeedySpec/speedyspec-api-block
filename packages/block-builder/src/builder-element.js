@@ -1,4 +1,6 @@
 import { createClient } from './api.js';
+import { bindable, bindingFrom, bindingOf, describeBinding } from './bindings.js';
+import { clipboardIntent, clipboardText, pastePosition, readClipboard } from './clipboard.js';
 import {
     FieldError, fields, movedListItem, parseField, tableShape, withColumn, withListItem, withListText, withoutColumn,
     withoutListItem, withoutRow, withRow, withTyped, withValue,
@@ -6,6 +8,9 @@ import {
 import { createBuilder } from './store.js';
 import { accepts, addedMedia, mediaQuery, movedMedia, withoutMediaAt } from './media.js';
 import { STYLE } from './styles.js';
+import { lockOf, pick } from './selection.js';
+import { isColourToken, tokenGroups, tokenNameProblem, widthProblem } from './site-styles.js';
+import { SAVED_LIBRARY, matchTemplates, templateName } from './templates.js';
 import { find, positionOf, walk } from './tree.js';
 import {
     breadcrumb,
@@ -40,6 +45,9 @@ const ICONS = {
     remove: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/>',
     undo: '<path d="M6 3 3 6l3 3M3 6h6.5a3.5 3.5 0 0 1 0 7H6"/>',
     redo: '<path d="M10 3l3 3-3 3M13 6H6.5a3.5 3.5 0 0 0 0 7H10"/>',
+    styles: '<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11M8 2.5a5.5 5.5 0 0 0 0 11"/>',
+    lock: '<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>',
+    more: '<circle cx="3.5" cy="8" r=".6"/><circle cx="8" cy="8" r=".6"/><circle cx="12.5" cy="8" r=".6"/>',
 };
 
 /**
@@ -107,6 +115,20 @@ export class BlockBuilderElement extends HTMLElement {
             rules: null,
             // The media picker, while one is open: which setting it fills, and the page of the library it shows.
             picker: null,
+            // Whether the block bar's list of more actions is open.
+            more: false,
+            // A short note for the toast, such as what was copied; null when there is none.
+            message: null,
+            // Which list the add drawer shows: `blocks` or `templates`.
+            adding: 'blocks',
+            // The saved template whose Remove button is asking to be clicked again; null when none is.
+            confirmRemove: null,
+            // The save-as-template form while it is open: the block and what has been typed so far.
+            saveForm: null,
+            // The binding form while it is open: which setting it binds, and the source and arguments chosen.
+            binding: null,
+            // The site styles screen: what is being typed into its Add rows, and problems by row.
+            styles: { token: { name: '', value: '' }, breakpoint: { name: '', width: '' }, problems: {} },
         };
         // Media items already looked up, by id, so a chosen file shows its picture and name; null while loading.
         this.media = new Map();
@@ -147,7 +169,11 @@ export class BlockBuilderElement extends HTMLElement {
         window.addEventListener('resize', this.resize);
         this.keys = (event) => this.shortcut(event);
         this.addEventListener('keydown', this.keys);
-        this.builder.load();
+        this.clip = (event) => this.clipboard(event, document);
+        ['copy', 'cut', 'paste'].forEach((kind) => this.addEventListener(kind, this.clip));
+        // Templates are asked for up front, so the block bar knows whether to offer saving one.
+        this.templatesAsked = true;
+        this.builder.load().then(() => this.builder.loadTemplates());
     }
 
     /**
@@ -182,7 +208,13 @@ export class BlockBuilderElement extends HTMLElement {
 
         this.regions.top.replaceChildren(...this.top(state));
         this.regions.drawer.hidden = this.ui.drawer === null || state.document === null;
-        this.regions.drawer.replaceChildren(...(this.ui.drawer === 'add' ? this.adder(state) : this.outline(state)));
+        this.regions.drawer.replaceChildren(...(
+            this.ui.drawer === 'add'
+                ? this.adder(state)
+                : this.ui.drawer === 'styles' && state.vocabulary?.manageStyles === true
+                  ? this.siteStyles(state)
+                  : this.outline(state)
+        ));
         this.regions.side.replaceChildren(...this.inspector(state));
         this.regions.trail.replaceChildren(...this.trail(state));
         this.canvas(state);
@@ -263,6 +295,7 @@ export class BlockBuilderElement extends HTMLElement {
                 el('span', { class: 'bb-name', text: state.document?.id ?? this.getAttribute('document') ?? '' }),
                 toggle('add', 'Add block', 'add'),
                 toggle('outline', 'Outline', 'outline'),
+                state.vocabulary?.manageStyles === true ? toggle('styles', 'Site styles', 'styles') : null,
                 history('Undo', 'undo', state.canUndo, () => this.builder.undo()),
                 history('Redo', 'redo', state.canRedo, () => this.builder.redo()),
             ),
@@ -292,6 +325,179 @@ export class BlockBuilderElement extends HTMLElement {
         this.render();
     }
 
+    // ---- Drawer: site styles ------------------------------------------------------------------------------
+
+    /**
+     * Shows the site's design tokens and breakpoints, which every page is drawn with, for changing one at a time.
+     */
+    siteStyles(state) {
+        const ui = this.ui.styles;
+        const tokens = state.vocabulary?.tokens ?? {};
+        const breakpoints = state.vocabulary?.breakpoints ?? [];
+        const problem = (key) => (ui.problems[key] ? el('span', { class: 'bb-wrong', role: 'alert', text: ui.problems[key] }) : null);
+        // Sends a change, and shows the server's reason under its row when it refuses.
+        const send = async (key, change) => {
+            const message = await change();
+
+            if (message === null) {
+                delete ui.problems[key];
+            } else {
+                ui.problems[key] = message;
+            }
+
+            this.render();
+
+            return message === null;
+        };
+        const removeButton = (label, run) =>
+            el('button', { class: 'bb-icon-button', type: 'button', title: `Remove ${label}`, 'aria-label': `Remove ${label}`, onclick: run }, icon('remove'));
+        const tokenRow = ({ name, value }) => {
+            const key = `token:${name}`;
+            const save = (next) => send(key, () => this.builder.setToken(name, next));
+
+            return el(
+                'div',
+                { class: 'bb-style-row' },
+                el('label', { class: 'bb-style-name', for: `bb-${key}`, text: name }),
+                el(
+                    'div',
+                    { class: 'bb-style-value' },
+                    isColourToken(name)
+                        ? el('input', {
+                              type: 'color',
+                              'aria-label': `Pick ${name}`,
+                              value: /^#[0-9a-f]{6}$/i.test(value) ? value : '#000000',
+                              onchange: (event) => save(event.target.value),
+                          })
+                        : null,
+                    el('input', {
+                        class: 'bb-input',
+                        id: `bb-${key}`,
+                        'data-key': key,
+                        value,
+                        onchange: (event) => save(event.target.value),
+                    }),
+                    removeButton(name, () => send(key, () => this.builder.removeToken(name))),
+                ),
+                problem(key),
+            );
+        };
+        const breakpointRow = ({ name, minWidth }) => {
+            const key = `breakpoint:${name}`;
+
+            return el(
+                'div',
+                { class: 'bb-style-row' },
+                el('label', { class: 'bb-style-name', for: `bb-${key}`, text: name }),
+                el(
+                    'div',
+                    { class: 'bb-style-value' },
+                    el('input', {
+                        class: 'bb-input',
+                        id: `bb-${key}`,
+                        'data-key': key,
+                        inputmode: 'numeric',
+                        value: String(minWidth),
+                        onchange: (event) => {
+                            const local = widthProblem(event.target.value);
+
+                            if (local !== null) {
+                                ui.problems[key] = local;
+                                this.render();
+
+                                return;
+                            }
+
+                            send(key, () => this.builder.setBreakpoint(name, Number(event.target.value.trim())));
+                        },
+                    }),
+                    el('span', { class: 'bb-unit', text: 'px' }),
+                    removeButton(name, () => send(key, () => this.builder.removeBreakpoint(name))),
+                ),
+                problem(key),
+            );
+        };
+        const addToken = async (event) => {
+            event.preventDefault();
+            const name = ui.token.name.trim();
+            const local = tokenNameProblem(name) ?? (ui.token.value.trim() === '' ? 'Give the token a value.' : null);
+
+            if (local !== null) {
+                ui.problems['token:new'] = local;
+                this.render();
+
+                return;
+            }
+
+            if (await send('token:new', () => this.builder.setToken(name, ui.token.value.trim()))) {
+                ui.token = { name: '', value: '' };
+                this.render();
+            }
+        };
+        const addBreakpoint = async (event) => {
+            event.preventDefault();
+            const name = ui.breakpoint.name.trim();
+            const local = name === '' ? 'Give the breakpoint a name.' : widthProblem(ui.breakpoint.width);
+
+            if (local !== null) {
+                ui.problems['breakpoint:new'] = local;
+                this.render();
+
+                return;
+            }
+
+            if (await send('breakpoint:new', () => this.builder.setBreakpoint(name, Number(ui.breakpoint.width.trim())))) {
+                ui.breakpoint = { name: '', width: '' };
+                this.render();
+            }
+        };
+        const typed = (draft, field) => (event) => {
+            draft[field] = event.target.value;
+        };
+
+        return [
+            el(
+                'div',
+                { class: 'bb-drawer-head' },
+                el('h2', { text: 'Site styles' }),
+                el('p', { class: 'bb-section-text', text: 'These apply to every page of the site.' }),
+            ),
+            el(
+                'div',
+                { class: 'bb-drawer-body' },
+                el(
+                    'section',
+                    { class: 'bb-section', 'aria-label': 'Design tokens' },
+                    el('h3', { class: 'bb-section-title', text: 'Design tokens' }),
+                    tokenGroups(tokens).map((group) => [el('h4', { text: group.title }), group.tokens.map(tokenRow)]),
+                    el(
+                        'form',
+                        { class: 'bb-style-add', onsubmit: addToken },
+                        el('input', { class: 'bb-input', 'data-key': 'token-new-name', placeholder: 'Name, such as color.accent', 'aria-label': 'New token name', value: ui.token.name, oninput: typed(ui.token, 'name') }),
+                        el('input', { class: 'bb-input', 'data-key': 'token-new-value', placeholder: 'Value', 'aria-label': 'New token value', value: ui.token.value, oninput: typed(ui.token, 'value') }),
+                        el('button', { class: 'bb-primary', type: 'submit', text: 'Add' }),
+                        problem('token:new'),
+                    ),
+                ),
+                el(
+                    'section',
+                    { class: 'bb-section', 'aria-label': 'Breakpoints' },
+                    el('h3', { class: 'bb-section-title', text: 'Breakpoints' }),
+                    el('p', { class: 'bb-section-text', text: 'Styles set for a removed width stop applying.' }),
+                    breakpoints.map(breakpointRow),
+                    el(
+                        'form',
+                        { class: 'bb-style-add', onsubmit: addBreakpoint },
+                        el('input', { class: 'bb-input', 'data-key': 'breakpoint-new-name', placeholder: 'Name, such as wide', 'aria-label': 'New breakpoint name', value: ui.breakpoint.name, oninput: typed(ui.breakpoint, 'name') }),
+                        el('input', { class: 'bb-input', 'data-key': 'breakpoint-new-width', inputmode: 'numeric', placeholder: 'Width in pixels', 'aria-label': 'New breakpoint width', value: ui.breakpoint.width, oninput: typed(ui.breakpoint, 'width') }),
+                        el('button', { class: 'bb-primary', type: 'submit', text: 'Add' }),
+                        problem('breakpoint:new'),
+                    ),
+                ),
+            ),
+        ];
+    }
+
     // ---- Drawer: add a block -------------------------------------------------------------------------------
 
     adder(state) {
@@ -300,12 +506,30 @@ export class BlockBuilderElement extends HTMLElement {
         this.askAllowed(target.position);
         const allowed = this.ui.allowed;
         const sections = groupCatalogue(state.catalogue, state.packages, this.ui.query);
+        const templates = this.ui.adding === 'templates';
+        const kinds = el(
+            'div',
+            { class: 'bb-tabs bb-add-tabs', role: 'tablist' },
+            [['blocks', 'Blocks'], ['templates', 'Templates']].map(([name, label]) =>
+                el('button', {
+                    type: 'button',
+                    role: 'tab',
+                    text: label,
+                    'aria-selected': String(this.ui.adding === name),
+                    onclick: () => {
+                        this.ui.adding = name;
+                        this.render();
+                    },
+                }),
+            ),
+        );
 
         return [
             el(
                 'div',
                 { class: 'bb-drawer-head' },
                 el('h2', { text: 'Add a block' }),
+                kinds,
                 targets.length === 1
                     ? el('p', { class: 'bb-where-only', text: target.label })
                     : el(
@@ -326,8 +550,8 @@ export class BlockBuilderElement extends HTMLElement {
                 el('input', {
                     class: 'bb-input',
                     type: 'search',
-                    placeholder: 'Search blocks',
-                    'aria-label': 'Search blocks',
+                    placeholder: templates ? 'Search templates' : 'Search blocks',
+                    'aria-label': templates ? 'Search templates' : 'Search blocks',
                     'data-key': 'search',
                     value: this.ui.query,
                     oninput: (event) => {
@@ -336,7 +560,7 @@ export class BlockBuilderElement extends HTMLElement {
                     },
                 }),
             ),
-            el(
+            templates ? this.templateList(state, target.position) : el(
                 'div',
                 { class: 'bb-drawer-body' },
                 sections.length === 0 ? el('p', { class: 'bb-none', text: 'No block matches that search.' }) : null,
@@ -379,6 +603,89 @@ export class BlockBuilderElement extends HTMLElement {
     }
 
     /**
+     * Lists the templates that can be inserted, by library, with Remove on saved ones for people who may.
+     */
+    templateList(state, position) {
+        if (state.templates === null) {
+            if (!this.templatesAsked) {
+                this.templatesAsked = true;
+                this.builder.loadTemplates();
+            }
+
+            return el('div', { class: 'bb-drawer-body' }, el('p', { class: 'bb-none', text: 'Loading templates…' }));
+        }
+
+        const libraries = matchTemplates(state.templates.libraries, this.ui.query);
+        const removable = (library) => state.templates.manage && library.name === SAVED_LIBRARY;
+        const remove = (template) => {
+            const asking = this.ui.confirmRemove === template.name;
+
+            return el('button', {
+                class: 'bb-link',
+                type: 'button',
+                'data-key': `remove-template-${template.name}`,
+                text: asking ? 'Remove for good?' : 'Remove',
+                'aria-label': asking ? `Remove ${template.title} for good?` : `Remove ${template.title}`,
+                onclick: () => {
+                    if (asking) {
+                        this.ui.confirmRemove = null;
+                        this.builder.removeTemplate(template.name);
+                    } else {
+                        this.ui.confirmRemove = template.name;
+                        this.render();
+                    }
+                },
+                onblur: () => {
+                    if (this.ui.confirmRemove === template.name) {
+                        this.ui.confirmRemove = null;
+                        this.render();
+                    }
+                },
+            });
+        };
+
+        return el(
+            'div',
+            { class: 'bb-drawer-body' },
+            libraries.length === 0
+                ? el('p', {
+                      class: 'bb-none',
+                      text: this.ui.query.trim() === '' ? 'There are no templates yet.' : 'No template matches that search.',
+                  })
+                : null,
+            libraries.map((library) =>
+                el(
+                    'section',
+                    { class: 'bb-section', 'aria-label': library.title },
+                    el('h3', { class: 'bb-section-title', text: library.title }),
+                    el(
+                        'div',
+                        { class: 'bb-tiles' },
+                        library.templates.map((template) =>
+                            el(
+                                'div',
+                                { class: 'bb-template' },
+                                el(
+                                    'button',
+                                    {
+                                        class: 'bb-tile',
+                                        type: 'button',
+                                        title: template.description || null,
+                                        onclick: () => this.builder.insertTemplate(template.name, position),
+                                    },
+                                    el('strong', { text: template.title }),
+                                    el('span', { text: template.description || template.category }),
+                                ),
+                                removable(library) ? remove(template) : null,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        );
+    }
+
+    /**
      * Asks the server which blocks may go at a place, once per place and per version of the document.
      */
     askAllowed(position) {
@@ -417,7 +724,7 @@ export class BlockBuilderElement extends HTMLElement {
                 'button',
                 {
                     class: 'bb-row',
-                    draggable: 'true',
+                    draggable: String(!lockOf(block).move),
                     ondragstart: (event) => this.startDrag(event, { id: block.id }),
                     ondragend: () => this.endDrag(),
                     ondragover: (event) => this.dragOver(event, event.currentTarget, block.id, false),
@@ -425,10 +732,17 @@ export class BlockBuilderElement extends HTMLElement {
                     type: 'button',
                     style: `padding-left: ${0.4 + depth * 1.1}rem`,
                     'aria-current': String(state.selected === block.id),
-                    onclick: () => this.select(block.id, true),
+                    'data-bb-chosen': state.selection.length > 1 && state.selection.includes(block.id) ? '' : null,
+                    onclick: (event) => (event.shiftKey || event.ctrlKey || event.metaKey
+                        ? this.toggle(block.id)
+                        : this.select(block.id, true)),
                 },
                 el('b', { text: titles[block.type] ?? block.type }),
+                state.selection.includes(block.id) ? el('span', { class: 'bb-sr', text: ', selected' }) : null,
                 el('small', { text: this.hint(block) }),
+                lockOf(block).move || lockOf(block).remove
+                    ? el('span', { class: 'bb-lock', title: 'Locked', 'aria-label': 'Locked' }, icon('lock'))
+                    : null,
                 troubled.has(block.id) ? el('span', { class: 'bb-dot', title: 'This block has a problem' }) : null,
             ),
         );
@@ -519,12 +833,31 @@ export class BlockBuilderElement extends HTMLElement {
             event.preventDefault();
             const block = named(event);
 
+            if (block !== null && (event.shiftKey || event.ctrlKey || event.metaKey)) {
+                if (this.typing !== null) {
+                    this.stopTyping(true);
+                }
+
+                // A Shift-click also extends the browser's text selection, which would make copy take that text.
+                page.getSelection()?.removeAllRanges();
+
+                this.toggle(block.getAttribute(NAMED));
+
+                return;
+            }
+
             if (block !== null) {
                 this.select(block.getAttribute(NAMED));
             }
 
             if (editable !== null && block !== null) {
                 this.startTyping(editable, block.getAttribute(NAMED));
+            }
+        });
+        // Stops a Shift- or Ctrl-click on a block from selecting the text between it and the last click.
+        page.addEventListener('mousedown', (event) => {
+            if ((event.shiftKey || event.ctrlKey || event.metaKey) && named(event) !== null && this.typing === null) {
+                event.preventDefault();
             }
         });
         page.addEventListener('keydown', (event) => this.typingKey(event));
@@ -540,7 +873,11 @@ export class BlockBuilderElement extends HTMLElement {
         });
         // Blocks are dragged on the page itself. Whether "before" and "after" run across or down depends on how the
         // block's parent lays its children out, so a column is dropped beside its neighbour, not above it.
-        page.querySelectorAll(`[${NAMED}]`).forEach((node) => node.setAttribute('draggable', 'true'));
+        // A block locked in place is not offered for dragging, since the server would refuse the move.
+        page.querySelectorAll(`[${NAMED}]`).forEach((node) => node.setAttribute(
+            'draggable',
+            String(!lockOf(find(this.builder.state().document, node.getAttribute(NAMED))).move),
+        ));
         page.addEventListener('dragstart', (event) => {
             const block = named(event);
 
@@ -564,6 +901,7 @@ export class BlockBuilderElement extends HTMLElement {
             this.dragOver(event, block, block.getAttribute(NAMED), across);
         });
         page.addEventListener('keydown', (event) => this.shortcut(event));
+        ['copy', 'cut', 'paste'].forEach((kind) => page.addEventListener(kind, (event) => this.clipboard(event, page)));
         page.addEventListener('drop', (event) => this.dropHere(event));
         page.addEventListener('dragend', () => this.endDrag());
         page.addEventListener('mouseleave', () => {
@@ -603,6 +941,15 @@ export class BlockBuilderElement extends HTMLElement {
         const block = find(state.document, blockId);
         const entry = state.catalogue.find((candidate) => candidate.name === block?.type);
         const path = node.getAttribute('data-block-setting');
+        const bound = bindingOf(block, path) ?? bindingOf(block, path.split('.')[0]);
+
+        // Typing would change the text only until the page is drawn again from the source.
+        if (bound !== null) {
+            this.say(`This text comes from ${bound.source}. Change it in the inspector.`);
+
+            return;
+        }
+
         const rich = settingSchema(entry?.settings, path)?.['x-control'] === 'rich-text';
         const page = this.frame.contentDocument;
 
@@ -796,8 +1143,8 @@ export class BlockBuilderElement extends HTMLElement {
 
         page.querySelectorAll('[data-bb-picked]').forEach((node) => node.removeAttribute('data-bb-picked'));
 
-        if (selected !== null) {
-            page.querySelector(`[${NAMED}="${CSS.escape(selected)}"]`)?.setAttribute('data-bb-picked', '');
+        for (const id of new Set([...this.builder.state().selection, ...(selected === null ? [] : [selected])])) {
+            page.querySelector(`[${NAMED}="${CSS.escape(id)}"]`)?.setAttribute('data-bb-picked', '');
         }
 
         this.placeBar();
@@ -807,13 +1154,15 @@ export class BlockBuilderElement extends HTMLElement {
         const state = this.builder.state();
         const block = state.selected === null || state.document === null ? null : find(state.document, state.selected);
 
-        if (block === null) {
+        // The block bar acts on one block; several selected blocks are handled from the inspector.
+        if (block === null || state.selection.length > 1) {
             this.bar.hidden = true;
 
             return;
         }
 
         const here = positionOf(state.document, block.id);
+        const lock = lockOf(block);
         const beside = here.parent === null ? state.document.blocks : find(state.document, here.parent).children;
         const tool = (label, glyph, run, disabled = false) =>
             el('button', { type: 'button', title: label, 'aria-label': label, disabled, onclick: run }, icon(glyph));
@@ -821,11 +1170,12 @@ export class BlockBuilderElement extends HTMLElement {
         this.bar.replaceChildren(
             el('strong', { text: this.titles(state)[block.type] ?? block.type }),
             tool('Select the block this is inside', 'parent', () => this.select(here.parent), here.parent === null),
-            tool('Move up', 'up', () => this.builder.moveBy(block.id, -1), here.index === 0),
-            tool('Move down', 'down', () => this.builder.moveBy(block.id, 1), here.index === beside.length - 1),
+            tool('Move up', 'up', () => this.builder.moveBy(block.id, -1), here.index === 0 || lock.move),
+            tool('Move down', 'down', () => this.builder.moveBy(block.id, 1), here.index === beside.length - 1 || lock.move),
             tool('Duplicate', 'copy', () => this.builder.duplicate(block.id)),
             tool('Add a block', 'add', () => this.openDrawer('add')),
-            tool('Remove', 'remove', () => this.builder.remove(block.id)),
+            tool(lock.remove ? 'Remove (locked)' : 'Remove', 'remove', () => this.builder.remove(block.id), lock.remove),
+            ...[this.moreButton(state, block)].flat(),
         );
         this.bar.hidden = false;
 
@@ -838,6 +1188,251 @@ export class BlockBuilderElement extends HTMLElement {
         this.bar.style.left = `${left}px`;
     }
 
+    // ---- More actions and the clipboard ---------------------------------------------------------------------
+
+    /**
+     * Lists what the block bar's More button offers for the selected block.
+     *
+     * @returns {Array<{label: string, run: () => void, disabled?: boolean}>}
+     */
+    moreActions(state, block) {
+        const actions = [
+            { label: 'Copy', run: () => this.copyBlocks([block.id], false) },
+            { label: 'Cut', run: () => this.copyBlocks([block.id], true), disabled: lockOf(block).remove },
+        ];
+
+        if (typeof navigator.clipboard?.readText === 'function') {
+            actions.push({ label: 'Paste after', run: () => this.pasteFromClipboard([block.id]) });
+        }
+
+        const entry = state.catalogue.find((candidate) => candidate.name === block.type);
+        const targets = (entry?.transforms ?? [])
+            .map((name) => state.catalogue.find((candidate) => candidate.name === name))
+            .filter((target) => target !== undefined);
+
+        if (targets.length > 0) {
+            actions.push({ heading: 'Turn into' });
+            targets.forEach((target) => actions.push({
+                label: target.title,
+                aria: `Turn into ${target.title.toLowerCase()}`,
+                run: () => this.builder.transform(block.id, target.name),
+            }));
+        }
+
+        if (state.templates?.manage === true) {
+            actions.push({
+                label: 'Save as template',
+                run: () => {
+                    this.ui.saveForm = { block: block.id, title: '', description: '', problem: null };
+                    this.render();
+                    this.querySelector('[data-key="template-title"]')?.focus();
+                },
+            });
+        }
+
+        return actions;
+    }
+
+    /**
+     * Draws the More button and, while it is open, its list of actions under the block bar.
+     */
+    moreButton(state, block) {
+        const button = el(
+            'button',
+            {
+                type: 'button',
+                title: 'More',
+                'aria-label': 'More',
+                'aria-haspopup': 'menu',
+                'aria-expanded': String(this.ui.more),
+                'data-key': 'bar-more',
+                onclick: () => this.toggleMore(!this.ui.more),
+            },
+            icon('more'),
+        );
+
+        if (!this.ui.more) {
+            return button;
+        }
+
+        const menu = el(
+            'div',
+            {
+                class: 'bb-menu',
+                role: 'menu',
+                onkeydown: (event) => {
+                    if (event.key === 'Escape') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        this.toggleMore(false);
+                        this.bar.querySelector('[data-key="bar-more"]')?.focus();
+                    }
+                },
+            },
+            this.moreActions(state, block).map((action) =>
+                action.heading !== undefined
+                    ? el('p', { class: 'bb-menu-head', text: action.heading })
+                    : el('button', {
+                          type: 'button',
+                          role: 'menuitem',
+                          text: action.label,
+                          'aria-label': action.aria ?? null,
+                          disabled: action.disabled === true,
+                          onclick: () => {
+                              this.toggleMore(false);
+                              action.run();
+                          },
+                      }),
+            ),
+        );
+
+        return [button, menu];
+    }
+
+    toggleMore(open) {
+        this.ui.more = open;
+        this.placeBar();
+
+        if (open) {
+            this.bar.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
+        }
+    }
+
+    /**
+     * Shows a short note in the toast for a moment, such as what was just copied.
+     */
+    say(message) {
+        clearTimeout(this.sayTimer);
+        this.ui.message = message;
+        this.render();
+        this.sayTimer = setTimeout(() => {
+            this.ui.message = null;
+            this.render();
+        }, 2500);
+    }
+
+    /**
+     * Gives the ids of the blocks an action works on: the selection.
+     */
+    chosen(state) {
+        if (Array.isArray(state.selection) && state.selection.length > 0) {
+            return state.selection;
+        }
+
+        return state.selected === null ? [] : [state.selected];
+    }
+
+    copiedText(state, ids) {
+        return clipboardText(pick(state.document, ids));
+    }
+
+    copiedNote(state, ids) {
+        const count = pick(state.document, ids).length;
+
+        return count === 1 ? 'Copied 1 block' : `Copied ${count} blocks`;
+    }
+
+    /**
+     * Copies blocks through the browser's clipboard, for the More list, where there is no clipboard event.
+     */
+    async copyBlocks(ids, cut) {
+        const state = this.builder.state();
+
+        try {
+            await navigator.clipboard.writeText(this.copiedText(state, ids));
+        } catch {
+            this.say('The browser did not allow copying. Use the keyboard shortcut instead.');
+
+            return;
+        }
+
+        if (cut) {
+            this.builder.removeMany(pick(state.document, ids).map((block) => block.id));
+        } else {
+            this.say(this.copiedNote(state, ids));
+        }
+    }
+
+    async pasteFromClipboard(ids) {
+        let text = '';
+
+        try {
+            text = await navigator.clipboard.readText();
+        } catch {
+            this.say('The browser did not allow pasting. Use the keyboard shortcut instead.');
+
+            return;
+        }
+
+        const blocks = readClipboard(text);
+        const state = this.builder.state();
+
+        if (blocks === null) {
+            this.say('The clipboard holds no blocks.');
+        } else {
+            this.builder.paste(blocks, pastePosition(state.document, ids));
+        }
+    }
+
+    /**
+     * Copies, cuts and pastes blocks on the usual keys, unless the person is working with text: then the browser's
+     * own copy and paste go ahead, as they would anywhere else.
+     *
+     * @param {Document} from The document the event happened in, the builder's own or the page's.
+     */
+    clipboard(event, from) {
+        const state = this.builder.state();
+
+        if (state.document === null || event.clipboardData === null) {
+            return;
+        }
+
+        const typingIn = this.typing;
+        const inField = typingIn === null
+            && Boolean(event.target.closest?.('input, textarea, select, [contenteditable]'));
+        const intent = clipboardIntent({
+            kind: event.type,
+            text: event.type === 'paste' ? event.clipboardData.getData('text/plain') : '',
+            inField,
+            typing: typingIn !== null,
+            textSelected: from.getSelection?.()?.isCollapsed === false,
+            chosen: pick(state.document, this.chosen(state)).length,
+        });
+
+        if (intent.act === 'browser') {
+            return;
+        }
+
+        event.preventDefault();
+
+        if (intent.act === 'refuse') {
+            this.say('Select a block to paste blocks after it.');
+
+            return;
+        }
+
+        if (intent.act === 'paste') {
+            const after = typingIn === null ? this.chosen(state) : [typingIn.blockId];
+
+            if (intent.stopTyping) {
+                this.stopTyping(true);
+            }
+
+            this.builder.paste(intent.blocks, pastePosition(this.builder.state().document, after));
+
+            return;
+        }
+
+        const ids = pick(state.document, this.chosen(state)).map((block) => block.id);
+        event.clipboardData.setData('text/plain', this.copiedText(state, ids));
+
+        if (event.type === 'cut') {
+            this.builder.removeMany(ids);
+        } else {
+            this.say(this.copiedNote(state, ids));
+        }
+    }
+
     /**
      * Undoes or redoes on the usual keys, unless the person is typing: a text field has its own undo, and taking
      * the keys from it would undo a block edit when they meant to undo a letter.
@@ -845,6 +1440,13 @@ export class BlockBuilderElement extends HTMLElement {
     shortcut(event) {
         const typing = Boolean(event.target.closest?.('input, textarea, select, [contenteditable]'));
         const key = event.key.toLowerCase();
+
+        if (key === 'escape' && !typing && this.typing === null && this.builder.state().selection.length > 1) {
+            event.preventDefault();
+            this.select(null);
+
+            return;
+        }
 
         if (typing || !(event.metaKey || event.ctrlKey) || event.altKey || (key !== 'z' && key !== 'y')) {
             return;
@@ -938,7 +1540,20 @@ export class BlockBuilderElement extends HTMLElement {
         }
     }
 
+    /**
+     * Adds a block to the selection or takes it out, for a Shift-, Ctrl- or Cmd-click.
+     */
+    toggle(id) {
+        this.ui.more = false;
+        this.ui.binding = null;
+        this.ui.saveForm = null;
+        this.builder.dismiss();
+        this.builder.toggle(id);
+    }
+
     select(id, reveal = false) {
+        this.ui.more = false;
+        this.ui.binding = null;
         this.ui.errors = {};
         this.ui.target = 0;
         this.ui.rules = null;
@@ -959,12 +1574,17 @@ export class BlockBuilderElement extends HTMLElement {
         const loose = state.refusals.filter((refusal) => refusal.path === null || refusal.block !== state.selected);
 
         if (loose.length === 0) {
-            this.toast.hidden = true;
+            this.toast.hidden = this.ui.message === null;
+            this.toast.dataset.kind = 'note';
+            this.toast.setAttribute('role', 'status');
+            this.toast.replaceChildren(el('p', { text: this.ui.message ?? '' }));
 
             return;
         }
 
         this.toast.hidden = false;
+        delete this.toast.dataset.kind;
+        this.toast.setAttribute('role', 'alert');
         this.toast.replaceChildren(
             el('button', { class: 'bb-link', type: 'button', text: 'Dismiss', style: 'float:right', onclick: () => this.builder.dismiss() }),
             loose.length === 1
@@ -977,6 +1597,10 @@ export class BlockBuilderElement extends HTMLElement {
 
     inspector(state) {
         const block = state.selected === null || state.document === null ? null : find(state.document, state.selected);
+
+        if (state.selection.length > 1 && state.document !== null) {
+            return this.several(state);
+        }
 
         if (block === null) {
             return [
@@ -1005,6 +1629,10 @@ export class BlockBuilderElement extends HTMLElement {
 
         if (this.ui.picker !== null && this.ui.picker.block === block.id) {
             return this.picker(block);
+        }
+
+        if (this.ui.saveForm !== null && this.ui.saveForm.block === block.id) {
+            return this.saveTemplateForm(state, entry?.title ?? block.type);
         }
 
         const body = tab === 'style'
@@ -1043,6 +1671,113 @@ export class BlockBuilderElement extends HTMLElement {
                     ? null
                     : el('div', { class: 'bb-toast', role: 'status' }, el('ul', {}, issues.map((issue) => el('li', { text: issue.message })))),
                 body,
+            ),
+        ];
+    }
+
+    /**
+     * Offers what can be done to several selected blocks at once.
+     */
+    several(state) {
+        const ids = pick(state.document, state.selection).map((block) => block.id);
+        const blocks = ids.map((id) => find(state.document, id));
+        const removable = blocks.every((block) => !lockOf(block).remove);
+        const action = (label, run, disabled = false) =>
+            el('button', { class: 'bb-wide-button', type: 'button', text: label, disabled, onclick: run });
+
+        return [
+            el(
+                'div',
+                { class: 'bb-side-head' },
+                el('h2', { text: `${ids.length} blocks selected` }),
+                el('p', { text: 'Shift-, Ctrl- or Cmd-click a block to add it or take it out. Escape clears the selection.' }),
+            ),
+            el(
+                'div',
+                { class: 'bb-side-body bb-several' },
+                action('Copy', () => this.copyBlocks(ids, false)),
+                action('Cut', () => this.copyBlocks(ids, true), !removable),
+                action('Remove', () => this.builder.removeMany(ids), !removable),
+                action('Lock all', () => this.builder.lockMany(ids, { move: true, remove: true })),
+                action('Unlock all', () => this.builder.lockMany(ids, { move: false, remove: false })),
+                removable ? null : el('p', { class: 'bb-help', text: 'Some of these are locked against removal.' }),
+            ),
+        ];
+    }
+
+    /**
+     * Asks for what a new template is called, and shows the name it will be saved under before saving.
+     */
+    saveTemplateForm(state, blockTitle) {
+        const form = this.ui.saveForm;
+        const name = templateName(form.title);
+        const saved = state.templates?.libraries.find((library) => library.name === SAVED_LIBRARY)?.templates ?? [];
+        const replaces = name !== null && saved.some((template) => template.name === name);
+        const close = () => {
+            this.ui.saveForm = null;
+            this.render();
+        };
+        const typed = (key) => (event) => {
+            form[key] = event.target.value;
+            form.problem = null;
+            this.render();
+        };
+        const submit = async (event) => {
+            event.preventDefault();
+
+            if (name === null) {
+                form.problem = form.title.trim() === ''
+                    ? 'Give the template a title.'
+                    : 'Use some letters or digits in the title.';
+                this.render();
+
+                return;
+            }
+
+            if (await this.builder.saveTemplate({ block: form.block, title: form.title.trim(), description: form.description })) {
+                this.ui.saveForm = null;
+                this.say('Saved as a template');
+            }
+        };
+
+        return [
+            el(
+                'div',
+                { class: 'bb-side-head' },
+                el('h2', { text: 'Save as template' }),
+                el('p', { text: `The ${blockTitle.toLowerCase()} and everything inside it.` }),
+            ),
+            el(
+                'form',
+                { class: 'bb-side-body bb-save-template', onsubmit: submit },
+                el(
+                    'label',
+                    { class: 'bb-field' },
+                    el('span', { class: 'bb-label', text: 'Title' }),
+                    el('input', {
+                        class: 'bb-input',
+                        required: true,
+                        'data-key': 'template-title',
+                        value: form.title,
+                        'aria-invalid': form.problem === null ? null : 'true',
+                        oninput: typed('title'),
+                    }),
+                    form.problem === null ? null : el('span', { class: 'bb-wrong', text: form.problem }),
+                ),
+                el(
+                    'label',
+                    { class: 'bb-field' },
+                    el('span', { class: 'bb-label', text: 'Description' }),
+                    el('textarea', { class: 'bb-input', 'data-key': 'template-description', oninput: typed('description') }, form.description),
+                ),
+                el('p', { class: 'bb-help', text: name === null ? 'It will be named once it has a title.' : `Saved as ${name}` }),
+                replaces ? el('p', { class: 'bb-help', text: 'Replaces the saved template of this name.' }) : null,
+                el(
+                    'div',
+                    { class: 'bb-actions' },
+                    el('button', { class: 'bb-primary', type: 'submit', text: 'Save' }),
+                    el('button', { class: 'bb-link', type: 'button', text: 'Cancel', onclick: close }),
+                ),
             ),
         ];
     }
@@ -1135,24 +1870,155 @@ export class BlockBuilderElement extends HTMLElement {
         const overridden = responsive && at === '' && field.value !== null && typeof field.value === 'object'
             && Object.keys(field.value).some((name) => name !== 'base');
         const label = field.title === field.name ? words(field.name) : field.title;
+        const sources = state.vocabulary?.sources ?? [];
+        const own = group === 'settings' && at === '';
+        const bound = own ? bindingOf(block, field.name) : null;
+        const binding = own && this.ui.binding?.block === block.id && this.ui.binding.setting === field.name;
+        const canBind = own && sources.length > 0 && bindable(this.schemaOf(state, block)).includes(field.name);
+
+        if (bound !== null || binding) {
+            return el(
+                'div',
+                { class: 'bb-field bb-bound' },
+                el('span', { class: 'bb-label', text: label }),
+                binding
+                    ? this.bindingForm(state, block, field)
+                    : [
+                          el('p', { class: 'bb-binding', text: describeBinding(bound, sources) }),
+                          el(
+                              'div',
+                              { class: 'bb-actions' },
+                              canBind ? el('button', { class: 'bb-link', type: 'button', text: 'Change', onclick: () => this.openBinding(block, field, bound) }) : null,
+                              el('button', { class: 'bb-link', type: 'button', text: 'Unbind', onclick: () => this.builder.clearBinding(block.id, field.name) }),
+                          ),
+                      ],
+                wrong === null ? null : el('span', { class: 'bb-wrong', text: wrong }),
+            );
+        }
+
+        const bind = canBind
+            ? el('button', {
+                  class: 'bb-link bb-bind',
+                  type: 'button',
+                  text: 'Bind',
+                  'aria-label': `Bind ${label} to a data source`,
+                  onclick: () => this.openBinding(block, field, null),
+              })
+            : null;
         const control = this.control(state, field, shown, commit, key, wrong !== null);
 
         if (control.type === 'checkbox') {
+            if (bind !== null) {
+                return el('div', { class: 'bb-field bb-label-row' }, el('label', { class: 'bb-check' }, control, el('span', { text: label })), bind);
+            }
+
             return el('label', { class: 'bb-field bb-check' }, control, el('span', { text: label }));
         }
+
+        const caption = el(
+            'label',
+            { class: 'bb-label', for: `bb-${key}` },
+            el('span', { text: field.private ? `${label} (only editors see this)` : label }),
+            overridden ? el('i', { title: 'Has a different value at some widths' }) : null,
+        );
 
         return el(
             'div',
             { class: 'bb-field' },
-            el(
-                'label',
-                { class: 'bb-label', for: `bb-${key}` },
-                el('span', { text: field.private ? `${label} (only editors see this)` : label }),
-                overridden ? el('i', { title: 'Has a different value at some widths' }) : null,
-            ),
+            bind === null ? caption : el('div', { class: 'bb-label-row' }, caption, bind),
             control,
             field.description ? el('span', { class: 'bb-help', text: field.description }) : null,
             wrong === null ? null : el('span', { class: 'bb-wrong', text: wrong }),
+        );
+    }
+
+    schemaOf(state, block) {
+        return state.catalogue.find((candidate) => candidate.name === block.type)?.settings;
+    }
+
+    openBinding(block, field, current) {
+        const sources = this.builder.state().vocabulary?.sources ?? [];
+        const source = current?.source ?? sources[0]?.name ?? '';
+
+        this.ui.binding = {
+            block: block.id,
+            setting: field.name,
+            source,
+            arguments: { ...(current?.arguments ?? {}) },
+            useFallback: current !== null && current.fallback !== undefined,
+            fallback: current?.fallback ?? block.settings?.[field.name] ?? '',
+        };
+        this.render();
+    }
+
+    /**
+     * Asks which source a setting takes its value from, and with what arguments; drawn under the setting's label.
+     */
+    bindingForm(state, block, field) {
+        const draft = this.ui.binding;
+        const sources = state.vocabulary?.sources ?? [];
+        const source = sources.find((candidate) => candidate.name === draft.source);
+        const close = () => {
+            this.ui.binding = null;
+            this.render();
+        };
+        const save = async () => {
+            await this.builder.setBinding(block.id, field.name, bindingFrom(draft));
+
+            if (this.builder.state().refusals.length === 0 && this.builder.state().error === null) {
+                close();
+            }
+        };
+        const argument = (name, value) => {
+            draft.arguments = { ...draft.arguments, [name]: value ?? '' };
+            this.render();
+        };
+
+        return el(
+            'div',
+            { class: 'bb-binding-form' },
+            el(
+                'label',
+                { class: 'bb-field' },
+                el('span', { class: 'bb-label', text: 'Source' }),
+                el(
+                    'select',
+                    {
+                        class: 'bb-input',
+                        'data-key': `binding-source-${field.name}`,
+                        onchange: (event) => {
+                            draft.source = event.target.value;
+                            draft.arguments = {};
+                            this.render();
+                        },
+                    },
+                    sources.map((candidate) =>
+                        el('option', { value: candidate.name, text: candidate.name, selected: candidate.name === draft.source })),
+                ),
+            ),
+            source === undefined
+                ? null
+                : fields(source.arguments, draft.arguments).map((argumentField) =>
+                      this.field(state, block, `binding:${field.name}`, argumentField, argument, '')),
+            el(
+                'label',
+                { class: 'bb-field bb-check' },
+                el('input', {
+                    type: 'checkbox',
+                    checked: draft.useFallback,
+                    onchange: (event) => {
+                        draft.useFallback = event.target.checked;
+                        this.render();
+                    },
+                }),
+                el('span', { text: 'Show the current value when the source has none' }),
+            ),
+            el(
+                'div',
+                { class: 'bb-actions' },
+                el('button', { class: 'bb-primary', type: 'button', text: 'Save', disabled: source === undefined, onclick: save }),
+                el('button', { class: 'bb-link', type: 'button', text: 'Cancel', onclick: close }),
+            ),
         );
     }
 

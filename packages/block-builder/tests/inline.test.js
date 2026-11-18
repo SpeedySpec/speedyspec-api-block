@@ -103,3 +103,11 @@ test('a block is removed by Backspace only when emptying its text leaves nothing
     assert.equal(removableWhenEmpty({ settings: {}, children: [] }, tableTypeSchema, 'caption'), false);
     assert.equal(removableWhenEmpty({ settings: {}, children: [] }, tableTypeSchema, 'rows.0.0'), false);
 });
+
+test('a block locked against removal is never removed by Backspace, even when empty', () => {
+    const locked = (lock) => ({ settings: {}, children: [], extensions: { 'core/lock': lock } });
+
+    assert.equal(removableWhenEmpty(locked({ remove: true }), quoteSchema, 'text'), false);
+    assert.equal(removableWhenEmpty(locked({ move: true }), quoteSchema, 'text'), true);
+    assert.equal(removableWhenEmpty(locked({ remove: 'yes' }), quoteSchema, 'text'), true);
+});

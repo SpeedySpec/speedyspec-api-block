@@ -1,4 +1,6 @@
-import { Refused } from './api.js';
+import { ApiError, Refused } from './api.js';
+import { templateName } from './templates.js';
+import { toggleInSelection, withLock } from './selection.js';
 import { find, indentPosition, movePosition, outdentPosition, positionOf } from './tree.js';
 
 /**
@@ -23,12 +25,16 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         packages: [],
         vocabulary: null,
         selected: null,
+        // Every block selected, in document order; it holds `selected` whenever that is set.
+        selection: [],
         refusals: [],
         error: null,
         saving: false,
         canUndo: false,
         canRedo: false,
         preview: { output: '', css: '', styles: [] },
+        // The template libraries and whether the person may save and remove templates; null until first asked.
+        templates: null,
     };
     const listeners = new Set();
     let queue = Promise.resolve();
@@ -75,6 +81,8 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
                 const before = state.document.blocks;
                 const result = await client.operate(documentId, wanted);
                 const selected = find(result.document, state.selected) === null ? null : state.selected;
+                const kept = state.selection.filter((id) => find(result.document, id) !== null);
+                const selection = selected === null || kept.includes(selected) ? kept : [selected];
 
                 remember(before);
                 set({
@@ -83,6 +91,7 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
                     refusals: [],
                     error: null,
                     selected,
+                    selection,
                     canUndo: past.length > 0,
                     canRedo: future.length > 0,
                     ...after(result),
@@ -125,9 +134,55 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         );
     }
 
+    /**
+     * Runs a change to the site rather than to the document, such as saving a template: it is not in the
+     * document's history, and a failure is shown rather than thrown.
+     *
+     * @returns {Promise<boolean>} Whether it worked.
+     */
+    async function siteChange(run) {
+        try {
+            await run();
+
+            return true;
+        } catch (error) {
+            set({ error: error.message });
+
+            return false;
+        }
+    }
+
+    /**
+     * Changes a site style and puts what the server answers into the vocabulary, then draws the page again with it.
+     *
+     * Site styles are not part of the document, so the change is not in its history.
+     *
+     * @param {'tokens'|'breakpoints'} key The part of the vocabulary the server answered with.
+     * @returns {Promise<?string>} Null when it worked; otherwise why not, safe to show.
+     */
+    async function styleChange(key, run) {
+        try {
+            const answer = await run();
+            set({ vocabulary: { ...state.vocabulary, [key]: answer } });
+            await refreshPreview();
+
+            return null;
+        } catch (error) {
+            if (!(error instanceof ApiError) || (error.status !== 422 && error.status !== 403)) {
+                set({ error: error.message });
+            }
+
+            return error.message;
+        }
+    }
+
+    const loadTemplates = () => siteChange(async () => set({ templates: await client.templates() }));
+
     const moveTo = (id, position) =>
         position === null ? Promise.resolve() : edit({ operation: 'move', block: id, position });
-    const selectFirst = (result) => (result.affected.length === 0 ? {} : { selected: result.affected[0] });
+    const selectFirst = (result) => (
+        result.affected.length === 0 ? {} : { selected: result.affected[0], selection: [result.affected[0]] }
+    );
 
     return {
         state: () => state,
@@ -169,8 +224,30 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         },
 
         select(id) {
-            set({ selected: id });
+            set({ selected: id, selection: id === null ? [] : [id] });
         },
+
+        /**
+         * Adds a block to the selection or takes it out, as a Shift- or Ctrl-click does.
+         */
+        toggle(id) {
+            if (state.document === null) {
+                return;
+            }
+
+            const selection = toggleInSelection(state.document, state.selection, id);
+            const selected = selection.includes(id) ? id : (selection.at(-1) ?? null);
+
+            set({ selection, selected });
+        },
+
+        /**
+         * Locks or unlocks several blocks as one edit, so one undo puts every lock back as it was.
+         *
+         * @param {string[]} ids
+         * @param {{move: boolean, remove: boolean}} lock
+         */
+        lockMany: (ids, lock) => edit(() => ({ operation: 'restore', blocks: withLock(state.document.blocks, ids, lock) })),
 
         /**
          * Puts away what the server last refused, once the person has read it.
@@ -207,7 +284,29 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
 
         remove: (id) => edit({ operation: 'remove', block: id }),
 
+        /**
+         * Removes several blocks as one edit, so one undo puts them all back.
+         *
+         * @param {string[]} ids
+         */
+        removeMany: (ids) => (ids.length === 1
+            ? edit({ operation: 'remove', block: ids[0] })
+            : edit({ operation: 'removeBlocks', ids })),
+
+        /**
+         * Adds copied blocks, which the server gives new ids, and selects the first.
+         *
+         * @param {Array<object>} blocks As the clipboard holds them.
+         * @param {{parent: ?string, index: number}} position
+         */
+        paste: (blocks, position) => edit({ operation: 'insertBlocks', blocks, position }, selectFirst),
+
         duplicate: (id) => edit({ operation: 'duplicate', block: id }, selectFirst),
+
+        /**
+         * Turns a block into another type its own type declares; it stays the same block, so it stays selected.
+         */
+        transform: (id, type) => edit({ operation: 'transform', block: id, type }),
 
         move: (id, position) => moveTo(id, position),
 
@@ -236,6 +335,16 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
             edit({ operation: 'updateExtension', block: id, namespace, settings }),
 
         /**
+         * Binds a setting to a data source, so its value comes from the source when the page is drawn.
+         *
+         * @param {string} path The setting, such as `text`.
+         * @param {{source: string, arguments: object, fallback?: *}} binding
+         */
+        setBinding: (id, path, binding) => edit({ operation: 'setBinding', block: id, path, binding }),
+
+        clearBinding: (id, path) => edit({ operation: 'clearBinding', block: id, path }),
+
+        /**
          * Takes the document back to how it was before the last edit.
          */
         undo: () => step(past, future),
@@ -246,5 +355,31 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         redo: () => step(future, past),
 
         refreshPreview,
+
+        loadTemplates,
+
+        setToken: (name, value) => styleChange('tokens', () => client.setToken(name, value)),
+
+        removeToken: (name) => styleChange('tokens', () => client.removeToken(name)),
+
+        setBreakpoint: (name, minWidth) => styleChange('breakpoints', () => client.setBreakpoint(name, minWidth)),
+
+        removeBreakpoint: (name) => styleChange('breakpoints', () => client.removeBreakpoint(name)),
+
+        /**
+         * Saves a block, with everything inside it, as a template under a name made from its title.
+         *
+         * @param {{block: string, title: string, description: string}} template
+         * @returns {Promise<boolean>} Whether it was saved.
+         */
+        saveTemplate: ({ block, title, description }) => siteChange(async () => {
+            await client.saveTemplate({ document: documentId, block, name: templateName(title), title, description });
+            set({ templates: await client.templates() });
+        }),
+
+        removeTemplate: (name) => siteChange(async () => {
+            await client.removeTemplate(name);
+            set({ templates: await client.templates() });
+        }),
     };
 }

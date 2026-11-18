@@ -118,7 +118,7 @@ test('the remaining routes are reachable', async () => {
         { status: 204 },
         { status: 200, body: { output: '<p>', css: '' } },
         { status: 200, body: { output: '<p>', css: '' } },
-        { status: 200, body: { libraries: [] } },
+        { status: 200, body: { libraries: [{ name: 'core/saved' }], manage: true } },
         { status: 201, body: { template: { name: 'acme/x' } } },
         { status: 204 },
     );
@@ -129,7 +129,7 @@ test('the remaining routes are reachable', async () => {
     await client.deleteDocument('new');
     await client.preview('home', 't');
     await client.render('home', 'admin');
-    await client.templates();
+    const templates = await client.templates();
     await client.saveTemplate({ name: 'acme/x', title: 'X', document: 'home', block: 'b' });
     await client.removeTemplate('acme/x');
 
@@ -144,6 +144,7 @@ test('the remaining routes are reachable', async () => {
         'DELETE /api/templates/acme/x',
     ]);
     assert.deepEqual(JSON.parse(calls[3].body), { block: 't', mode: 'admin' });
+    assert.deepEqual(templates, { libraries: [{ name: 'core/saved' }], manage: true });
 });
 
 test('media are listed with only the filters given', async () => {
@@ -190,4 +191,27 @@ test('a refused upload comes back with the server\'s reason', async () => {
         client.upload(new File(['<p>'], 'x.jpg', { type: 'image/jpeg' })),
         (error) => error instanceof ApiError && error.status === 415 && error.message.startsWith('Only images'),
     );
+});
+
+test('site styles are changed one token or breakpoint at a time, by name', async () => {
+    const { fetch, calls } = fakeFetch(
+        { status: 200, body: { tokens: { 'color.primary': '#fff' } } },
+        { status: 200, body: { tokens: {} } },
+        { status: 200, body: { breakpoints: [{ name: 'wide', minWidth: 1280 }] } },
+        { status: 200, body: { breakpoints: [] } },
+    );
+    const client = createClient({ baseUrl: '/api', fetch });
+
+    assert.deepEqual(await client.setToken('color.primary', '#fff'), { 'color.primary': '#fff' });
+    assert.deepEqual(await client.removeToken('a/b'), {});
+    assert.deepEqual(await client.setBreakpoint('wide', 1280), [{ name: 'wide', minWidth: 1280 }]);
+    assert.deepEqual(await client.removeBreakpoint('wide'), []);
+    assert.deepEqual(calls.map((call) => `${call.method} ${call.url}`), [
+        'PUT /api/tokens/color.primary',
+        'DELETE /api/tokens/a%2Fb',
+        'PUT /api/breakpoints/wide',
+        'DELETE /api/breakpoints/wide',
+    ]);
+    assert.deepEqual(JSON.parse(calls[0].body), { value: '#fff' });
+    assert.deepEqual(JSON.parse(calls[2].body), { minWidth: 1280 });
 });

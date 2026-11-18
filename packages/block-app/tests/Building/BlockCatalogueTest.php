@@ -42,6 +42,7 @@ test('lists every block type with what a builder shows, in registration order', 
             'acceptsChildren' => true,
             'settings' => $settings,
             'examples' => [[]],
+            'transforms' => [],
         ])
         ->and($catalogue->find(BlockName::fromString('host/plain'))->package)->toBeNull()
         ->and($catalogue->find(BlockName::fromString('host/plain'))->toArray()['acceptsChildren'])->toBeFalse()

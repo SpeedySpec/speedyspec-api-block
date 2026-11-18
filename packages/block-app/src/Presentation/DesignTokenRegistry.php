@@ -24,14 +24,27 @@ class DesignTokenRegistry implements DesignTokenRegistryInterface
 
     public function set(string $name, string $value): void
     {
+        self::assertToken($name, $value);
+
+        $this->tokens[$name] = $value;
+    }
+
+    /**
+     * Checks a token the way every registry must, so a token can never write outside its custom property.
+     *
+     * @throws InvalidStyleException
+     *   When the name is malformed or the value could break out of the stylesheet.
+     *
+     * @since 0.1.0
+     */
+    public static function assertToken(string $name, string $value): void
+    {
         if (preg_match('/^' . self::NAME_PATTERN . '\z/', $name) !== 1)
         {
             throw new InvalidStyleException(sprintf('"%s" is not a usable token name.', $name));
         }
 
         StyleRule::assertValue($value, $name);
-
-        $this->tokens[$name] = $value;
     }
 
     public function remove(string $name): void

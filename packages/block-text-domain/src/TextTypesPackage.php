@@ -48,6 +48,11 @@ class TextTypesPackage implements BlockPackageInterface
             'x-control' => 'rich-text',
             'title' => $title,
         ];
+        // Text blocks can be turned into one another; each keeps its words, and anything else starts afresh.
+        $turnsInto = static fn (string ...$names): array => array_map(
+            static fn (string $name): array => ['to' => $name, 'settings' => ['text' => 'text']],
+            $names,
+        );
         $type = fn (array $definition) => $registrar->type(
             BlockType::fromArray(['category' => 'text', ...$definition]),
         );
@@ -71,6 +76,7 @@ class TextTypesPackage implements BlockPackageInterface
             // A package that sees the whole page may make heading ids unique; the heading then uses those.
             'uses' => ['core/heading-ids'],
             'examples' => [['level' => 2, 'text' => 'A heading']],
+            'transforms' => $turnsInto('core/paragraph', 'core/quote'),
         ]);
         $registrar->behaviour(BlockName::fromString('core/heading'), new HeadingBehaviour());
 
@@ -81,6 +87,7 @@ class TextTypesPackage implements BlockPackageInterface
             'keywords' => ['text', 'p'],
             'settings' => ['type' => 'object', 'properties' => ['text' => $rich('Text')]],
             'examples' => [['text' => 'Some <strong>text</strong>.']],
+            'transforms' => $turnsInto('core/heading', 'core/quote'),
         ]);
 
         $type([
@@ -116,6 +123,7 @@ class TextTypesPackage implements BlockPackageInterface
                 'citation' => ['type' => 'string', 'default' => '', 'title' => 'Who said it'],
             ]],
             'examples' => [['text' => 'Less, but better.', 'citation' => 'Dieter Rams']],
+            'transforms' => $turnsInto('core/paragraph', 'core/heading'),
         ]);
 
         $type([

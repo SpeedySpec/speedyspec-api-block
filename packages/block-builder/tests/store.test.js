@@ -267,8 +267,9 @@ function editingClient() {
             return { document: { ...document, blocks: operation.blocks }, affected: [], issues: [] };
         }
 
-        if (operation.operation === 'remove') {
-            const blocks = document.blocks.filter((entry) => entry.id !== operation.block);
+        if (operation.operation === 'remove' || operation.operation === 'removeBlocks') {
+            const gone = operation.ids ?? [operation.block];
+            const blocks = document.blocks.filter((entry) => !gone.includes(entry.id));
 
             return { document: { ...document, blocks }, affected: [], issues: [] };
         }
@@ -471,4 +472,215 @@ test('the preview keeps the page\'s stylesheets, and has none when the server se
     await builder.updateSettings('b', { text: 'x' });
 
     assert.deepEqual(builder.state().preview.styles, [{ name: 'a', href: '/a.css' }]);
+});
+
+test('pasting sends the blocks to insert and selects the first one added', async () => {
+    const client = fakeClient((operation, document) => ({
+        document: { ...document, blocks: [...document.blocks, block('p1'), block('p2')] },
+        affected: ['p1', 'p2'],
+        issues: [],
+    }));
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.paste([block('a')], { parent: null, index: 2 });
+
+    assert.deepEqual(client.calls.filter((call) => call[0] === 'operate').at(-1)[1], {
+        operation: 'insertBlocks',
+        blocks: [block('a')],
+        position: { parent: null, index: 2 },
+    });
+    assert.equal(builder.state().selected, 'p1');
+});
+
+test('removing several blocks is one edit, and one undo puts them all back', async () => {
+    const client = editingClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.removeMany(['b']);
+    await builder.undo();
+    await builder.removeMany(['a', 'b']);
+
+    const operations = client.calls.filter((call) => call[0] === 'operate').map((call) => call[1]);
+
+    assert.deepEqual(operations[0], { operation: 'remove', block: 'b' });
+    assert.deepEqual(operations[2], { operation: 'removeBlocks', ids: ['a', 'b'] });
+    assert.deepEqual(ids(builder), []);
+
+    await builder.undo();
+
+    assert.deepEqual(ids(builder), ['a', 'b']);
+    assert.equal(builder.state().canUndo, false);
+});
+
+test('saving a template sends a name made from its title and the document, then lists templates again', async () => {
+    const client = fakeClient();
+    const lists = [];
+    client.templates = async () => {
+        lists.push('templates');
+
+        return { libraries: [{ name: 'core/saved', title: 'Saved', templates: [] }], manage: true };
+    };
+    client.saveTemplate = async (template) => {
+        client.calls.push(['saveTemplate', template]);
+
+        return { template };
+    };
+    client.removeTemplate = async (name) => {
+        client.calls.push(['removeTemplate', name]);
+    };
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+    await builder.duplicate('a');
+    const canUndo = builder.state().canUndo;
+
+    await builder.loadTemplates();
+    await builder.saveTemplate({ block: 'a', title: 'My hero', description: 'Big' });
+    await builder.removeTemplate('saved/my-hero');
+
+    assert.deepEqual(client.calls.find((call) => call[0] === 'saveTemplate')[1], {
+        document: 'home',
+        block: 'a',
+        name: 'saved/my-hero',
+        title: 'My hero',
+        description: 'Big',
+    });
+    assert.deepEqual(client.calls.find((call) => call[0] === 'removeTemplate')[1], 'saved/my-hero');
+    assert.equal(lists.length, 3);
+    assert.equal(builder.state().templates.manage, true);
+    assert.equal(builder.state().canUndo, canUndo);
+});
+
+test('a template that cannot be saved is shown as an error', async () => {
+    const client = fakeClient();
+    client.templates = async () => ({ libraries: [], manage: true });
+    client.saveTemplate = async () => {
+        throw new ApiError(403, 'You are not allowed to do that.');
+    };
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    const saved = await builder.saveTemplate({ block: 'a', title: 'X', description: '' });
+
+    assert.equal(saved, false);
+    assert.equal(builder.state().error, 'You are not allowed to do that.');
+});
+
+test('binding and unbinding a setting send their operations and can be undone', async () => {
+    const client = editingClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.setBinding('b', 'text', { source: 'demo/site', arguments: { key: 'name' } });
+    await builder.clearBinding('b', 'text');
+
+    assert.deepEqual(
+        client.calls.filter((call) => call[0] === 'operate').map((call) => call[1]),
+        [
+            { operation: 'setBinding', block: 'b', path: 'text', binding: { source: 'demo/site', arguments: { key: 'name' } } },
+            { operation: 'clearBinding', block: 'b', path: 'text' },
+        ],
+    );
+    assert.equal(builder.state().canUndo, true);
+});
+
+test('a site style change updates the vocabulary and the preview, and is not something to undo', async () => {
+    const client = fakeClient();
+    client.setToken = async (name, value) => ({ 'color.primary': value });
+    client.setBreakpoint = async () => {
+        throw new ApiError(422, 'Breakpoint "wide" needs a width of at least 1 pixel.');
+    };
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+    const renders = client.calls.filter((call) => call[0] === 'render').length;
+
+    const set = await builder.setToken('color.primary', '#fff');
+    const refused = await builder.setBreakpoint('wide', 0);
+
+    assert.equal(set, null);
+    assert.deepEqual(builder.state().vocabulary.tokens, { 'color.primary': '#fff' });
+    assert.equal(client.calls.filter((call) => call[0] === 'render').length, renders + 1);
+    assert.equal(refused, 'Breakpoint "wide" needs a width of at least 1 pixel.');
+    assert.deepEqual(builder.state().vocabulary.breakpoints, [{ name: 'tablet', minWidth: 768 }]);
+    assert.equal(builder.state().canUndo, false);
+});
+
+test('turning a block into another type sends the operation and keeps the block selected', async () => {
+    const client = fakeClient((operation, document) => ({
+        document: { ...document, blocks: document.blocks.map((entry) => (entry.id === 'b' ? { ...entry, type: 'acme/other' } : entry)) },
+        affected: ['b'],
+        issues: [],
+    }));
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+    builder.select('b');
+
+    await builder.transform('b', 'acme/other');
+
+    assert.deepEqual(client.calls.filter((call) => call[0] === 'operate').at(-1)[1], {
+        operation: 'transform',
+        block: 'b',
+        type: 'acme/other',
+    });
+    assert.equal(builder.state().selected, 'b');
+});
+
+test('several blocks can be selected, and the selection follows what is still on the page', async () => {
+    const client = editingClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    builder.select('a');
+    builder.toggle('b');
+
+    assert.deepEqual(builder.state().selection, ['a', 'b']);
+    assert.equal(builder.state().selected, 'b');
+
+    builder.toggle('b');
+
+    assert.deepEqual(builder.state().selection, ['a']);
+    assert.equal(builder.state().selected, 'a');
+
+    builder.toggle('b');
+    await builder.remove('b');
+
+    assert.deepEqual(builder.state().selection, ['a']);
+
+    builder.select(null);
+
+    assert.deepEqual(builder.state().selection, []);
+});
+
+test('locking several blocks is one restore, so one undo unlocks them all', async () => {
+    const client = editingClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.lockMany(['a', 'b'], { move: true, remove: true });
+
+    const sent = client.calls.filter((call) => call[0] === 'operate').map((call) => call[1]);
+
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].operation, 'restore');
+    assert.deepEqual(sent[0].blocks.map((entry) => entry.extensions), [
+        { 'core/lock': { move: true, remove: true } },
+        { 'core/lock': { move: true, remove: true } },
+    ]);
+    assert.equal(builder.state().canUndo, true);
+});
+
+test('when the server refuses removing several blocks, its reasons are shown and nothing is removed', async () => {
+    const refusal = { kind: 'locked', message: 'This block is locked against removal.', block: 'b', path: null };
+    const client = fakeClient(() => {
+        throw new Refused([refusal]);
+    });
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.removeMany(['a', 'b']);
+
+    assert.deepEqual(builder.state().refusals, [refusal]);
+    assert.deepEqual(ids(builder), ['a', 'b']);
+    assert.equal(builder.state().canUndo, false);
 });

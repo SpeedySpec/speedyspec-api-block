@@ -12,6 +12,7 @@ use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
+use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
@@ -22,6 +23,7 @@ use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\BuilderAbility;
 use SpeedySpec\Block\Domain\ValueObjects\RenderInput;
+use SpeedySpec\Block\Infra\Memory\ArrayDataSource;
 use SpeedySpec\Block\Infra\Memory\MemoryServiceProvider;
 use SpeedySpec\Block\Presentation\ApiRequest;
 use SpeedySpec\Block\Presentation\BuilderApi;
@@ -88,7 +90,7 @@ $host = function (array $abilities = ['view', 'edit', 'manage-templates'], bool 
             'text' => ['type' => 'string', 'default' => '', 'maxLength' => 20],
             'note' => ['type' => 'string', 'default' => '', 'x-private' => true],
         ],
-    ]]));
+    ], 'transforms' => [['to' => 'acme/box', 'settings' => []]]]));
     $draw = fn (string $tag) => new class($tag) implements BlockOutputInterface {
         public function __construct(private readonly string $tag)
         {
@@ -132,6 +134,7 @@ test('the catalogue lists block types, and narrows to what fits at a position', 
     expect($status)->toBe(200)
         ->and(array_column($all['blocks'], 'name'))->toBe(['core/repeat', 'acme/box', 'acme/text'])
         ->and($all['blocks'][2]['settings']['properties']['text']['maxLength'])->toBe(20)
+        ->and($all['blocks'][2]['transforms'])->toBe(['acme/box'])
         ->and(array_column($inside['blocks'], 'name'))->toBe(['core/repeat', 'acme/box', 'acme/text'])
         ->and($bad)->toBe(200);
 });
@@ -155,6 +158,25 @@ test('the vocabulary gives a builder the breakpoints, tokens, conditions and col
         ->and($body['conditions'][0]['arguments']['required'])->toBe(['field'])
         ->and($body['collections'])->toBe([])
         ->and(array_column($body['decorators'], 'namespace'))->toBe(['core/visibility', 'core/style']);
+});
+
+test('the vocabulary lists the data sources a setting can be bound to, with what each takes', function () use (
+    $host,
+    $call,
+) {
+    [$api, $c] = $host();
+    $c->get(DataSourceRegistryInterface::class)
+        ->add(new ArrayDataSource('acme/site', ['name' => 'x'], ['type' => 'string']));
+
+    [, $body] = $call($api, 'GET', '/vocabulary');
+    $site = array_values(array_filter(
+        $body['sources'],
+        static fn (array $source): bool => $source['name'] === 'acme/site',
+    ));
+
+    expect(array_column($body['sources'], 'name'))->toBe(['acme/site', 'core/current-item'])
+        ->and($site[0]['arguments']['properties'])->toHaveKey('key')
+        ->and($site[0]['value'])->toBe(['type' => 'string']);
 });
 
 test('a document is read with its private settings and its issues, for someone who may edit it', function () use (
@@ -261,6 +283,16 @@ test('every editing operation is reachable', function (array $body, callable $ch
         ['operation' => 'remove', 'block' => 't'],
         fn (array $blocks) => expect($blocks[0]['children'])->toBe([]),
     ],
+    'remove several' => [
+        ['operation' => 'removeBlocks', 'ids' => ['t', 'b']],
+        fn (array $blocks) => expect($blocks)->toBe([]),
+    ],
+    'transform' => [
+        ['operation' => 'transform', 'block' => 't', 'type' => 'acme/box'],
+        fn (array $blocks, array $result) => expect($blocks[0]['children'][0]['type'])->toBe('acme/box')
+            ->and($blocks[0]['children'][0]['id'])->toBe('t')
+            ->and($result['affected'])->toBe(['t']),
+    ],
     'duplicate' => [
         ['operation' => 'duplicate', 'block' => 't'],
         fn (array $blocks) => expect($blocks[0]['children'])->toHaveCount(2),
@@ -320,6 +352,10 @@ test('a request that makes no sense is a bad request, never a server error', fun
     ['POST', '/documents/home/operations', ['operation' => 'move', 'block' => 't', 'position' => ['index' => -1]], 400],
     ['POST', '/documents/home/operations', ['operation' => 'setBinding', 'block' => 't', 'path' => '..'], 400],
     ['POST', '/documents/home/operations', ['operation' => 'insertBlocks', 'blocks' => 'x'], 400],
+    ['POST', '/documents/home/operations', ['operation' => 'removeBlocks', 'ids' => 't'], 400],
+    ['POST', '/documents/home/operations', ['operation' => 'removeBlocks', 'ids' => ['t', 3]], 400],
+    ['POST', '/documents/home/operations', ['operation' => 'removeBlocks', 'ids' => ['t', '']], 400],
+    ['POST', '/documents/home/operations', ['operation' => 'removeBlocks', 'ids' => ['a' => 't']], 400],
     [
         'POST',
         '/documents/home/operations',
@@ -390,6 +426,14 @@ test('one block is previewed on its own, in either mode', function () use ($host
         ->and($body['block'])->toBe('t')
         ->and($missing)->toBe(404)
         ->and($mode)->toBe(400);
+});
+
+test('the template list says whether the person may save and remove templates', function () use ($host, $call) {
+    [$manager] = $host();
+    [$editor] = $host(['view', 'edit']);
+
+    expect($call($manager, 'GET', '/templates')[1]['manage'])->toBeTrue()
+        ->and($call($editor, 'GET', '/templates')[1]['manage'])->toBeFalse();
 });
 
 test('templates are listed by library, saved from a block, and removed', function () use ($host, $call) {

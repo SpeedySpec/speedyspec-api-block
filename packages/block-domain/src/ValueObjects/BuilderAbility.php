@@ -30,4 +30,9 @@ enum BuilderAbility: string
      * Add files to the media library.
      */
     case UploadMedia = 'upload-media';
+
+    /**
+     * Change the site's design tokens and breakpoints, which every page's styles are drawn with.
+     */
+    case ManageStyles = 'manage-styles';
 }

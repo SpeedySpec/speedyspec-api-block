@@ -127,12 +127,40 @@ export function createClient({ baseUrl, fetch = globalThis.fetch, headers = {} }
 
         render: (id, mode = 'front') => send('GET', `/documents/${segment(id)}/render?mode=${segment(mode)}`),
 
-        templates: async () => (await send('GET', '/templates')).libraries,
+        /**
+         * Lists the template libraries, and whether the person may save and remove templates.
+         *
+         * @returns {Promise<{libraries: Array<object>, manage: boolean}>}
+         */
+        async templates() {
+            const answer = await send('GET', '/templates');
+
+            return { libraries: answer.libraries ?? [], manage: answer.manage === true };
+        },
 
         saveTemplate: (template) => send('POST', '/templates', template),
 
         // A template name is `vendor/name`, and the route takes the two parts as two segments.
         removeTemplate: (name) => send('DELETE', `/templates/${name.split('/').map(segment).join('/')}`),
+
+        /**
+         * Sets one design token.
+         *
+         * @returns {Promise<Record<string, string>>} Every token, as they now are.
+         */
+        setToken: async (name, value) => (await send('PUT', `/tokens/${segment(name)}`, { value })).tokens,
+
+        removeToken: async (name) => (await send('DELETE', `/tokens/${segment(name)}`)).tokens,
+
+        /**
+         * Sets one breakpoint.
+         *
+         * @returns {Promise<Array<{name: string, minWidth: number}>>} Every breakpoint, as they now are.
+         */
+        setBreakpoint: async (name, minWidth) =>
+            (await send('PUT', `/breakpoints/${segment(name)}`, { minWidth })).breakpoints,
+
+        removeBreakpoint: async (name) => (await send('DELETE', `/breakpoints/${segment(name)}`)).breakpoints,
 
         /**
          * Lists one page of the media library, newest first.

@@ -112,3 +112,104 @@ test('a block preview carries the stylesheets too', function () {
 
     expect(array_column($body['styles'], 'name'))->toBe(['acme/base', 'acme/look']);
 });
+
+/**
+ * Builds a host whose tokens and breakpoints are stored, for a person with the given abilities.
+ *
+ * @param list<string> $abilities
+ */
+function siteStylesHost(array $abilities = ['view', 'edit', 'manage-styles']): BuilderApi
+{
+    $c = new BlockServiceContainer();
+    (new MemoryServiceProvider())->register($c);
+    (new AppServiceProvider())->register($c);
+    (new \SpeedySpec\Block\App\Storage\StorageServiceProvider(['color.primary' => '#2456d6']))->register($c);
+    (new PresentationServiceProvider())->register($c);
+    $c->add(BuilderAccessInterface::class, fn () => new class($abilities) implements BuilderAccessInterface {
+        public function __construct(private readonly array $abilities)
+        {
+        }
+
+        public function allows(BuilderAbility $ability, ?string $documentId = null): bool
+        {
+            return in_array($ability->value, $this->abilities, true);
+        }
+    });
+
+    return new BuilderApi($c);
+}
+
+/**
+ * Sends one request and gives back its status and decoded body.
+ *
+ * @return array{0: int, 1: array<string, mixed>}
+ */
+function siteStylesCall(BuilderApi $api, string $method, string $path, ?string $body = null): array
+{
+    $response = $api->handle(new ApiRequest($method, $path, [], $body ?? ''));
+
+    return [$response->status, json_decode($response->json(), true)];
+}
+
+test('a token can be set and removed, and the answer lists the tokens', function () {
+    $api = siteStylesHost();
+
+    [$set, $after] = siteStylesCall($api, 'PUT', '/tokens/color.accent', '{"value": "#ff0066"}');
+    [$removed, $left] = siteStylesCall($api, 'DELETE', '/tokens/color.primary');
+    [, $vocabulary] = siteStylesCall($api, 'GET', '/vocabulary');
+
+    expect($set)->toBe(200)
+        ->and($after['tokens'])->toBe(['color.accent' => '#ff0066', 'color.primary' => '#2456d6'])
+        ->and($removed)->toBe(200)
+        ->and($left['tokens'])->toBe(['color.accent' => '#ff0066'])
+        ->and($vocabulary['tokens'])->toBe(['color.accent' => '#ff0066'])
+        ->and($vocabulary['manageStyles'])->toBeTrue();
+});
+
+test('a breakpoint can be set and removed, and the answer lists the breakpoints', function () {
+    $api = siteStylesHost();
+
+    [$set, $after] = siteStylesCall($api, 'PUT', '/breakpoints/wide', '{"minWidth": 1280}');
+    [$removed, $left] = siteStylesCall($api, 'DELETE', '/breakpoints/tablet');
+
+    expect($set)->toBe(200)
+        ->and($after['breakpoints'])->toBe([
+            ['name' => 'tablet', 'minWidth' => 768],
+            ['name' => 'desktop', 'minWidth' => 1024],
+            ['name' => 'wide', 'minWidth' => 1280],
+        ])
+        ->and($removed)->toBe(200)
+        ->and(array_column($left['breakpoints'], 'name'))->toBe(['desktop', 'wide']);
+});
+
+test('changing site styles needs the manage-styles ability', function (string $method, string $path, ?string $body) {
+    $api = siteStylesHost(['view', 'edit']);
+
+    expect(siteStylesCall($api, $method, $path, $body)[0])->toBe(403)
+        ->and(siteStylesCall($api, 'GET', '/vocabulary')[1]['manageStyles'])->toBeFalse();
+})->with([
+    ['PUT', '/tokens/color.accent', '{"value": "#fff"}'],
+    ['DELETE', '/tokens/color.primary', null],
+    ['PUT', '/breakpoints/wide', '{"minWidth": 1280}'],
+    ['DELETE', '/breakpoints/tablet', null],
+]);
+
+test('a style the site cannot use is refused with a reason, and a malformed request is a bad request', function (
+    string $method,
+    string $path,
+    string $body,
+    int $status,
+) {
+    [$got, $answer] = siteStylesCall(siteStylesHost(), $method, $path, $body);
+
+    expect($got)->toBe($status)->and($answer['error'])->toBeString()->not->toBe('');
+})->with([
+    'bad token name' => ['PUT', '/tokens/Bad', '{"value": "red"}', 422],
+    'unsafe value' => ['PUT', '/tokens/color.accent', '{"value": "red;}body{x:y"}', 422],
+    'zero width' => ['PUT', '/breakpoints/wide', '{"minWidth": 0}', 422],
+    'bad breakpoint name' => ['PUT', '/breakpoints/Wide', '{"minWidth": 900}', 422],
+    'missing value' => ['PUT', '/tokens/color.accent', '{}', 400],
+    'value not text' => ['PUT', '/tokens/color.accent', '{"value": 3}', 400],
+    'width not a number' => ['PUT', '/breakpoints/wide', '{"minWidth": "900"}', 400],
+    'width not whole' => ['PUT', '/breakpoints/wide', '{"minWidth": 7.5}', 400],
+]);

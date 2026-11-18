@@ -150,6 +150,21 @@ test('remove and duplicate', function () use ($setup) {
         ->and(count(array_unique($copy->document->tree->ids())))->toBe(5);
 });
 
+test('removeBlocks removes every listed block in one edit, or nothing', function () use ($setup) {
+    [$editor] = editor($setup);
+    $document = doc(block('a', 'acme/box', [], block('a1'), block('a2')), block('b'));
+
+    $some = $editor->removeBlocks($document, ['a1', 'b']);
+    $nested = $editor->removeBlocks($document, ['a', 'a1']);
+
+    expect($some->isAccepted())->toBeTrue()
+        ->and($some->document->tree->ids())->toBe(['a', 'a2'])
+        ->and($nested->document->tree->ids())->toBe(['b'])
+        ->and(refusals($editor->removeBlocks($document, ['a1', 'nope'])))->toBe([EditRefusalKind::UnknownBlock])
+        ->and(refusals($editor->removeBlocks($document, [])))->toBe([EditRefusalKind::UnknownBlock])
+        ->and($document->tree->ids())->toBe(['a', 'a1', 'a2', 'b']);
+});
+
 test('updateSettings replaces settings, validates them and updates the type version', function () use ($setup) {
     [$editor] = editor($setup);
     $old = block('n', 'acme/field', ['key' => 'name'])
@@ -343,4 +358,172 @@ test('restore is held to the same checks as any other edit', function () use ($s
         ->and($try([block('a', 'acme/box'), block('a', 'acme/box')]))->toBe([EditRefusalKind::InvalidBlock])
         ->and($try([block('a', 'acme/box', [], block('a', 'acme/box'))]))->toBe([EditRefusalKind::InvalidBlock])
         ->and($editor->restore($now, ['nope'])->document)->toBeNull();
+});
+
+$texts = function ($c) {
+    $text = ['type' => 'string'];
+    types($c)->add(type('acme/para', ['settings' => ['type' => 'object', 'properties' => ['text' => $text]],
+        'transforms' => [
+            ['to' => 'acme/head', 'settings' => ['text' => 'text']],
+            ['to' => 'acme/quote', 'settings' => ['text' => 'text']],
+            ['to' => 'acme/box', 'settings' => []],
+        ]]));
+    types($c)->add(type('acme/head', ['version' => 3, 'settings' => ['type' => 'object', 'properties' => [
+        'text' => $text,
+        'level' => ['type' => 'integer', 'default' => 2],
+    ]], 'transforms' => [['to' => 'acme/para', 'settings' => ['text' => 'text']]]]));
+    types($c)->add(type('acme/quote', ['children' => true, 'settings' => ['type' => 'object', 'properties' => [
+        'text' => $text,
+        'citation' => $text,
+    ]], 'transforms' => [['to' => 'acme/para', 'settings' => ['text' => 'text']]]]));
+    types($c)->add(type('acme/box', ['children' => true]));
+    types($c)->add(type('acme/plain'));
+    sources($c)->add(new ArrayDataSource('acme/values', ['k' => 'v'], ['type' => 'string']));
+    $c->get(DecoratorRegistryInterface::class)->add(new Decorator(
+        'acme/para-only',
+        ['type' => 'object', 'properties' => ['x' => ['type' => 'boolean']]],
+        ['acme/para'],
+    ));
+    $c->get(DecoratorRegistryInterface::class)->add(new Decorator(
+        'acme/any',
+        ['type' => 'object', 'properties' => ['y' => ['type' => 'boolean']]],
+    ));
+};
+
+test('a block turns into another type, keeping its id and the settings the transform maps', function () use ($texts) {
+    [$editor] = editor($texts);
+    $document = doc(block('p', 'acme/para', ['text' => 'Hello']), block('z', 'acme/plain'));
+
+    $result = $editor->transform($document, 'p', BlockName::fromString('acme/head'));
+    $heading = $result->document?->tree->find('p');
+
+    expect($result->isAccepted())->toBeTrue()
+        ->and($result->affectedIds)->toBe(['p'])
+        ->and($heading->type->toString())->toBe('acme/head')
+        ->and($heading->typeVersion)->toBe(3)
+        ->and($heading->settings)->toBe(['text' => 'Hello'])
+        ->and($result->document->tree->ids())->toBe(['p', 'z'])
+        ->and($document->tree->find('p')->type->toString())->toBe('acme/para');
+});
+
+test('settings the other type has no place for are left behind', function () use ($texts) {
+    [$editor] = editor($texts);
+    $document = doc(block('q', 'acme/quote', ['text' => 'Said', 'citation' => 'Someone']));
+
+    expect($editor->transform($document, 'q', BlockName::fromString('acme/para'))->document->tree->find('q')->settings)
+        ->toBe(['text' => 'Said']);
+});
+
+test('a block can only turn into a type its own type declares', function () use ($texts) {
+    [$editor] = editor($texts);
+    $document = doc(block('h', 'acme/head', ['text' => 'x']), block('g', 'gone/away'));
+
+    expect(refusals($editor->transform($document, 'h', BlockName::fromString('acme/quote'))))
+        ->toBe([EditRefusalKind::NoTransform])
+        ->and(refusals($editor->transform($document, 'nope', BlockName::fromString('acme/para'))))
+        ->toBe([EditRefusalKind::UnknownBlock])
+        ->and(refusals($editor->transform($document, 'g', BlockName::fromString('acme/para'))))
+        ->toBe([EditRefusalKind::UnknownType]);
+});
+
+test('a transform that cannot keep everything keeps what it can, or is refused', function () use ($texts) {
+    [$editor] = editor($texts);
+    $quote = block('q', 'acme/quote', ['text' => 'Said'], block('c', 'acme/plain'));
+    $bound = block('p', 'acme/para', ['text' => 'x'])
+        ->withBinding(SettingPath::fromString('text'), Binding::to('acme/values', ['key' => 'k']))
+        ->withExtension('acme/para-only', ['x' => true])
+        ->withExtension('acme/any', ['y' => true]);
+    $quoteBound = block('r', 'acme/quote', ['text' => 'x'])
+        ->withBinding(SettingPath::fromString('citation'), Binding::to('acme/values', ['key' => 'k']));
+
+    $refused = $editor->transform(doc($quote), 'q', BlockName::fromString('acme/para'));
+    $heading = $editor->transform(doc($bound), 'p', BlockName::fromString('acme/head'))->document->tree->find('p');
+    $para = $editor->transform(doc($quoteBound), 'r', BlockName::fromString('acme/para'))->document->tree->find('r');
+    $box = $editor->transform(doc(block('b', 'acme/para', ['text' => 'x'])), 'b', BlockName::fromString('acme/box'));
+    $keptChildren = $editor->transform(
+        doc(block('p2', 'acme/para', ['text' => 'x'])),
+        'p2',
+        BlockName::fromString('acme/quote'),
+    );
+
+    expect(refusals($refused))->toBe([EditRefusalKind::DisallowedPlacement])
+        ->and(array_keys($heading->bindings))->toBe(['text'])
+        ->and(array_keys($heading->extensions))->toBe(['acme/any'])
+        ->and($para->bindings)->toBe([])
+        ->and($box->document->tree->find('b')->settings)->toBe([])
+        ->and($keptChildren->isAccepted())->toBeTrue();
+});
+
+$locks = function ($c) {
+    types($c)->add(type('acme/box', ['children' => true]));
+    $c->get(DecoratorRegistryInterface::class)->add(\SpeedySpec\Block\Domain\ValueObjects\BlockLock::decorator());
+};
+$locked = fn (string $id, array $lock, \SpeedySpec\Block\Domain\Entities\Block ...$children) => block(
+    $id,
+    'acme/box',
+    [],
+    ...$children,
+)->withExtension('core/lock', $lock);
+
+test('a block locked in place cannot be moved, but its unlocked siblings can', function () use ($locks, $locked) {
+    [$editor] = editor($locks);
+    $document = doc($locked('a', ['move' => true]), block('b'), block('c'));
+
+    $refused = $editor->move($document, 'a', Position::root(2));
+
+    expect(refusals($refused))->toBe([EditRefusalKind::Locked])
+        ->and($refused->refusals[0]->blockId)->toBe('a')
+        ->and($refused->refusals[0]->message)->toBe('This block is locked in place.')
+        ->and($editor->move($document, 'c', Position::root(0))->isAccepted())->toBeTrue()
+        ->and($editor->remove($document, 'a')->isAccepted())->toBeTrue();
+});
+
+test('a block locked against removal cannot be removed, alone, with others or with its parent', function () use (
+    $locks,
+    $locked,
+) {
+    [$editor] = editor($locks);
+    $document = doc(block('p', 'acme/box', [], $locked('a', ['remove' => true])), block('b'));
+
+    $alone = $editor->remove($document, 'a');
+    $withParent = $editor->remove($document, 'p');
+    $many = $editor->removeBlocks($document, ['b', 'a']);
+
+    expect(refusals($alone))->toBe([EditRefusalKind::Locked])
+        ->and($alone->refusals[0]->message)->toBe('This block is locked against removal.')
+        ->and(refusals($withParent))->toBe([EditRefusalKind::Locked])
+        ->and($withParent->refusals[0]->blockId)->toBe('a')
+        ->and(refusals($many))->toBe([EditRefusalKind::Locked])
+        ->and($many->document)->toBeNull()
+        ->and($editor->remove($document, 'b')->isAccepted())->toBeTrue()
+        ->and($editor->move($document, 'a', Position::root(0))->isAccepted())->toBeTrue();
+});
+
+test('anyone who may edit may unlock', function () use ($locks, $locked) {
+    [$editor] = editor($locks);
+    $document = doc($locked('a', ['move' => true, 'remove' => true]));
+
+    $unlocked = $editor->updateExtension($document, 'a', 'core/lock', ['move' => false, 'remove' => false]);
+
+    expect($unlocked->isAccepted())->toBeTrue()
+        ->and($editor->remove($unlocked->document, 'a')->isAccepted())->toBeTrue();
+});
+
+test('undo is never stopped by a lock, so locking and pasting locked blocks can be undone', function () use (
+    $locks,
+    $locked,
+) {
+    [$editor] = editor($locks);
+    $before = doc(block('a'), block('b'));
+
+    $lockedNow = $editor->updateExtension($before, 'a', 'core/lock', ['move' => true, 'remove' => true]);
+    $undoLock = $editor->restore($lockedNow->document, $before->tree->roots());
+    $pasted = $editor->insertBlocks($before, [$locked('x', ['remove' => true])], Position::root(2));
+    $undoPaste = $editor->restore($pasted->document, $before->tree->roots());
+
+    expect($lockedNow->isAccepted())->toBeTrue()
+        ->and($undoLock->isAccepted())->toBeTrue()
+        ->and($pasted->isAccepted())->toBeTrue()
+        ->and($undoPaste->isAccepted())->toBeTrue()
+        ->and($undoPaste->document->tree->ids())->toBe(['a', 'b']);
 });

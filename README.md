@@ -325,7 +325,7 @@ echo $response->json();
 | Route | What it does | Needs |
 |---|---|---|
 | `GET /catalogue` | Block types; with `document`, `parent`, `index` only those that fit there. | edit |
-| `GET /vocabulary` | Breakpoints, tokens, conditions, collections, decorators. | edit |
+| `GET /vocabulary` | Breakpoints, tokens, conditions, collections, decorators, data sources (`sources`), and whether the person may change site styles (`manageStyles`). | edit |
 | `GET /documents` | Ids of the documents the person may edit. | edit |
 | `POST /documents` | Creates an empty document from `id` and `kind`. | edit |
 | `GET /documents/{id}` | The document as stored, with its issues. | edit |
@@ -333,9 +333,13 @@ echo $response->json();
 | `POST /documents/{id}/operations` | One editing operation, including `restore`, which puts back a whole earlier state and is what undo is built on; saves on success, `422` with every refusal otherwise. | edit |
 | `POST /documents/{id}/preview` | Draws one block; `mode` is `admin` or `front`. With `styles`, the page's stylesheets to place. | edit, or view for front |
 | `GET /documents/{id}/render` | Draws the page, with its collected rules (`css`) and its stylesheets to place (`styles`). | view, or edit for `mode=admin` |
-| `GET /templates` | Template libraries and their templates. | edit |
+| `GET /templates` | Template libraries and their templates, and whether the person may save and remove them (`manage`). | edit |
 | `POST /templates` | Saves a block of a document as a template. | manage-templates and edit |
 | `DELETE /templates/{vendor}/{name}` | Removes a saved template. | manage-templates |
+| `PUT /tokens/{name}` | Sets a design token from `{value}`; answers every token. `422` with the reason for a name or value the site cannot use. | manage-styles |
+| `DELETE /tokens/{name}` | Removes a design token; answers every token. | manage-styles |
+| `PUT /breakpoints/{name}` | Sets a breakpoint from `{minWidth}`, a whole number of pixels; answers every breakpoint. | manage-styles |
+| `DELETE /breakpoints/{name}` | Removes a breakpoint; answers every breakpoint. | manage-styles |
 | `GET /media` | One page of the media library; `search`, `kind`, `page`, `perPage` (at most 100). | edit |
 | `GET /media/{id}` | One media item. | edit |
 | `POST /media?name=` | Uploads the request body as a file; `201` with the item, or `400`, `413` or `415` with the reason. | upload-media |
@@ -344,6 +348,37 @@ echo $response->json();
 nothing about users. Until a host binds one, every request is refused. Signing people in, sessions and request
 forgery protection are also the host's. The media routes answer `501` until the host binds a media library, and
 `ApiRequest` takes the request's headers as its fifth argument.
+
+## Editor features
+
+These are what a builder needs for the editing people expect beyond placing and configuring blocks. Each is either
+an editing operation, so the server checks it like any other, or declared as data, so every builder offers the same.
+
+- **Copy, cut and paste.** Blocks are copied as the text `{"type": "speedyspec/blocks", "format": 1, "blocks": [...]}`,
+  with the blocks as the document export gives them, so they can be pasted into another document or another tab.
+  Pasting is the `insertBlocks` operation, which gives every block a new id. Anything else on the clipboard is left
+  to the browser. Removing several blocks at once is one operation, `{operation: "removeBlocks", ids}`, so it is one
+  step to undo.
+- **Templates.** `GET /templates` lists them; `insertTemplate` inserts one; `POST /templates` saves a block, with
+  everything inside it, as a template everyone can use, without its private settings. Saved templates live in the
+  `core/saved` library; the reference editor names them `saved/` and a slug of their title.
+- **Bindings.** The vocabulary lists every registered data source with the arguments it takes and the value it gives
+  (`DataSourceRegistryInterface::all()`), so a builder can offer them; `setBinding` and `clearBinding` change them.
+- **Site styles.** Design tokens and breakpoints can be stored: `StorageServiceProvider` binds
+  `StoredDesignTokenRegistry` and `StoredBreakpointRegistry` over the record store, starting from the defaults it is
+  given until they are first changed. The token and breakpoint routes change them, for people with `manage-styles`.
+  Styles set for a breakpoint that is later removed stop applying; a reference to a removed token falls back as an
+  unset custom property does. Changing site styles is not a document edit, so it is not undone with the document.
+- **Turning a block into another type.** A block type declares what it can become, as data:
+  `transforms: [{to: "core/heading", settings: {text: "text"}}]` maps each setting of the new type to one of its own.
+  The `transform` operation, `{operation: "transform", block, type}`, keeps the block's id, place and children,
+  carries over the mapped settings and their bindings, and keeps the decorator settings that apply to the new type.
+  A transform that would leave children where the new type cannot hold them is refused. The catalogue lists each
+  type's `transforms`. Paragraph, heading and quote turn into one another.
+- **Locks.** The `core/lock` extension, `{move, remove}`, keeps a block from being moved or removed, and the editor
+  refuses with `locked`: removing a block also checks everything inside it. `restore`, which undo is built on, is
+  never checked, so undoing the paste of a locked block works. Anyone who may edit may unlock, since a lock prevents
+  accidents, not access. `DocumentsPackage` registers the lock as a decorator, so builders show it like any other.
 
 ## WordPress
 
