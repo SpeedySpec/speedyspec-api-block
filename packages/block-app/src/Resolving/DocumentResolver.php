@@ -7,7 +7,9 @@ namespace SpeedySpec\Block\App\Resolving;
 use InvalidArgumentException;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
+use SpeedySpec\Block\Domain\Contracts\DocumentStepInterface;
 use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
+use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\ValueObjects\AdminContext;
@@ -19,6 +21,7 @@ use SpeedySpec\Block\Domain\ValueObjects\IssueKind;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
 use SpeedySpec\Block\Domain\ValueObjects\ResolvedBlock;
 use SpeedySpec\Block\Domain\ValueObjects\ResolvedDocument;
+use Throwable;
 
 /**
  * Walks a document's tree running the five resolving stages on each block, passing context down to the children.
@@ -52,6 +55,8 @@ class DocumentResolver implements DocumentResolverInterface
      *   Finds the types whose placement rules are checked.
      * @param int $budget
      *   The most blocks one call resolves; the block that finds it spent gets an issue and nothing further runs.
+     * @param StepRegistryInterface|null $steps
+     *   Where document steps are found; without it, none run.
      */
     public function __construct(
         private readonly PrepareStage $prepare,
@@ -62,6 +67,7 @@ class DocumentResolver implements DocumentResolverInterface
         private readonly BlockTypeRegistryInterface $types,
         private readonly PlacementRulesInterface $placement,
         private readonly int $budget = 50000,
+        private readonly ?StepRegistryInterface $steps = null,
     )
     {
         if ($budget < 0)
@@ -79,6 +85,24 @@ class DocumentResolver implements DocumentResolverInterface
     {
         $context ??= Context::empty();
         $issues = [];
+
+        foreach ($this->steps?->for(DocumentStepInterface::class) ?? [] as $step)
+        {
+            try
+            {
+                $context = $step->context($document, $context, $mode);
+            }
+            catch (Throwable $e)
+            {
+                // A step that fails costs only what it would have added; the page is still resolved.
+                $issues[] = new Issue('', IssueKind::StepFailed, sprintf(
+                    'Document step %s failed with %s.',
+                    get_debug_type($step),
+                    $e::class,
+                ));
+            }
+        }
+
         $roots = [];
         $remaining = $this->budget;
 

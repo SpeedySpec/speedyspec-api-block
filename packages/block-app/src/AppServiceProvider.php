@@ -168,6 +168,8 @@ class AppServiceProvider
             $c->get(ViewStage::class),
             $c->get(BlockTypeRegistryInterface::class),
             $c->get(PlacementRulesInterface::class),
+            50000,
+            $c->get(StepRegistryInterface::class),
         ));
         $container->add(PlacementRulesInterface::class, fn (BlockServiceContainer $c) => new PlacementRules(
             $c->get(BlockTypeRegistryInterface::class),
