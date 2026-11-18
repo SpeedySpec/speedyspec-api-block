@@ -11,17 +11,20 @@ use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface;
+use SpeedySpec\Block\Domain\Contracts\SiteMapInterface;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Infra\WP\Ports\WpAttachmentsInterface;
 use SpeedySpec\Block\Infra\WP\Ports\WpBindingsInterface;
 use SpeedySpec\Block\Infra\WP\Ports\WpBlockTypesInterface;
 use SpeedySpec\Block\Infra\WP\Ports\WpPostsInterface;
 use SpeedySpec\Block\Infra\WP\Ports\WpRendererInterface;
+use SpeedySpec\Block\Infra\WP\Ports\WpSiteInterface;
 use SpeedySpec\Block\Infra\WP\WordPress\WordPressAttachments;
 use SpeedySpec\Block\Infra\WP\WordPress\WordPressBindings;
 use SpeedySpec\Block\Infra\WP\WordPress\WordPressBlockTypes;
 use SpeedySpec\Block\Infra\WP\WordPress\WordPressPosts;
 use SpeedySpec\Block\Infra\WP\WordPress\WordPressRenderer;
+use SpeedySpec\Block\Infra\WP\WordPress\WordPressSite;
 use Throwable;
 
 /**
@@ -47,6 +50,8 @@ class WpServiceProvider
 
     private readonly WpAttachmentsInterface $attachments;
 
+    private readonly WpSiteInterface $site;
+
     /**
      * @since 0.1.0
      */
@@ -56,6 +61,7 @@ class WpServiceProvider
         ?WpRendererInterface $renderer = null,
         ?WpBindingsInterface $bindings = null,
         ?WpAttachmentsInterface $attachments = null,
+        ?WpSiteInterface $site = null,
     )
     {
         $this->posts = $posts ?? new WordPressPosts();
@@ -63,6 +69,7 @@ class WpServiceProvider
         $this->renderer = $renderer ?? new WordPressRenderer();
         $this->bindings = $bindings ?? new WordPressBindings();
         $this->attachments = $attachments ?? new WordPressAttachments();
+        $this->site = $site ?? new WordPressSite();
     }
 
     /**
@@ -77,6 +84,7 @@ class WpServiceProvider
             fn () => new WpPostDocumentRepository($this->posts, new WpMarkup()),
         );
         $container->add(MediaLibraryInterface::class, fn () => new WpMediaLibrary($this->attachments));
+        $container->add(SiteMapInterface::class, fn () => new WpSiteMap($this->site));
     }
 
     /**
