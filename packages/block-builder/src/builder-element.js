@@ -9,6 +9,7 @@ import { createBuilder } from './store.js';
 import { accepts, addedMedia, mediaQuery, movedMedia, withoutMediaAt } from './media.js';
 import { STYLE } from './styles.js';
 import { pick } from './selection.js';
+import { isColourToken, tokenGroups, tokenNameProblem, widthProblem } from './site-styles.js';
 import { SAVED_LIBRARY, matchTemplates, templateName } from './templates.js';
 import { find, positionOf, walk } from './tree.js';
 import {
@@ -44,6 +45,7 @@ const ICONS = {
     remove: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/>',
     undo: '<path d="M6 3 3 6l3 3M3 6h6.5a3.5 3.5 0 0 1 0 7H6"/>',
     redo: '<path d="M10 3l3 3-3 3M13 6H6.5a3.5 3.5 0 0 0 0 7H10"/>',
+    styles: '<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11M8 2.5a5.5 5.5 0 0 0 0 11"/>',
     more: '<circle cx="3.5" cy="8" r=".6"/><circle cx="8" cy="8" r=".6"/><circle cx="12.5" cy="8" r=".6"/>',
 };
 
@@ -124,6 +126,8 @@ export class BlockBuilderElement extends HTMLElement {
             saveForm: null,
             // The binding form while it is open: which setting it binds, and the source and arguments chosen.
             binding: null,
+            // The site styles screen: what is being typed into its Add rows, and problems by row.
+            styles: { token: { name: '', value: '' }, breakpoint: { name: '', width: '' }, problems: {} },
         };
         // Media items already looked up, by id, so a chosen file shows its picture and name; null while loading.
         this.media = new Map();
@@ -203,7 +207,13 @@ export class BlockBuilderElement extends HTMLElement {
 
         this.regions.top.replaceChildren(...this.top(state));
         this.regions.drawer.hidden = this.ui.drawer === null || state.document === null;
-        this.regions.drawer.replaceChildren(...(this.ui.drawer === 'add' ? this.adder(state) : this.outline(state)));
+        this.regions.drawer.replaceChildren(...(
+            this.ui.drawer === 'add'
+                ? this.adder(state)
+                : this.ui.drawer === 'styles' && state.vocabulary?.manageStyles === true
+                  ? this.siteStyles(state)
+                  : this.outline(state)
+        ));
         this.regions.side.replaceChildren(...this.inspector(state));
         this.regions.trail.replaceChildren(...this.trail(state));
         this.canvas(state);
@@ -284,6 +294,7 @@ export class BlockBuilderElement extends HTMLElement {
                 el('span', { class: 'bb-name', text: state.document?.id ?? this.getAttribute('document') ?? '' }),
                 toggle('add', 'Add block', 'add'),
                 toggle('outline', 'Outline', 'outline'),
+                state.vocabulary?.manageStyles === true ? toggle('styles', 'Site styles', 'styles') : null,
                 history('Undo', 'undo', state.canUndo, () => this.builder.undo()),
                 history('Redo', 'redo', state.canRedo, () => this.builder.redo()),
             ),
@@ -311,6 +322,179 @@ export class BlockBuilderElement extends HTMLElement {
         this.ui.drawer = name;
         this.ui.target = 0;
         this.render();
+    }
+
+    // ---- Drawer: site styles ------------------------------------------------------------------------------
+
+    /**
+     * Shows the site's design tokens and breakpoints, which every page is drawn with, for changing one at a time.
+     */
+    siteStyles(state) {
+        const ui = this.ui.styles;
+        const tokens = state.vocabulary?.tokens ?? {};
+        const breakpoints = state.vocabulary?.breakpoints ?? [];
+        const problem = (key) => (ui.problems[key] ? el('span', { class: 'bb-wrong', role: 'alert', text: ui.problems[key] }) : null);
+        // Sends a change, and shows the server's reason under its row when it refuses.
+        const send = async (key, change) => {
+            const message = await change();
+
+            if (message === null) {
+                delete ui.problems[key];
+            } else {
+                ui.problems[key] = message;
+            }
+
+            this.render();
+
+            return message === null;
+        };
+        const removeButton = (label, run) =>
+            el('button', { class: 'bb-icon-button', type: 'button', title: `Remove ${label}`, 'aria-label': `Remove ${label}`, onclick: run }, icon('remove'));
+        const tokenRow = ({ name, value }) => {
+            const key = `token:${name}`;
+            const save = (next) => send(key, () => this.builder.setToken(name, next));
+
+            return el(
+                'div',
+                { class: 'bb-style-row' },
+                el('label', { class: 'bb-style-name', for: `bb-${key}`, text: name }),
+                el(
+                    'div',
+                    { class: 'bb-style-value' },
+                    isColourToken(name)
+                        ? el('input', {
+                              type: 'color',
+                              'aria-label': `Pick ${name}`,
+                              value: /^#[0-9a-f]{6}$/i.test(value) ? value : '#000000',
+                              onchange: (event) => save(event.target.value),
+                          })
+                        : null,
+                    el('input', {
+                        class: 'bb-input',
+                        id: `bb-${key}`,
+                        'data-key': key,
+                        value,
+                        onchange: (event) => save(event.target.value),
+                    }),
+                    removeButton(name, () => send(key, () => this.builder.removeToken(name))),
+                ),
+                problem(key),
+            );
+        };
+        const breakpointRow = ({ name, minWidth }) => {
+            const key = `breakpoint:${name}`;
+
+            return el(
+                'div',
+                { class: 'bb-style-row' },
+                el('label', { class: 'bb-style-name', for: `bb-${key}`, text: name }),
+                el(
+                    'div',
+                    { class: 'bb-style-value' },
+                    el('input', {
+                        class: 'bb-input',
+                        id: `bb-${key}`,
+                        'data-key': key,
+                        inputmode: 'numeric',
+                        value: String(minWidth),
+                        onchange: (event) => {
+                            const local = widthProblem(event.target.value);
+
+                            if (local !== null) {
+                                ui.problems[key] = local;
+                                this.render();
+
+                                return;
+                            }
+
+                            send(key, () => this.builder.setBreakpoint(name, Number(event.target.value.trim())));
+                        },
+                    }),
+                    el('span', { class: 'bb-unit', text: 'px' }),
+                    removeButton(name, () => send(key, () => this.builder.removeBreakpoint(name))),
+                ),
+                problem(key),
+            );
+        };
+        const addToken = async (event) => {
+            event.preventDefault();
+            const name = ui.token.name.trim();
+            const local = tokenNameProblem(name) ?? (ui.token.value.trim() === '' ? 'Give the token a value.' : null);
+
+            if (local !== null) {
+                ui.problems['token:new'] = local;
+                this.render();
+
+                return;
+            }
+
+            if (await send('token:new', () => this.builder.setToken(name, ui.token.value.trim()))) {
+                ui.token = { name: '', value: '' };
+                this.render();
+            }
+        };
+        const addBreakpoint = async (event) => {
+            event.preventDefault();
+            const name = ui.breakpoint.name.trim();
+            const local = name === '' ? 'Give the breakpoint a name.' : widthProblem(ui.breakpoint.width);
+
+            if (local !== null) {
+                ui.problems['breakpoint:new'] = local;
+                this.render();
+
+                return;
+            }
+
+            if (await send('breakpoint:new', () => this.builder.setBreakpoint(name, Number(ui.breakpoint.width.trim())))) {
+                ui.breakpoint = { name: '', width: '' };
+                this.render();
+            }
+        };
+        const typed = (draft, field) => (event) => {
+            draft[field] = event.target.value;
+        };
+
+        return [
+            el(
+                'div',
+                { class: 'bb-drawer-head' },
+                el('h2', { text: 'Site styles' }),
+                el('p', { class: 'bb-section-text', text: 'These apply to every page of the site.' }),
+            ),
+            el(
+                'div',
+                { class: 'bb-drawer-body' },
+                el(
+                    'section',
+                    { class: 'bb-section', 'aria-label': 'Design tokens' },
+                    el('h3', { class: 'bb-section-title', text: 'Design tokens' }),
+                    tokenGroups(tokens).map((group) => [el('h4', { text: group.title }), group.tokens.map(tokenRow)]),
+                    el(
+                        'form',
+                        { class: 'bb-style-add', onsubmit: addToken },
+                        el('input', { class: 'bb-input', 'data-key': 'token-new-name', placeholder: 'Name, such as color.accent', 'aria-label': 'New token name', value: ui.token.name, oninput: typed(ui.token, 'name') }),
+                        el('input', { class: 'bb-input', 'data-key': 'token-new-value', placeholder: 'Value', 'aria-label': 'New token value', value: ui.token.value, oninput: typed(ui.token, 'value') }),
+                        el('button', { class: 'bb-primary', type: 'submit', text: 'Add' }),
+                        problem('token:new'),
+                    ),
+                ),
+                el(
+                    'section',
+                    { class: 'bb-section', 'aria-label': 'Breakpoints' },
+                    el('h3', { class: 'bb-section-title', text: 'Breakpoints' }),
+                    el('p', { class: 'bb-section-text', text: 'Styles set for a removed width stop applying.' }),
+                    breakpoints.map(breakpointRow),
+                    el(
+                        'form',
+                        { class: 'bb-style-add', onsubmit: addBreakpoint },
+                        el('input', { class: 'bb-input', 'data-key': 'breakpoint-new-name', placeholder: 'Name, such as wide', 'aria-label': 'New breakpoint name', value: ui.breakpoint.name, oninput: typed(ui.breakpoint, 'name') }),
+                        el('input', { class: 'bb-input', 'data-key': 'breakpoint-new-width', inputmode: 'numeric', placeholder: 'Width in pixels', 'aria-label': 'New breakpoint width', value: ui.breakpoint.width, oninput: typed(ui.breakpoint, 'width') }),
+                        el('button', { class: 'bb-primary', type: 'submit', text: 'Add' }),
+                        problem('breakpoint:new'),
+                    ),
+                ),
+            ),
+        ];
     }
 
     // ---- Drawer: add a block -------------------------------------------------------------------------------

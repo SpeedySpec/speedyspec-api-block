@@ -225,6 +225,17 @@ block-builder .bb-binding { margin: 0; padding: .45rem .55rem; border: 1px dashe
     color: var(--bb-soft); }
 block-builder .bb-bound .bb-actions { margin-top: .35rem; }
 block-builder .bb-binding-form { padding: .6rem; border: 1px solid var(--bb-line); border-radius: 6px; }
+block-builder .bb-style-row { margin: 0 0 .55rem; }
+block-builder .bb-style-name { display: block; margin-bottom: .2rem; font: 12px/1.3 ui-monospace, monospace; }
+block-builder .bb-style-value { display: flex; align-items: center; gap: .35rem; }
+block-builder .bb-style-value input[type="color"] { flex: none; width: 2rem; height: 2rem; padding: 0; border: 1px solid var(--bb-line);
+    border-radius: 6px; background: #fff; }
+block-builder .bb-unit { color: var(--bb-soft); font-size: 12px; }
+block-builder .bb-icon-button { display: grid; flex: none; place-items: center; width: 2rem; height: 2rem; border: 0;
+    border-radius: 6px; color: var(--bb-soft); background: transparent; }
+block-builder .bb-icon-button:hover { color: var(--bb-bad); background: var(--bb-bad-wash); }
+block-builder .bb-style-add { display: grid; grid-template-columns: 1fr 1fr auto; gap: .35rem; margin-top: .6rem; }
+block-builder .bb-style-add .bb-wrong { grid-column: 1 / -1; }
 block-builder .bb-add-tabs { margin: 0 0 .6rem; padding: 0; }
 block-builder .bb-template { display: grid; gap: .15rem; align-content: start; }
 block-builder .bb-template .bb-link { justify-self: start; font-size: 12px; }

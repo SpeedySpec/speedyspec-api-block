@@ -584,3 +584,24 @@ test('binding and unbinding a setting send their operations and can be undone', 
     );
     assert.equal(builder.state().canUndo, true);
 });
+
+test('a site style change updates the vocabulary and the preview, and is not something to undo', async () => {
+    const client = fakeClient();
+    client.setToken = async (name, value) => ({ 'color.primary': value });
+    client.setBreakpoint = async () => {
+        throw new ApiError(422, 'Breakpoint "wide" needs a width of at least 1 pixel.');
+    };
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+    const renders = client.calls.filter((call) => call[0] === 'render').length;
+
+    const set = await builder.setToken('color.primary', '#fff');
+    const refused = await builder.setBreakpoint('wide', 0);
+
+    assert.equal(set, null);
+    assert.deepEqual(builder.state().vocabulary.tokens, { 'color.primary': '#fff' });
+    assert.equal(client.calls.filter((call) => call[0] === 'render').length, renders + 1);
+    assert.equal(refused, 'Breakpoint "wide" needs a width of at least 1 pixel.');
+    assert.deepEqual(builder.state().vocabulary.breakpoints, [{ name: 'tablet', minWidth: 768 }]);
+    assert.equal(builder.state().canUndo, false);
+});

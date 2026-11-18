@@ -1,4 +1,4 @@
-import { Refused } from './api.js';
+import { ApiError, Refused } from './api.js';
 import { templateName } from './templates.js';
 import { find, indentPosition, movePosition, outdentPosition, positionOf } from './tree.js';
 
@@ -143,6 +143,30 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
             set({ error: error.message });
 
             return false;
+        }
+    }
+
+    /**
+     * Changes a site style and puts what the server answers into the vocabulary, then draws the page again with it.
+     *
+     * Site styles are not part of the document, so the change is not in its history.
+     *
+     * @param {'tokens'|'breakpoints'} key The part of the vocabulary the server answered with.
+     * @returns {Promise<?string>} Null when it worked; otherwise why not, safe to show.
+     */
+    async function styleChange(key, run) {
+        try {
+            const answer = await run();
+            set({ vocabulary: { ...state.vocabulary, [key]: answer } });
+            await refreshPreview();
+
+            return null;
+        } catch (error) {
+            if (!(error instanceof ApiError) || (error.status !== 422 && error.status !== 403)) {
+                set({ error: error.message });
+            }
+
+            return error.message;
         }
     }
 
@@ -298,6 +322,14 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         refreshPreview,
 
         loadTemplates,
+
+        setToken: (name, value) => styleChange('tokens', () => client.setToken(name, value)),
+
+        removeToken: (name) => styleChange('tokens', () => client.removeToken(name)),
+
+        setBreakpoint: (name, minWidth) => styleChange('breakpoints', () => client.setBreakpoint(name, minWidth)),
+
+        removeBreakpoint: (name) => styleChange('breakpoints', () => client.removeBreakpoint(name)),
 
         /**
          * Saves a block, with everything inside it, as a template under a name made from its title.

@@ -27,7 +27,6 @@ use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
 use SpeedySpec\Block\Domain\Contracts\CollectionSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
-use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\EditorInterface;
@@ -148,7 +147,9 @@ if (!in_array($path, ['/', '/view'], true) && !str_starts_with($path, '/api/'))
 
 $container = new BlockServiceContainer();
 (new AppServiceProvider())->register($container);
-(new StorageServiceProvider())->register($container);
+// The demo's tokens are where the site starts; once they are changed on the site styles screen, the stored ones
+// are used instead.
+(new StorageServiceProvider(tokens: ['color.primary' => '#2456d6', 'space.md' => '1.5rem']))->register($container);
 (new FilesystemServiceProvider($storage, $mediaUrl))->register($container);
 (new PresentationServiceProvider())->register($container);
 (new ReferenceEditorServiceProvider())->register($container);
@@ -195,8 +196,6 @@ $container->get(DataSourceRegistryInterface::class)->add(new ArrayDataSource(
 ));
 $loader->load(SiteTypesPackage::from($container));
 $loader->load(new SitePackage());
-$container->get(DesignTokenRegistryInterface::class)->set('color.primary', '#2456d6');
-$container->get(DesignTokenRegistryInterface::class)->set('space.md', '1.5rem');
 
 $documents = $container->get(DocumentRepositoryInterface::class);
 $media = $container->get(MediaLibraryInterface::class);

@@ -144,6 +144,25 @@ export function createClient({ baseUrl, fetch = globalThis.fetch, headers = {} }
         removeTemplate: (name) => send('DELETE', `/templates/${name.split('/').map(segment).join('/')}`),
 
         /**
+         * Sets one design token.
+         *
+         * @returns {Promise<Record<string, string>>} Every token, as they now are.
+         */
+        setToken: async (name, value) => (await send('PUT', `/tokens/${segment(name)}`, { value })).tokens,
+
+        removeToken: async (name) => (await send('DELETE', `/tokens/${segment(name)}`)).tokens,
+
+        /**
+         * Sets one breakpoint.
+         *
+         * @returns {Promise<Array<{name: string, minWidth: number}>>} Every breakpoint, as they now are.
+         */
+        setBreakpoint: async (name, minWidth) =>
+            (await send('PUT', `/breakpoints/${segment(name)}`, { minWidth })).breakpoints,
+
+        removeBreakpoint: async (name) => (await send('DELETE', `/breakpoints/${segment(name)}`)).breakpoints,
+
+        /**
          * Lists one page of the media library, newest first.
          *
          * @param {{search?: string, kind?: string, page?: number, perPage?: number}} [filters]
