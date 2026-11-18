@@ -16,6 +16,8 @@ use SpeedySpec\Block\App\Documents\RegisteredTemplateLibrary;
 use SpeedySpec\Block\App\Documents\SavedTemplateLibrary;
 use SpeedySpec\Block\App\Ids\BlockDuplicator;
 use SpeedySpec\Block\App\Ids\RandomBlockIdGenerator;
+use SpeedySpec\Block\App\Media\MediaTypeDetector;
+use SpeedySpec\Block\App\Media\MediaUploadPolicy;
 use SpeedySpec\Block\App\Output\BlockOutputRegistry;
 use SpeedySpec\Block\App\Output\DocumentRenderer;
 use SpeedySpec\Block\App\Output\HtmlEscaper;
@@ -102,6 +104,12 @@ class AppServiceProvider
     public function register(BlockServiceContainer $container): void
     {
         $container->add(SchemaValidatorInterface::class, fn () => new SubsetSchemaValidator());
+        // Uploads are checked here; where they are kept is the host's, so no media library is bound.
+        $container->add(MediaTypeDetector::class, fn () => new MediaTypeDetector());
+        $container->add(
+            MediaUploadPolicy::class,
+            fn (BlockServiceContainer $c) => new MediaUploadPolicy($c->get(MediaTypeDetector::class)),
+        );
         $container->add(
             BlockTypeRegistryInterface::class,
             fn (BlockServiceContainer $c) => new BlockTypeRegistry($c->get(SchemaValidatorInterface::class)),

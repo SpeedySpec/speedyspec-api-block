@@ -19,7 +19,13 @@ function unavailableRenderer(): array
         types($c)->add(type('acme/image'));
         types($c)->add(type('acme/ok'));
         behaviours($c)->set(BlockName::fromString('acme/image'), new class implements BlockBehaviourInterface {
-            public function view(Block $block, BlockType $type, array $settings, Context $context, Mode $mode): BlockView
+            public function view(
+                Block $block,
+                BlockType $type,
+                array $settings,
+                Context $context,
+                Mode $mode,
+            ): BlockView
             {
                 throw new UnavailableBlockException(IssueKind::UnavailableMedia, 'The image is missing.', 'media');
             }
