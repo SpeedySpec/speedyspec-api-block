@@ -39,6 +39,7 @@ use SpeedySpec\Block\Domain\Entities\BlockTree;
 use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\ValueObjects\AssetKind;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
+use SpeedySpec\Block\Domain\ValueObjects\BlockLock;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BuilderAbility;
 use SpeedySpec\Block\Domain\ValueObjects\Crumb;
@@ -342,7 +343,8 @@ if ($documents->find('home') === null)
                     'newTab' => true,
                 ]),
             ),
-        ),
+        // Locked, so a fresh demo shows what a lock does: it cannot be moved or removed until it is unlocked.
+        )->withExtension(BlockLock::NAMESPACE, ['move' => true, 'remove' => true]),
         $text('quote-card', 'core/testimonial', [
             'quote' => 'We rebuilt our pages in an afternoon.',
             'name' => 'Ann Lee',

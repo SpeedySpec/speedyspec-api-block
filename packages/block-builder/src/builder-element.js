@@ -732,9 +732,13 @@ export class BlockBuilderElement extends HTMLElement {
                     type: 'button',
                     style: `padding-left: ${0.4 + depth * 1.1}rem`,
                     'aria-current': String(state.selected === block.id),
-                    onclick: () => this.select(block.id, true),
+                    'data-bb-chosen': state.selection.length > 1 && state.selection.includes(block.id) ? '' : null,
+                    onclick: (event) => (event.shiftKey || event.ctrlKey || event.metaKey
+                        ? this.toggle(block.id)
+                        : this.select(block.id, true)),
                 },
                 el('b', { text: titles[block.type] ?? block.type }),
+                state.selection.includes(block.id) ? el('span', { class: 'bb-sr', text: ', selected' }) : null,
                 el('small', { text: this.hint(block) }),
                 lockOf(block).move || lockOf(block).remove
                     ? el('span', { class: 'bb-lock', title: 'Locked', 'aria-label': 'Locked' }, icon('lock'))
@@ -828,6 +832,16 @@ export class BlockBuilderElement extends HTMLElement {
 
             event.preventDefault();
             const block = named(event);
+
+            if (block !== null && (event.shiftKey || event.ctrlKey || event.metaKey)) {
+                if (this.typing !== null) {
+                    this.stopTyping(true);
+                }
+
+                this.toggle(block.getAttribute(NAMED));
+
+                return;
+            }
 
             if (block !== null) {
                 this.select(block.getAttribute(NAMED));
@@ -1120,8 +1134,8 @@ export class BlockBuilderElement extends HTMLElement {
 
         page.querySelectorAll('[data-bb-picked]').forEach((node) => node.removeAttribute('data-bb-picked'));
 
-        if (selected !== null) {
-            page.querySelector(`[${NAMED}="${CSS.escape(selected)}"]`)?.setAttribute('data-bb-picked', '');
+        for (const id of new Set([...this.builder.state().selection, ...(selected === null ? [] : [selected])])) {
+            page.querySelector(`[${NAMED}="${CSS.escape(id)}"]`)?.setAttribute('data-bb-picked', '');
         }
 
         this.placeBar();
@@ -1131,7 +1145,8 @@ export class BlockBuilderElement extends HTMLElement {
         const state = this.builder.state();
         const block = state.selected === null || state.document === null ? null : find(state.document, state.selected);
 
-        if (block === null) {
+        // The block bar acts on one block; several selected blocks are handled from the inspector.
+        if (block === null || state.selection.length > 1) {
             this.bar.hidden = true;
 
             return;
@@ -1151,7 +1166,7 @@ export class BlockBuilderElement extends HTMLElement {
             tool('Duplicate', 'copy', () => this.builder.duplicate(block.id)),
             tool('Add a block', 'add', () => this.openDrawer('add')),
             tool(lock.remove ? 'Remove (locked)' : 'Remove', 'remove', () => this.builder.remove(block.id), lock.remove),
-            this.moreButton(state, block),
+            ...[this.moreButton(state, block)].flat(),
         );
         this.bar.hidden = false;
 
@@ -1401,6 +1416,13 @@ export class BlockBuilderElement extends HTMLElement {
         const typing = Boolean(event.target.closest?.('input, textarea, select, [contenteditable]'));
         const key = event.key.toLowerCase();
 
+        if (key === 'escape' && !typing && this.typing === null && this.builder.state().selection.length > 1) {
+            event.preventDefault();
+            this.select(null);
+
+            return;
+        }
+
         if (typing || !(event.metaKey || event.ctrlKey) || event.altKey || (key !== 'z' && key !== 'y')) {
             return;
         }
@@ -1493,6 +1515,17 @@ export class BlockBuilderElement extends HTMLElement {
         }
     }
 
+    /**
+     * Adds a block to the selection or takes it out, for a Shift-, Ctrl- or Cmd-click.
+     */
+    toggle(id) {
+        this.ui.more = false;
+        this.ui.binding = null;
+        this.ui.saveForm = null;
+        this.builder.dismiss();
+        this.builder.toggle(id);
+    }
+
     select(id, reveal = false) {
         this.ui.more = false;
         this.ui.binding = null;
@@ -1539,6 +1572,10 @@ export class BlockBuilderElement extends HTMLElement {
 
     inspector(state) {
         const block = state.selected === null || state.document === null ? null : find(state.document, state.selected);
+
+        if (state.selection.length > 1 && state.document !== null) {
+            return this.several(state);
+        }
 
         if (block === null) {
             return [
@@ -1609,6 +1646,36 @@ export class BlockBuilderElement extends HTMLElement {
                     ? null
                     : el('div', { class: 'bb-toast', role: 'status' }, el('ul', {}, issues.map((issue) => el('li', { text: issue.message })))),
                 body,
+            ),
+        ];
+    }
+
+    /**
+     * Offers what can be done to several selected blocks at once.
+     */
+    several(state) {
+        const ids = pick(state.document, state.selection).map((block) => block.id);
+        const blocks = ids.map((id) => find(state.document, id));
+        const removable = blocks.every((block) => !lockOf(block).remove);
+        const action = (label, run, disabled = false) =>
+            el('button', { class: 'bb-wide-button', type: 'button', text: label, disabled, onclick: run });
+
+        return [
+            el(
+                'div',
+                { class: 'bb-side-head' },
+                el('h2', { text: `${ids.length} blocks selected` }),
+                el('p', { text: 'Shift-, Ctrl- or Cmd-click a block to add it or take it out. Escape clears the selection.' }),
+            ),
+            el(
+                'div',
+                { class: 'bb-side-body bb-several' },
+                action('Copy', () => this.copyBlocks(ids, false)),
+                action('Cut', () => this.copyBlocks(ids, true), !removable),
+                action('Remove', () => this.builder.removeMany(ids), !removable),
+                action('Lock all', () => this.builder.lockMany(ids, { move: true, remove: true })),
+                action('Unlock all', () => this.builder.lockMany(ids, { move: false, remove: false })),
+                removable ? null : el('p', { class: 'bb-help', text: 'Some of these are locked against removal.' }),
             ),
         ];
     }

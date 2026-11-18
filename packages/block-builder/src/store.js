@@ -1,5 +1,6 @@
 import { ApiError, Refused } from './api.js';
 import { templateName } from './templates.js';
+import { toggleInSelection, withLock } from './selection.js';
 import { find, indentPosition, movePosition, outdentPosition, positionOf } from './tree.js';
 
 /**
@@ -24,6 +25,8 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         packages: [],
         vocabulary: null,
         selected: null,
+        // Every block selected, in document order; it holds `selected` whenever that is set.
+        selection: [],
         refusals: [],
         error: null,
         saving: false,
@@ -78,6 +81,8 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
                 const before = state.document.blocks;
                 const result = await client.operate(documentId, wanted);
                 const selected = find(result.document, state.selected) === null ? null : state.selected;
+                const kept = state.selection.filter((id) => find(result.document, id) !== null);
+                const selection = selected === null || kept.includes(selected) ? kept : [selected];
 
                 remember(before);
                 set({
@@ -86,6 +91,7 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
                     refusals: [],
                     error: null,
                     selected,
+                    selection,
                     canUndo: past.length > 0,
                     canRedo: future.length > 0,
                     ...after(result),
@@ -174,7 +180,9 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
 
     const moveTo = (id, position) =>
         position === null ? Promise.resolve() : edit({ operation: 'move', block: id, position });
-    const selectFirst = (result) => (result.affected.length === 0 ? {} : { selected: result.affected[0] });
+    const selectFirst = (result) => (
+        result.affected.length === 0 ? {} : { selected: result.affected[0], selection: [result.affected[0]] }
+    );
 
     return {
         state: () => state,
@@ -216,8 +224,30 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         },
 
         select(id) {
-            set({ selected: id });
+            set({ selected: id, selection: id === null ? [] : [id] });
         },
+
+        /**
+         * Adds a block to the selection or takes it out, as a Shift- or Ctrl-click does.
+         */
+        toggle(id) {
+            if (state.document === null) {
+                return;
+            }
+
+            const selection = toggleInSelection(state.document, state.selection, id);
+            const selected = selection.includes(id) ? id : (selection.at(-1) ?? null);
+
+            set({ selection, selected });
+        },
+
+        /**
+         * Locks or unlocks several blocks as one edit, so one undo puts every lock back as it was.
+         *
+         * @param {string[]} ids
+         * @param {{move: boolean, remove: boolean}} lock
+         */
+        lockMany: (ids, lock) => edit(() => ({ operation: 'restore', blocks: withLock(state.document.blocks, ids, lock) })),
 
         /**
          * Puts away what the server last refused, once the person has read it.

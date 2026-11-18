@@ -625,3 +625,62 @@ test('turning a block into another type sends the operation and keeps the block 
     });
     assert.equal(builder.state().selected, 'b');
 });
+
+test('several blocks can be selected, and the selection follows what is still on the page', async () => {
+    const client = editingClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    builder.select('a');
+    builder.toggle('b');
+
+    assert.deepEqual(builder.state().selection, ['a', 'b']);
+    assert.equal(builder.state().selected, 'b');
+
+    builder.toggle('b');
+
+    assert.deepEqual(builder.state().selection, ['a']);
+    assert.equal(builder.state().selected, 'a');
+
+    builder.toggle('b');
+    await builder.remove('b');
+
+    assert.deepEqual(builder.state().selection, ['a']);
+
+    builder.select(null);
+
+    assert.deepEqual(builder.state().selection, []);
+});
+
+test('locking several blocks is one restore, so one undo unlocks them all', async () => {
+    const client = editingClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.lockMany(['a', 'b'], { move: true, remove: true });
+
+    const sent = client.calls.filter((call) => call[0] === 'operate').map((call) => call[1]);
+
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].operation, 'restore');
+    assert.deepEqual(sent[0].blocks.map((entry) => entry.extensions), [
+        { 'core/lock': { move: true, remove: true } },
+        { 'core/lock': { move: true, remove: true } },
+    ]);
+    assert.equal(builder.state().canUndo, true);
+});
+
+test('when the server refuses removing several blocks, its reasons are shown and nothing is removed', async () => {
+    const refusal = { kind: 'locked', message: 'This block is locked against removal.', block: 'b', path: null };
+    const client = fakeClient(() => {
+        throw new Refused([refusal]);
+    });
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.removeMany(['a', 'b']);
+
+    assert.deepEqual(builder.state().refusals, [refusal]);
+    assert.deepEqual(ids(builder), ['a', 'b']);
+    assert.equal(builder.state().canUndo, false);
+});

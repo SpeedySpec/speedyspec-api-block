@@ -94,6 +94,14 @@ block-builder .bb-row[data-bb-drop="before"] { box-shadow: inset 0 2px 0 var(--b
 block-builder .bb-row[data-bb-drop="after"] { box-shadow: inset 0 -2px 0 var(--bb-pick); }
 block-builder .bb-row[data-bb-drop="inside"] { background: var(--bb-pick-wash); box-shadow: inset 0 0 0 2px var(--bb-pick); }
 block-builder .bb-lock { display: grid; flex: none; place-items: center; color: var(--bb-soft); }
+block-builder .bb-row[data-bb-chosen] { background: var(--bb-pick-wash); }
+block-builder .bb-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+    white-space: nowrap; }
+block-builder .bb-several { display: grid; align-content: start; gap: .4rem; padding-top: .75rem; }
+block-builder .bb-wide-button { height: 2rem; border: 1px solid var(--bb-line); border-radius: 6px; color: var(--bb-ink);
+    background: #fff; font-weight: 500; text-align: left; padding: 0 .7rem; }
+block-builder .bb-wide-button:hover:not(:disabled) { border-color: var(--bb-pick); background: var(--bb-pick-wash); }
+block-builder .bb-wide-button:disabled { color: var(--bb-soft); }
 block-builder .bb-dot { flex: none; width: .5rem; height: .5rem; border-radius: 50%; background: var(--bb-bad); }
 
 /* Stage */

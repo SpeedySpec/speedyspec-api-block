@@ -58,6 +58,22 @@ It is laid out the way the block editors people already know are:
   has buttons to add or remove a row or column, and code gets a monospace box. *Style* holds the shared
   style settings in sections, with a switch for which widths a value applies from, colour pickers that offer the
   site's colour tokens first, and alignment buttons. *Visibility* builds the rules for when a block is shown.
+- **Copy, cut and paste blocks** with the usual keys, or from the block bar's More (⋯) list, which also has Paste
+  after. Blocks copied in one document can be pasted into another, in another tab. While typing, or with text
+  selected, the keys copy and paste text as usual, and text that is not blocks is pasted as text.
+- **Templates.** The add-block panel has a Templates tab, searched like blocks. "Save as template" in the More list
+  saves the selected block and everything inside it; saved templates can be removed, after a second click to confirm.
+  Both are offered only to people allowed to manage templates.
+- **Bindings.** Each of a block's own settings has a Bind button when the site has data sources. A bound setting
+  says where its value comes from, with Change and Unbind; bound text cannot be typed into on the page.
+- **Site styles**, from the top bar for people allowed to change them: the site's design tokens, by group, with a
+  colour picker for colours, and its breakpoints. Changes apply to every page and are not undone with the document.
+- **Turn into**, in the More list, offers the types the selected block's type declares.
+- **Locks.** The Block tab's Lock group holds "Prevent moving" and "Prevent removing". A locked block's move,
+  remove and cut buttons are turned off, it cannot be dragged, and the outline marks it.
+- **Several blocks.** Shift-, Ctrl- or Cmd-click blocks beside each other, on the page or in the outline, to select
+  them together; the inspector then offers Copy, Cut, Remove, Lock all and Unlock all, each one step to undo.
+  Escape clears the selection.
 - **A refusal is shown beside the field that caused it;** anything else appears at the bottom of the page.
 - **The trail** along the bottom shows where the selected block sits and selects any ancestor.
 
@@ -118,5 +134,5 @@ They cover the client, tree, forms, store, view and drop-position logic. The ele
 
 ## Not included
 
-Pasting blocks rather than text, editing bindings, inserting and saving templates, and
-keyboard shortcuts.
+Moving several blocks at once (dragging moves one block), binding settings inside lists or styles, turning a block
+into a type that needs its children changed, and pasting other editors' formats.
