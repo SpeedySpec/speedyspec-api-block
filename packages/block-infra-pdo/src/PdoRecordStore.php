@@ -45,6 +45,8 @@ class PdoRecordStore implements RecordStoreInterface
     /**
      * Creates the table if it does not exist; safe to call on every start.
      *
+     * On MySQL and MariaDB creating a table commits any transaction the host has open.
+     *
      * @throws StorageException
      *   When the table cannot be created.
      *
@@ -52,10 +54,25 @@ class PdoRecordStore implements RecordStoreInterface
      */
     public function install(): void
     {
-        // MySQL's TEXT holds 64 KB, less than a large document; every other supported database's TEXT is unbounded.
-        $text = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'LONGTEXT' : 'TEXT';
+        $this->run($this->tableSql((string) $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME)));
+    }
 
-        $this->run(sprintf(
+    /**
+     * Writes the statement that creates the table for a PDO driver.
+     *
+     * MySQL needs two things said that the others do by default: a text type large enough for a document, and a
+     * character set that holds every character and compares exactly, whatever the database's own default is.
+     *
+     * @param string $driver
+     *   A PDO driver name, such as `mysql`, `pgsql` or `sqlite`.
+     *
+     * @since 0.1.0
+     */
+    public function tableSql(string $driver): string
+    {
+        $text = $driver === 'mysql' ? 'LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin' : 'TEXT';
+
+        return sprintf(
             'CREATE TABLE IF NOT EXISTS %s ('
             . 'collection VARCHAR(64) NOT NULL, '
             . 'key_hash CHAR(64) NOT NULL, '
@@ -66,7 +83,7 @@ class PdoRecordStore implements RecordStoreInterface
             $this->table,
             $text,
             $text,
-        ));
+        );
     }
 
     public function get(string $collection, string $key): ?string
@@ -81,40 +98,48 @@ class PdoRecordStore implements RecordStoreInterface
         return $value === false ? null : (string) $value;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * No transaction is opened: each statement stands on its own, so a write can never be left half-committed
+     * and joins whatever transaction the host has open. A key first put by two writers at once is inserted by
+     * one and then replaced by the other.
+     *
+     * @since 0.1.0
+     */
     public function put(string $collection, string $key, string $value): void
     {
         CollectionName::assert($collection);
+        $hash = $this->hash($key);
 
-        $this->transaction(function () use ($collection, $key, $value): void {
-            $hash = $this->hash($key);
-            $exists = $this->run(
-                sprintf('SELECT 1 FROM %s WHERE collection = ? AND key_hash = ?', $this->table),
-                [$collection, $hash],
-            )->fetchColumn();
+        if ($this->exists($collection, $hash))
+        {
+            $this->update($collection, $hash, $value);
 
-            if ($exists !== false)
-            {
-                $this->run(
-                    sprintf('UPDATE %s SET record_value = ? WHERE collection = ? AND key_hash = ?', $this->table),
-                    [$value, $collection, $hash],
-                );
+            return;
+        }
 
-                return;
-            }
-
-            $last = $this->run(
-                sprintf('SELECT MAX(position) FROM %s WHERE collection = ?', $this->table),
-                [$collection],
-            )->fetchColumn();
-
+        try
+        {
+            // The position is worked out inside the insert, so two writers cannot read the same one apart.
             $this->run(
                 sprintf(
-                    'INSERT INTO %s (collection, key_hash, record_key, record_value, position) VALUES (?, ?, ?, ?, ?)',
+                    'INSERT INTO %1$s (collection, key_hash, record_key, record_value, position) '
+                    . 'SELECT ?, ?, ?, ?, COALESCE(MAX(position), 0) + 1 FROM %1$s WHERE collection = ?',
                     $this->table,
                 ),
-                [$collection, $hash, base64_encode($key), $value, (int) $last + 1],
+                [$collection, $hash, base64_encode($key), $value, $collection],
             );
-        });
+        }
+        catch (StorageException $e)
+        {
+            if (!$this->exists($collection, $hash))
+            {
+                throw $e;
+            }
+
+            $this->update($collection, $hash, $value);
+        }
     }
 
     public function delete(string $collection, string $key): void
@@ -139,6 +164,22 @@ class PdoRecordStore implements RecordStoreInterface
         return array_map(static fn (mixed $key): string => (string) base64_decode((string) $key, true), $rows);
     }
 
+    private function exists(string $collection, string $hash): bool
+    {
+        return $this->run(
+            sprintf('SELECT 1 FROM %s WHERE collection = ? AND key_hash = ?', $this->table),
+            [$collection, $hash],
+        )->fetchColumn() !== false;
+    }
+
+    private function update(string $collection, string $hash, string $value): void
+    {
+        $this->run(
+            sprintf('UPDATE %s SET record_value = ? WHERE collection = ? AND key_hash = ?', $this->table),
+            [$value, $collection, $hash],
+        );
+    }
+
     private function hash(string $key): string
     {
         return hash('sha256', $key);
@@ -155,6 +196,10 @@ class PdoRecordStore implements RecordStoreInterface
      */
     private function run(string $sql, array $parameters = []): PDOStatement
     {
+        // A connection set to warn would otherwise raise a PHP warning as well, which a host may turn into an
+        // exception of its own; the failure is reported once, here.
+        set_error_handler(static fn (): bool => true);
+
         try
         {
             $statement = $this->pdo->prepare($sql);
@@ -176,42 +221,9 @@ class PdoRecordStore implements RecordStoreInterface
                 $e,
             );
         }
-    }
-
-    /**
-     * Runs several statements as one change, joining a transaction the host already opened rather than ending it.
-     *
-     * @throws StorageException
-     *
-     * @since 0.1.0
-     */
-    private function transaction(callable $change): void
-    {
-        if ($this->pdo->inTransaction())
+        finally
         {
-            $change();
-
-            return;
-        }
-
-        try
-        {
-            $this->pdo->beginTransaction();
-            $change();
-            $this->pdo->commit();
-        }
-        catch (PDOException | StorageException $e)
-        {
-            if ($this->pdo->inTransaction())
-            {
-                $this->pdo->rollBack();
-            }
-
-            throw $e instanceof StorageException ? $e : new StorageException(
-                sprintf('The record table "%s" failed: %s', $this->table, $e->getMessage()),
-                0,
-                $e,
-            );
+            restore_error_handler();
         }
     }
 }

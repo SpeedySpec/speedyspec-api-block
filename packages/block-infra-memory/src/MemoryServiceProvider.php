@@ -17,8 +17,10 @@ use SpeedySpec\Block\Domain\Contracts\RecordStoreInterface;
 class MemoryServiceProvider
 {
     /**
-     * Binds the document and template repositories and a record store; a host replaces any of them by adding its
-     * own binding before first use.
+     * Binds the document and template repositories and a record store, each only where nothing is bound yet.
+     *
+     * It fills gaps and never replaces: whatever order the providers are registered in, real storage a host
+     * bound stays in place, so nothing is saved to memory by accident and lost at the end of the request.
      *
      * @param BlockServiceContainer $container
      *   The container to bind into.
@@ -27,8 +29,18 @@ class MemoryServiceProvider
      */
     public function register(BlockServiceContainer $container): void
     {
-        $container->add(DocumentRepositoryInterface::class, fn () => new InMemoryDocumentRepository());
-        $container->add(BlockTemplateRepositoryInterface::class, fn () => new InMemoryBlockTemplateRepository());
-        $container->add(RecordStoreInterface::class, fn () => new InMemoryRecordStore());
+        $defaults = [
+            DocumentRepositoryInterface::class => fn () => new InMemoryDocumentRepository(),
+            BlockTemplateRepositoryInterface::class => fn () => new InMemoryBlockTemplateRepository(),
+            RecordStoreInterface::class => fn () => new InMemoryRecordStore(),
+        ];
+
+        foreach ($defaults as $contract => $factory)
+        {
+            if (!$container->has($contract))
+            {
+                $container->add($contract, $factory);
+            }
+        }
     }
 }

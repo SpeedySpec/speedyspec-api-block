@@ -18,6 +18,9 @@ use SpeedySpec\Block\Domain\Exceptions\StorageException;
  * CollectionName::assert(). A key is any string, compared exactly: a store must not fold case, trim, or treat any
  * character as special.
  *
+ * A value is text: valid UTF-8 with no NUL byte, which is what the serializers write. A store may refuse or need
+ * not preserve anything else, so that a database's text column is a fair place to keep one.
+ *
  * @since 0.1.0
  */
 interface RecordStoreInterface
