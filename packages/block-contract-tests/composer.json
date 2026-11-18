@@ -7,7 +7,9 @@
     "require": {
         "php": ">=8.4",
         "speedyspec/block-domain": "^0.1",
-        "pestphp/pest": "^3.0|^4.0"
+        "pestphp/pest": "^3.0|^4.0",
+        "speedyspec/block-app": "^0.1",
+        "speedyspec/block-infra-memory": "^0.1"
     },
     "repositories": [
         {
@@ -24,7 +26,8 @@
             "src/documentRepositoryContract.php",
             "src/dataSourceContract.php",
             "src/documentSerializerContract.php",
-            "src/outputEscaperContract.php"
+            "src/outputEscaperContract.php",
+            "src/blockPackageContract.php"
         ]
     },
     "archive": {
