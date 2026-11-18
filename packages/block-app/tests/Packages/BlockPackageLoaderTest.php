@@ -278,3 +278,21 @@ test('a failed load records no output owner', function () {
     })))->toThrow(\SpeedySpec\Block\Domain\Exceptions\BlockPackageException::class)
         ->and($loader->outputOwner($tab, \SpeedySpec\Block\Domain\ValueObjects\Mode::Front))->toBeNull();
 });
+
+test('a package cannot draw a block type that is not defined, so loading only the outputs fails loudly', function () {
+    [, $c] = renderer();
+    $loader = $c->get(BlockPackageLoaderInterface::class);
+    $tab = \SpeedySpec\Block\Domain\ValueObjects\BlockName::fromString('acme/tab');
+
+    expect(fn () => $loader->load(package('acme/html', fn ($r) => $r->output($tab, fixedOutput('x')))))
+        ->toThrow(\SpeedySpec\Block\Domain\Exceptions\BlockPackageException::class, 'acme/tab')
+        ->and($c->get(\SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface::class)->has($tab, \SpeedySpec\Block\Domain\ValueObjects\Mode::Front))
+        ->toBeFalse();
+
+    $loader->load(package('acme/both', function ($r) use ($tab) {
+        $r->output($tab, fixedOutput('x'));
+        $r->type(type('acme/tab'));
+    }));
+
+    expect($loader->outputOwner($tab, \SpeedySpec\Block\Domain\ValueObjects\Mode::Front))->toBe('acme/both');
+});

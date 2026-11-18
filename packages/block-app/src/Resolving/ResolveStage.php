@@ -162,10 +162,9 @@ class ResolveStage
 
                 // A value from a binding is data. Where the setting is formatted text, it is turned into text, so a
                 // data source can never put markup on the page however its value is drawn.
-                if (($used === 'source' || $used === 'fallback') && is_string($value)
-                    && ($schema['x-control'] ?? null) === 'rich-text')
+                if ($used === 'source' || $used === 'fallback')
                 {
-                    $value = htmlspecialchars($value, ENT_NOQUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
+                    $value = $this->asText($value, $schema);
                 }
 
                 $target = $this->set($target, $path->segments(), $value);
@@ -248,6 +247,45 @@ class ResolveStage
     /**
      * @param list<string> $segments
      */
+    /**
+     * Escapes every formatted-text value in a bound value, however deep, so markup from data stays text.
+     *
+     * @param array<string, mixed> $schema
+     *   The schema of the setting the value is bound to.
+     *
+     * @since 0.1.0
+     */
+    private function asText(mixed $value, array $schema): mixed
+    {
+        if (is_string($value))
+        {
+            return ($schema['x-control'] ?? null) === 'rich-text'
+                ? htmlspecialchars($value, ENT_NOQUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8')
+                : $value;
+        }
+
+        if (!is_array($value))
+        {
+            return $value;
+        }
+
+        $properties = is_array($schema['properties'] ?? null) ? $schema['properties'] : [];
+        $items = is_array($schema['items'] ?? null) ? $schema['items'] : null;
+        $extra = is_array($schema['additionalProperties'] ?? null) ? $schema['additionalProperties'] : null;
+
+        foreach ($value as $key => $child)
+        {
+            $childSchema = $properties[$key] ?? (array_is_list($value) ? $items : $extra);
+
+            if (is_array($childSchema))
+            {
+                $value[$key] = $this->asText($child, $childSchema);
+            }
+        }
+
+        return $value;
+    }
+
     private function has(array $values, array $segments): bool
     {
         foreach ($segments as $segment)

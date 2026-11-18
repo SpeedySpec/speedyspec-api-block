@@ -30,6 +30,11 @@ class RichTextSanitizer implements RichTextSanitizerInterface
      */
     private const int MAX_DEPTH = 32;
 
+    /**
+     * A little under the nesting libxml's HTML parser keeps before it starts dropping content.
+     */
+    private const int PARSER_DEPTH = 200;
+
     public function clean(string $html): string
     {
         if ($html === '')
@@ -37,7 +42,15 @@ class RichTextSanitizer implements RichTextSanitizerInterface
             return '';
         }
 
-        $html = $this->valid($html);
+        $html = str_replace(["\r\n", "\r"], "\n", $this->valid($html));
+
+        // The parser gives up on nesting past its own limit and drops what is inside. Losing a person's words is
+        // worse than losing their formatting, so a value nested that deeply is kept as plain text instead.
+        if ($this->nesting($html) > self::PARSER_DEPTH)
+        {
+            return $this->text(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        }
+
         $document = new DOMDocument();
         $errors = libxml_use_internal_errors(true);
 
@@ -56,13 +69,9 @@ class RichTextSanitizer implements RichTextSanitizerInterface
 
         $body = $document->getElementsByTagName('body')->item(0);
 
-        // The parser gives up on nesting past its own limit and drops what is inside. Losing a person's words is
-        // worse than losing their formatting, so such a value is kept as plain text instead.
-        $plain = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-
-        if ($body === null || mb_strlen($body->textContent) < mb_strlen($plain))
+        if ($body === null)
         {
-            return $this->text($plain);
+            return $this->text(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
         }
 
         return $this->children($body, 0);
@@ -78,6 +87,38 @@ class RichTextSanitizer implements RichTextSanitizerInterface
         return htmlspecialchars_decode(htmlspecialchars($html, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8'), ENT_NOQUOTES);
     }
 
+    /**
+     * Measures how deeply the tags in a value open inside one another, as a parser would nest them.
+     *
+     * Tags that are never closed count as open, as the parser treats them. Only `br` is known to hold nothing.
+     *
+     * @since 0.1.0
+     */
+    private function nesting(string $html): int
+    {
+        preg_match_all('#<(/?)([a-zA-Z][a-zA-Z0-9]*)[^>]*?(/?)>#', $html, $tags, PREG_SET_ORDER);
+        $depth = 0;
+        $deepest = 0;
+
+        foreach ($tags as [, $closing, $name, $selfClosing])
+        {
+            if (strtolower($name) === 'br' || $selfClosing === '/')
+            {
+                continue;
+            }
+
+            $depth = $closing === '/' ? max(0, $depth - 1) : $depth + 1;
+            $deepest = max($deepest, $depth);
+        }
+
+        return $deepest;
+    }
+
+    /**
+     * Writes the cleaned form of every child of a node, in order.
+     *
+     * @since 0.1.0
+     */
     private function children(DOMNode $node, int $depth): string
     {
         $out = '';
@@ -90,6 +131,11 @@ class RichTextSanitizer implements RichTextSanitizerInterface
         return $out;
     }
 
+    /**
+     * Writes one node: its text, an allowed element with its children, or, for anything else, only its children.
+     *
+     * @since 0.1.0
+     */
     private function node(DOMNode $node, int $depth): string
     {
         if ($node instanceof DOMText)
@@ -125,7 +171,15 @@ class RichTextSanitizer implements RichTextSanitizerInterface
         {
             $href = $this->href($node->getAttribute('href'));
 
-            return $href === null ? $inner : sprintf('<a href="%s">%s</a>', $this->text($href), $inner);
+            if ($href === null)
+            {
+                return $inner;
+            }
+
+            // Quotes are escaped here, unlike in text: this value sits inside an attribute.
+            $href = htmlspecialchars($href, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
+
+            return sprintf('<a href="%s">%s</a>', $href, $inner);
         }
 
         // Anything else, a script included, leaves only its text, which is escaped and so cannot run.
@@ -160,6 +214,11 @@ class RichTextSanitizer implements RichTextSanitizerInterface
             : null;
     }
 
+    /**
+     * Escapes text to be placed between elements.
+     *
+     * @since 0.1.0
+     */
     private function text(string $value): string
     {
         // Quotes are left as they are: the result is element content, never an attribute value, except for href.

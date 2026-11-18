@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace SpeedySpec\Block\App\Packages;
 
 use InvalidArgumentException;
+use SpeedySpec\Block\Domain\Contracts\AssetRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
-use SpeedySpec\Block\Domain\Contracts\AssetRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageRegistrarInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
@@ -77,6 +77,11 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
      * @var array<string, Asset>
      */
     private array $pendingAssets = [];
+
+    /**
+     * @var array<string, BlockName>
+     */
+    private array $outputTypes = [];
 
     /**
      * Binds the registrar to one package so it can enforce what that package may claim.
@@ -155,6 +160,7 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
     {
         $this->pendingOther[] = fn () => $this->outputs->set($type, $output, $mode, $target);
         $this->outputKeys[] = BlockPackageLoader::outputKey($type, $mode, $target);
+        $this->outputTypes[$type->toString()] = $type;
     }
 
     public function decorator(Decorator $decorator): void
@@ -249,6 +255,23 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
         $sources = [];
         $templates = [];
         $assets = [];
+        $defined = array_flip(array_map(
+            static fn (BlockType $type): string => $type->name->toString(),
+            $this->pendingTypes,
+        ));
+
+        // An output for a type nobody defined draws nothing and would hide that its definitions were never loaded.
+        foreach ($this->outputTypes as $name => $type)
+        {
+            if (!isset($defined[$name]) && !$this->typeRegistry->has($type))
+            {
+                throw new BlockPackageException(sprintf(
+                    'Package "%s" draws block type "%s", which is not defined; load the package defining it first.',
+                    $this->packageName,
+                    $name,
+                ));
+            }
+        }
 
         try
         {
