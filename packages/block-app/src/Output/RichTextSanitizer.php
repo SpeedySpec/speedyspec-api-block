@@ -221,7 +221,8 @@ class RichTextSanitizer implements RichTextSanitizerInterface
      */
     private function text(string $value): string
     {
-        // Quotes are left as they are: the result is element content, never an attribute value, except for href.
-        return htmlspecialchars($value, ENT_NOQUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
+        // Quotes are escaped too, though the result is element content: an output may still place formatted text in
+        // an attribute, such as a title, and must not be able to break out of it.
+        return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
     }
 }

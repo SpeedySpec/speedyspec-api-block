@@ -48,7 +48,9 @@ class TextTypesPackage implements BlockPackageInterface
             'x-control' => 'rich-text',
             'title' => $title,
         ];
-        $type = fn (array $definition) => $registrar->type(BlockType::fromArray(['category' => 'text', ...$definition]));
+        $type = fn (array $definition) => $registrar->type(
+            BlockType::fromArray(['category' => 'text', ...$definition]),
+        );
 
         $type([
             'name' => 'core/heading',
