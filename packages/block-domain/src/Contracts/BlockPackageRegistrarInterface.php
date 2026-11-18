@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SpeedySpec\Block\Domain\Contracts;
 
 use SpeedySpec\Block\Domain\Exceptions\BlockPackageException;
+use SpeedySpec\Block\Domain\ValueObjects\Asset;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
@@ -87,4 +88,14 @@ interface BlockPackageRegistrarInterface
      * @since 0.1.0
      */
     public function template(BlockTemplate $template): void;
+
+    /**
+     * Adds a script or style the package's outputs need on the page.
+     *
+     * @throws BlockPackageException
+     *   When the asset's vendor differs from the package's, or another package already registered the name.
+     *
+     * @since 0.1.0
+     */
+    public function asset(Asset $asset): void;
 }

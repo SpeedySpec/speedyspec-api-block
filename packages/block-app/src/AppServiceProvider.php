@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SpeedySpec\Block\App;
 
+use SpeedySpec\Block\App\Assets\AssetRegistry;
 use SpeedySpec\Block\App\Building\BlockCatalogue;
 use SpeedySpec\Block\App\Building\BlockPreviewer;
 use SpeedySpec\Block\App\Building\BlockTemplateRegistry;
@@ -43,6 +44,7 @@ use SpeedySpec\Block\App\Serialization\ClientExport;
 use SpeedySpec\Block\App\Serialization\JsonBlockTemplateSerializer;
 use SpeedySpec\Block\App\Serialization\JsonDocumentSerializer;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
+use SpeedySpec\Block\Domain\Contracts\AssetRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockDuplicatorInterface;
@@ -201,7 +203,9 @@ class AppServiceProvider
             $c->get(DataSourceRegistryInterface::class),
             $c->get(StepRegistryInterface::class),
             $c->get(BlockTemplateRegistryInterface::class),
+            $c->get(AssetRegistryInterface::class),
         ));
+        $container->add(AssetRegistryInterface::class, fn () => new AssetRegistry());
         $container->add(BlockTemplateRegistryInterface::class, fn () => new BlockTemplateRegistry());
         $container->add(DocumentIncluderInterface::class, fn (BlockServiceContainer $c) => new DocumentIncluder(
             $c->get(DocumentRepositoryInterface::class),

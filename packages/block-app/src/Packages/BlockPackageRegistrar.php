@@ -9,6 +9,7 @@ use SpeedySpec\Block\Domain\Contracts\BlockBehaviourInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\AssetRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageRegistrarInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
@@ -19,6 +20,7 @@ use SpeedySpec\Block\Domain\Contracts\SettingsMigrationInterface;
 use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
 use SpeedySpec\Block\Domain\Exceptions\BlockPackageException;
+use SpeedySpec\Block\Domain\ValueObjects\Asset;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
@@ -72,6 +74,11 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
     private array $outputKeys = [];
 
     /**
+     * @var array<string, Asset>
+     */
+    private array $pendingAssets = [];
+
+    /**
      * Binds the registrar to one package so it can enforce what that package may claim.
      *
      * @param string $vendor
@@ -93,6 +100,7 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
         private readonly DataSourceRegistryInterface $sources,
         private readonly StepRegistryInterface $steps,
         private readonly BlockTemplateRegistryInterface $templates,
+        private readonly AssetRegistryInterface $assets,
     )
     {
     }
@@ -202,6 +210,30 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
         $this->pendingTemplates[$template->name] = $template;
     }
 
+    public function asset(Asset $asset): void
+    {
+        if (explode('/', $asset->name, 2)[0] !== $this->vendor)
+        {
+            throw new BlockPackageException(sprintf(
+                'Package "%s" may only add assets under "%s/"; "%s" is not one.',
+                $this->packageName,
+                $this->vendor,
+                $asset->name,
+            ));
+        }
+
+        if ($this->assets->get($asset->name) !== null || isset($this->pendingAssets[$asset->name]))
+        {
+            throw new BlockPackageException(sprintf(
+                'Package "%s" cannot add asset "%s": an asset of that name is already registered.',
+                $this->packageName,
+                $asset->name,
+            ));
+        }
+
+        $this->pendingAssets[$asset->name] = $asset;
+    }
+
     /**
      * Writes everything the package registered to the host's registries, once the package finished without error.
      *
@@ -216,6 +248,7 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
         $decorators = [];
         $sources = [];
         $templates = [];
+        $assets = [];
 
         try
         {
@@ -242,6 +275,12 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
                 $this->templates->add($template);
                 $templates[] = $template->name;
             }
+
+            foreach ($this->pendingAssets as $asset)
+            {
+                $this->assets->add($asset);
+                $assets[] = $asset->name;
+            }
         }
         catch (Throwable $e)
         {
@@ -263,6 +302,11 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
             foreach ($templates as $name)
             {
                 $this->templates->remove($name);
+            }
+
+            foreach ($assets as $name)
+            {
+                $this->assets->remove($name);
             }
 
             throw $e;
