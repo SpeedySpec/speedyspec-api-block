@@ -20,7 +20,9 @@ use function SpeedySpec\Block\ContractTests\packageExampleFindings;
 use function SpeedySpec\Block\ContractTests\packageHost;
 use function SpeedySpec\Block\ContractTests\packageRuntimeRequirements;
 use function SpeedySpec\Block\ContractTests\packageShapeFindings;
+use function SpeedySpec\Block\ContractTests\packageTitleFindings;
 use function SpeedySpec\Block\ContractTests\privateLeakFindings;
+use function SpeedySpec\Block\ContractTests\privateViewFindings;
 use function SpeedySpec\Block\ContractTests\unescapedMarkupFindings;
 
 if (!function_exists('badPackage'))
@@ -238,3 +240,108 @@ test('the suite reports an admin-only value drawn for a visitor even when it is 
 
     expect(adminLeakFindings($container, $types))->toBe(['acme/sneaky draws an admin-only value in front-end output.']);
 });
+
+if (!function_exists('typesOnlyPackage'))
+{
+    /**
+     * Builds a definitions package: two block types, one with a private setting, and no outputs.
+     */
+    function typesOnlyPackage(): BlockPackageInterface
+    {
+        return package('acme/tab-types', function (BlockPackageRegistrarInterface $r) {
+            $r->type(type('acme/tabs', ['children' => true, 'examples' => [[]], 'title' => 'Tabs']));
+            $r->type(type('acme/tab', ['examples' => [['label' => 'One']], 'title' => 'Tab', 'settings' => [
+                'type' => 'object',
+                'properties' => [
+                    'label' => ['type' => 'string', 'default' => ''],
+                    'secret' => ['type' => 'string', 'default' => '', 'x-private' => true],
+                ],
+            ]]));
+        }, 'Tabs');
+    }
+}
+
+if (!function_exists('tabOutputsPackage'))
+{
+    /**
+     * Builds an outputs package for the tab types, drawing only the ones it is given.
+     */
+    function tabOutputsPackage(array $names): BlockPackageInterface
+    {
+        return package('acme/tab-html', function (BlockPackageRegistrarInterface $r) use ($names) {
+            foreach ($names as $name)
+            {
+                $r->output(BlockName::fromString($name), new class implements BlockOutputInterface {
+                    public function render(RenderInput $input): string
+                    {
+                        return '<div>' . $input->escaper->text((string) ($input->view->values['label'] ?? '')) . '</div>';
+                    }
+                });
+            }
+        }, 'Tabs, drawn');
+    }
+}
+
+test('a definitions package passes the definitions checks and fails the complete ones', function () {
+    [$container, $types] = packageHost(fn () => typesOnlyPackage());
+
+    expect(packageShapeFindings($container, $types, false))->toBe([])
+        ->and(packageExampleFindings($container, $types, false))->toBe([])
+        ->and(privateViewFindings($container, $types))->toBe([])
+        ->and(packageShapeFindings($container, $types))->toBe([
+            'acme/tabs has no front-end html output.',
+            'acme/tab has no front-end html output.',
+        ]);
+});
+
+test('the definitions checks report a private setting left in the front view', function () {
+    [$container, $types] = packageHost(fn () => package('acme/leaky', function (BlockPackageRegistrarInterface $r) {
+        $r->type(type('acme/leaky', ['examples' => [[]], 'settings' => [
+            'type' => 'object',
+            'properties' => ['secret' => ['type' => 'string', 'default' => 'x', 'x-private' => true]],
+        ]]));
+        $r->behaviour(BlockName::fromString('acme/leaky'), new class implements BlockBehaviourInterface {
+            public function view(Block $block, BlockType $type, array $settings, Context $context, Mode $mode): BlockView
+            {
+                return new BlockView($settings);
+            }
+        });
+    }));
+
+    expect(privateViewFindings($container, $types))->toBe(['acme/leaky keeps its private "secret" setting in its front view.']);
+});
+
+test('an outputs package is checked against the types it draws, and missing one is named', function () {
+    [$container, $own, $drawn] = packageHost(fn () => tabOutputsPackage(['acme/tabs']), [fn () => typesOnlyPackage()]);
+    [$complete, , $all] = packageHost(fn () => tabOutputsPackage(['acme/tabs', 'acme/tab']), [fn () => typesOnlyPackage()]);
+
+    expect($own)->toBe([])
+        ->and(packageShapeFindings($container, $drawn))->toBe(['acme/tab has no front-end html output.'])
+        ->and(packageShapeFindings($complete, $all))->toBe([])
+        ->and(packageExampleFindings($complete, $all))->toBe([])
+        ->and(unescapedMarkupFindings($complete, $all))->toBe([])
+        ->and(privateLeakFindings($complete, $all))->toBe([]);
+});
+
+test('a package may depend on definitions packages, but not on implementations', function () {
+    $file = function (array $require): string {
+        $path = sys_get_temp_dir() . '/block-suite-' . bin2hex(random_bytes(6)) . '.json';
+        file_put_contents($path, json_encode(['require' => $require]));
+
+        return $path;
+    };
+    $domain = $file(['php' => '>=8.4', 'speedyspec/block-domain' => '^0.1', 'speedyspec/block-structure-domain' => '^0.1']);
+    $app = $file(['speedyspec/block-domain' => '^0.1', 'speedyspec/block-app' => '^0.1', 'acme/domain' => '*']);
+
+    expect(packageRuntimeRequirements($domain))->toBe([])
+        ->and(packageRuntimeRequirements($app))->toBe(['speedyspec/block-app', 'acme/domain']);
+
+    unlink($domain);
+    unlink($app);
+});
+
+test('a package must have a title', function () {
+    expect(packageTitleFindings(package('acme/x', fn () => null, ' ')))->toBe(['acme/x has no title.'])
+        ->and(packageTitleFindings(package('acme/x', fn () => null, 'X')))->toBe([]);
+});
+
