@@ -158,6 +158,11 @@ block-builder textarea.bb-code { font-family: ui-monospace, SFMono-Regular, Menl
 block-builder .bb-input[aria-invalid="true"] { border-color: var(--bb-bad); }
 block-builder .bb-check { display: flex; align-items: center; gap: .5rem; }
 block-builder .bb-check input { width: 1rem; height: 1rem; accent-color: var(--bb-pick); }
+block-builder .bb-table-size { display: grid; gap: .5rem; font-size: 12px; }
+block-builder .bb-table-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem; }
+block-builder .bb-table-buttons button { min-height: 1.75rem; border: 1px solid var(--bb-line); border-radius: 6px;
+    color: var(--bb-text); background: var(--bb-panel); font: inherit; cursor: pointer; }
+block-builder .bb-table-buttons button:disabled { opacity: .45; cursor: default; }
 block-builder .bb-choice { display: flex; padding: 2px; border-radius: 7px; background: var(--bb-wash); }
 block-builder .bb-choice button { flex: 1; min-height: 1.75rem; padding: 0 .4rem; border: 0; border-radius: 5px;
     color: var(--bb-soft); background: transparent; }

@@ -11,7 +11,9 @@
         "speedyspec/block-presentation": "^0.1",
         "speedyspec/block-structure": "^0.1",
         "speedyspec/block-builder": "^0.1",
-        "speedyspec/block-structure-domain": "^0.1"
+        "speedyspec/block-structure-domain": "^0.1",
+        "speedyspec/block-text-domain": "^0.1",
+        "speedyspec/block-text": "^0.1"
     },
     "repositories": [
         {

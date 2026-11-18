@@ -17,6 +17,8 @@ its directory and run `composer install && vendor/bin/pest --colors=never`.
 | `block-contract-tests` | Shared Pest suites that any replacement implementation or block package runs. |
 | `block-structure-domain` | The layout blocks' definitions: section, columns, column, grid and element. |
 | `block-structure` | The standard way to draw the layout blocks. |
+| `block-text-domain` | The text blocks' definitions: heading, paragraph, lists, quote, code, table, separator, spacer. |
+| `block-text` | The standard way to draw the text blocks. |
 | `block-presentation` | The builder contracts as a framework-free JSON API, behind an access rule the host supplies. |
 | `block-infra-wp` | The WordPress adapter: posts as documents, WordPress's block types and binding sources. |
 | `block-builder` | A reference builder in plain JavaScript, written against the builder API. See its README. |
@@ -127,6 +129,32 @@ $container->get(BlockPackageLoaderInterface::class)->load(DocumentsPackage::from
 `BlockTemplateLibraryRegistryInterface` lists template libraries for a builder: the templates defined in code,
 the ones people saved, and any a host adds by implementing `BlockTemplateLibraryInterface`, for example one that
 fetches a collection from a service.
+
+## Text
+
+`block-text-domain` defines the blocks most pages are written with, in the Text section of the block list, and
+`block-text` draws them. A plugin that wants its own markup loads its own outputs package instead of `block-text`,
+and pages keep their settings.
+
+| Block | What it is |
+|---|---|
+| `core/heading` | A heading, level 1 to 6, with formatted text and an optional anchor; without one its id comes from its text. |
+| `core/paragraph` | Formatted text. |
+| `core/list` | A bulleted or numbered list of `core/list-item` blocks, numbered from a chosen start. |
+| `core/list-item` | One item, with formatted text; it may hold a `core/list` to nest. |
+| `core/quote` | A quotation with an optional citation. |
+| `core/code` | Code shown exactly as typed, with an optional language name. |
+| `core/table` | Rows of formatted cells, an optional header row and a caption. |
+| `core/separator` | A rule between parts of a page. |
+| `core/spacer` | Empty space of a set height, which may differ by breakpoint. |
+
+```php
+$loader->load(new TextTypesPackage());           // what the blocks are
+$loader->load(TextPackage::from($container));   // how they are drawn
+```
+
+Formatted text keeps only strong, em, s, code, sub, sup, mark, line breaks and links to http, https, mailto, tel,
+same-site paths and anchors. It is cleaned when stored and again when drawn.
 
 ## For builders
 

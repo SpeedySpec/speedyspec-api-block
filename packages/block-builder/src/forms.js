@@ -152,3 +152,80 @@ export function withValue(settings, path, value) {
 
     return next;
 }
+
+/**
+ * Measures a table's stored rows, so the inspector can say how big it is.
+ *
+ * @param {Array<Array<string>>} [rows]
+ * @returns {{rows: number, columns: number}} The number of rows, and the cells in the widest one.
+ */
+export function tableShape(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+
+    return {
+        rows: list.length,
+        columns: list.reduce((widest, row) => Math.max(widest, Array.isArray(row) ? row.length : 0), 0),
+    };
+}
+
+/**
+ * Copies a table's rows with an empty row put in at a position, as wide as the widest row.
+ *
+ * @param {Array<Array<string>>} rows
+ * @param {number} at
+ */
+export function withRow(rows, at) {
+    const list = Array.isArray(rows) ? rows.map((row) => [...row]) : [];
+    list.splice(at, 0, Array(Math.max(1, tableShape(list).columns)).fill(''));
+
+    return list;
+}
+
+/**
+ * Copies a table's rows without the row at a position; a table keeps at least one row.
+ *
+ * @param {Array<Array<string>>} rows
+ * @param {number} at
+ */
+export function withoutRow(rows, at) {
+    const list = rows.map((row) => [...row]);
+
+    if (list.length > 1) {
+        list.splice(at, 1);
+    }
+
+    return list;
+}
+
+/**
+ * Copies a table's rows with an empty cell put in at a position in every row; short rows are padded first so the
+ * new column lines up.
+ *
+ * @param {Array<Array<string>>} rows
+ * @param {number} at
+ */
+export function withColumn(rows, at) {
+    const list = Array.isArray(rows) && rows.length > 0 ? rows : [[]];
+    const width = tableShape(list).columns;
+
+    return list.map((row) => {
+        const padded = [...row, ...Array(width - row.length).fill('')];
+        padded.splice(at, 0, '');
+
+        return padded;
+    });
+}
+
+/**
+ * Copies a table's rows without the cell at a position in each row; a table keeps at least one column.
+ *
+ * @param {Array<Array<string>>} rows
+ * @param {number} at
+ */
+export function withoutColumn(rows, at) {
+    if (tableShape(rows).columns <= 1) {
+        return rows.map((row) => [...row]);
+    }
+
+    return rows.map((row) => row.filter((cell, index) => index !== at));
+}

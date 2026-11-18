@@ -1,5 +1,7 @@
 import { createClient } from './api.js';
-import { FieldError, fields, parseField, withValue } from './forms.js';
+import {
+    FieldError, fields, parseField, tableShape, withColumn, withoutColumn, withoutRow, withRow, withValue,
+} from './forms.js';
 import { createBuilder } from './store.js';
 import { CANVAS_STYLE, STYLE } from './styles.js';
 import { find, positionOf, walk } from './tree.js';
@@ -1177,6 +1179,21 @@ export class BlockBuilderElement extends HTMLElement {
             );
         }
 
+        if (field.hint === 'table') {
+            return this.tableControl(Array.isArray(shown) ? shown : [], commit);
+        }
+
+        if (field.hint === 'code') {
+            return el('textarea', {
+                class: 'bb-input bb-code',
+                ...common,
+                rows: 8,
+                spellcheck: 'false',
+                text,
+                onchange: (event) => commit(event.target.value),
+            });
+        }
+
         if (kind === 'checkbox') {
             return el('input', { type: 'checkbox', ...common, checked: shown === true, onchange: (event) => commit(event.target.checked) });
         }
@@ -1212,6 +1229,31 @@ export class BlockBuilderElement extends HTMLElement {
             placeholder: kind === 'number' || field.hint !== 'responsive' ? null : 'For example 1rem',
             onchange: (event) => commit(event.target.value),
         });
+    }
+
+    /**
+     * A table's size, with buttons that add or take away a row or column at the end; the cells themselves are
+     * typed into on the page, so their text is kept whatever the size becomes.
+     */
+    tableControl(rows, commit) {
+        const shape = tableShape(rows);
+        const send = (next) => commit(JSON.stringify(next));
+        const count = (number, noun) => `${number} ${noun}${number === 1 ? '' : 's'}`;
+        const button = (text, disabled, onclick) => el('button', { type: 'button', text, disabled, onclick });
+
+        return el(
+            'div',
+            { class: 'bb-table-size' },
+            el('span', { text: `${count(shape.rows, 'row')}, ${count(shape.columns, 'column')}` }),
+            el(
+                'div',
+                { class: 'bb-table-buttons' },
+                button('Add row', false, () => send(withRow(rows, shape.rows))),
+                button('Remove row', shape.rows <= 1, () => send(withoutRow(rows, shape.rows - 1))),
+                button('Add column', false, () => send(withColumn(rows, shape.columns))),
+                button('Remove column', shape.columns <= 1, () => send(withoutColumn(rows, shape.columns - 1))),
+            ),
+        );
     }
 
     /**

@@ -16,10 +16,11 @@ It has no dependencies and no build step: plain ES modules.
 | `src/store.js` | The state of one editing session; edits go to the server one at a time, in order. Keeps the history for undo and redo. |
 | `src/drag.js` | Where a dragged block lands: the part of the target under the pointer, and the position to send. |
 | `src/view.js` | What the interface shows: block types by category, where a new block goes, values by width. |
+| `src/inline.js` | Typing on the page: tidying typed or pasted markup, what a key does, which links are safe. |
 | `src/builder-element.js` | The interface, as a `<block-builder>` element. |
 | `src/styles.js` | The interface's appearance, scoped to the element. |
 
-The first six have no interface and can drive one of your own.
+The first seven have no interface and can drive one of your own.
 
 ## The interface
 
@@ -40,7 +41,14 @@ It is laid out the way the block editors people already know are:
   redo). Up to 50 steps are kept for the session. While the pointer is in a text field the keys are left to the
   field, which has its own undo.
 - **Phone, Tablet, Full width** show the page at that width, so responsive styles can be checked.
-- **The inspector** on the right has three tabs. *Block* holds the block's own settings. *Style* holds the shared
+- **Typing on the page.** Click the text of a heading, paragraph, list item, quote, code block or table cell and
+  type. Enter starts a new block of the same kind after it (Shift+Enter breaks the line instead); Backspace in an
+  empty block removes it; Escape or clicking away stops typing and keeps the text. Selecting words shows Bold,
+  Italic, Code and Link; a link must be http, https, mailto, tel, a path on this site or an anchor, and a bare
+  domain gets `https://`. Pasted text keeps only the formatting the block allows. Each stop is one ordinary
+  settings change, so it can be undone.
+- **The inspector** on the right has three tabs. *Block* holds the block's own settings; a table
+  has buttons to add or remove a row or column, and code gets a monospace box. *Style* holds the shared
   style settings in sections, with a switch for which widths a value applies from, colour pickers that offer the
   site's colour tokens first, and alignment buttons. *Visibility* builds the rules for when a block is shown.
 - **A refusal is shown beside the field that caused it;** anything else appears at the bottom of the page.
@@ -97,5 +105,5 @@ They cover the client, tree, forms, store, view and drop-position logic. The ele
 
 ## Not included
 
-Typing directly on the page, editing bindings, inserting and saving templates, and
+Pasting blocks rather than text, editing bindings, inserting and saving templates, and
 keyboard shortcuts.
