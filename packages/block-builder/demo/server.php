@@ -105,6 +105,8 @@ if ($path !== '/' && !str_starts_with($path, '/api/'))
     }
 
     header('Content-Type: ' . $types[$extension] . '; charset=utf-8');
+    // A demo is for trying changes, so scripts are fetched afresh on every load.
+    header('Cache-Control: no-store');
     readfile($file);
 
     return;

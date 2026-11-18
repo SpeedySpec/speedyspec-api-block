@@ -68,3 +68,28 @@ test('an upload and a page carry what they were given', function () {
 
     expect($upload->kind())->toBe(MediaKind::Audio)->and($page->total)->toBe(7)->and($page->items)->toBe([]);
 });
+
+test('an upload is named by the type found in it, not the one it was given', function (
+    string $type,
+    string $extension,
+) {
+    expect((new MediaUpload('photo.html', $type, 'x'))->extension())->toBe($extension)
+        ->and((new MediaUpload('photo.html', $type, 'x'))->storedName())->toBe('photo.' . $extension);
+})->with([
+    ['image/jpeg', 'jpg'],
+    ['image/png', 'png'],
+    ['video/mp4', 'mp4'],
+    ['audio/mpeg', 'mp3'],
+    ['application/pdf', 'pdf'],
+    ['application/x-unknown', 'bin'],
+]);
+
+test('an upload\'s stored name keeps its words but not its path or extension', function (string $name, string $stored) {
+    expect((new MediaUpload($name, 'image/png', 'x'))->storedName())->toBe($stored);
+})->with([
+    ['../../etc/passwd', 'passwd.png'],
+    ['C:\\me\\Holiday photo.jpeg', 'Holiday photo.png'],
+    ['no-extension', 'no-extension.png'],
+    ['.htaccess', 'upload.png'],
+    ['', 'upload.png'],
+]);

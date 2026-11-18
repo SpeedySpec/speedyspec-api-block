@@ -26,20 +26,6 @@ class FilesystemMediaLibrary implements MediaLibraryInterface
 
     private const int TITLE_LENGTH = 120;
 
-    private const array EXTENSIONS = [
-        'image/jpeg' => 'jpg',
-        'image/png' => 'png',
-        'image/gif' => 'gif',
-        'image/webp' => 'webp',
-        'image/avif' => 'avif',
-        'video/mp4' => 'mp4',
-        'video/webm' => 'webm',
-        'audio/mpeg' => 'mp3',
-        'audio/ogg' => 'ogg',
-        'audio/wav' => 'wav',
-        'application/pdf' => 'pdf',
-    ];
-
     /**
      * @param string $directory
      *   Where the files and the index are kept; made when the first file is uploaded.
@@ -87,7 +73,7 @@ class FilesystemMediaLibrary implements MediaLibraryInterface
     {
         $this->ensureDirectory();
         $id = bin2hex(random_bytes(8));
-        $file = $id . '.' . (self::EXTENSIONS[$upload->mimeType] ?? 'bin');
+        $file = $id . '.' . $upload->extension();
 
         if (file_put_contents($this->directory . '/' . $file, $upload->bytes) === false)
         {

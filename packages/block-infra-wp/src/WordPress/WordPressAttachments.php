@@ -74,6 +74,7 @@ class WordPressAttachments implements WpAttachmentsInterface
 
     public function insert(string $name, string $mimeType, string $bytes): int
     {
+        // The name already carries the extension of the type found in the content.
         $stored = wp_upload_bits(sanitize_file_name($name), null, $bytes);
 
         if (!empty($stored['error']))
@@ -92,8 +93,23 @@ class WordPressAttachments implements WpAttachmentsInterface
             throw new RuntimeException('WordPress could not add the uploaded file to the media library.');
         }
 
+        // Making the metadata reads video and audio files with functions only the admin screens load, so they are
+        // loaded here as WordPress's own REST attachments controller does.
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
         require_once ABSPATH . 'wp-admin/includes/image.php';
-        wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $stored['file']));
+
+        try
+        {
+            wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $stored['file']));
+        }
+        catch (\Throwable $e)
+        {
+            // A failed upload leaves nothing behind, so trying again does not make a second copy.
+            wp_delete_attachment($id, true);
+
+            throw new RuntimeException('WordPress could not read the uploaded file.', 0, $e);
+        }
 
         return (int) $id;
     }

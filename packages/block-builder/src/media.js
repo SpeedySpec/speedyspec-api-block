@@ -80,3 +80,17 @@ export function movedMedia(list, from, to) {
 export function accepts(kind) {
     return kind === 'image' || kind === 'video' || kind === 'audio' ? `${kind}/*` : ALL;
 }
+
+/**
+ * Copies settings with one id added to a list setting, unless it is already there; given the settings as they are
+ * when the change is sent, so picks made in quick succession, and anything changed meanwhile, all stay.
+ *
+ * @param {object} settings
+ * @param {string} name The list setting, such as a gallery's `media`.
+ * @param {string} id
+ */
+export function addedMedia(settings, name, id) {
+    const current = settings?.[name];
+
+    return { ...(settings ?? {}), [name]: withMedia(Array.isArray(current) ? current : [], id) };
+}

@@ -3,7 +3,7 @@ import {
     FieldError, fields, parseField, tableShape, withColumn, withoutColumn, withoutRow, withRow, withTyped, withValue,
 } from './forms.js';
 import { createBuilder } from './store.js';
-import { accepts, mediaQuery, movedMedia, withMedia, withoutMediaAt } from './media.js';
+import { accepts, addedMedia, mediaQuery, movedMedia, withoutMediaAt } from './media.js';
 import { CANVAS_STYLE, STYLE } from './styles.js';
 import { find, positionOf, walk } from './tree.js';
 import {
@@ -172,7 +172,10 @@ export class BlockBuilderElement extends HTMLElement {
      */
     render() {
         const state = this.builder.state();
-        const focused = this.contains(document.activeElement) ? document.activeElement.dataset.key : undefined;
+        const active = this.contains(document.activeElement) ? document.activeElement : null;
+        const focused = active?.dataset.key;
+        // Where the cursor was in a text field, so typing carries on where it left off.
+        const caret = typeof active?.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
         const scroll = [...this.querySelectorAll('.bb-drawer, .bb-side-body')].map((node) => [node.className, node.scrollTop]);
 
         this.regions.top.replaceChildren(...this.top(state));
@@ -192,7 +195,12 @@ export class BlockBuilderElement extends HTMLElement {
         });
 
         if (focused !== undefined) {
-            this.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus();
+            const field = this.querySelector(`[data-key="${CSS.escape(focused)}"]`);
+            field?.focus();
+
+            if (caret !== null && typeof field?.setSelectionRange === 'function') {
+                field.setSelectionRange(...caret);
+            }
         }
     }
 
@@ -1325,7 +1333,9 @@ export class BlockBuilderElement extends HTMLElement {
                 el('button', {
                     type: 'button',
                     text: id === '' ? `Choose ${noun}` : 'Replace',
-                    onclick: () => this.openPicker(state, field, false, (chosen) => commit(chosen)),
+                    // Sent against the settings as they are then, not as they were when the picker opened.
+                    onclick: () => this.openPicker(state, field, false, (chosen, block) =>
+                        this.builder.changeSettings(block, (settings) => withValue(settings, field.name, chosen))),
                 }),
                 id === '' ? null : el('button', { type: 'button', text: 'Remove', onclick: () => commit('') }),
             ),
@@ -1373,12 +1383,9 @@ export class BlockBuilderElement extends HTMLElement {
                 type: 'button',
                 class: 'bb-media-add',
                 text: ids.length === 0 ? 'Choose images' : 'Add images',
-                onclick: () => this.openPicker(state, field, true, (chosen) => {
-                    // Built from what is stored when the choice is made, so several picks in a row all stay.
-                    const block = find(this.builder.state().document, this.ui.picker?.block ?? state.selected);
-                    const current = block?.settings?.[field.name];
-                    send(withMedia(Array.isArray(current) ? current : [], chosen));
-                }),
+                // Each pick is worked out when its turn comes, so several picks in a row all stay.
+                onclick: () => this.openPicker(state, field, true, (chosen, block) =>
+                    this.builder.changeSettings(block, (settings) => addedMedia(settings, field.name, chosen))),
             }),
         );
     }
@@ -1387,7 +1394,7 @@ export class BlockBuilderElement extends HTMLElement {
      * Opens the picker for one setting, in place of the inspector's tabs.
      *
      * @param {boolean} multiple Whether it stays open after a choice, for adding several.
-     * @param {(id: string) => void} choose
+     * @param {(id: string, block: string) => void} choose Given the chosen id and the block the picker is for.
      */
     openPicker(state, field, multiple, choose) {
         this.ui.picker = {
@@ -1472,7 +1479,7 @@ export class BlockBuilderElement extends HTMLElement {
             return;
         }
 
-        picker.choose(id);
+        picker.choose(id, picker.block);
 
         if (!picker.multiple) {
             this.ui.picker = null;
@@ -1505,6 +1512,8 @@ export class BlockBuilderElement extends HTMLElement {
                 el('input', {
                     class: 'bb-input',
                     type: 'search',
+                    // Lets the inspector put the cursor back here when it is drawn again while the person types.
+                    'data-key': 'picker-search',
                     placeholder: 'Search by name',
                     'aria-label': 'Search the media library',
                     value: picker.search,

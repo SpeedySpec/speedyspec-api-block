@@ -15,6 +15,8 @@ test('a file type is read from its first bytes', function (string $bytes, string
     'avif' => ["\x00\x00\x00\x1Cftypavif", 'image/avif'],
     'avif sequence' => ["\x00\x00\x00\x1Cftypavis", 'image/avif'],
     'mp4' => ["\x00\x00\x00\x18ftypisom", 'video/mp4'],
+    'mp4 version 2' => ["\x00\x00\x00\x18ftypmp42", 'video/mp4'],
+    'avif under a general brand' => ["\x00\x00\x00\x1Cftypmif1\x00\x00\x00\x00mif1avifmiaf", 'image/avif'],
     'webm' => ["\x1A\x45\xDF\xA3rest", 'video/webm'],
     'mp3 tag' => ['ID3' . "\x04\x00", 'audio/mpeg'],
     'mp3 frame' => ["\xFF\xFB\x90\x00", 'audio/mpeg'],
@@ -35,4 +37,9 @@ test('anything else has no type', function (string $bytes) {
     'ftyp with no brand' => ["\x00\x00\x00\x18ftyp"],
     'riff of another kind' => ['RIFF' . "\x00\x00\x00\x00" . 'AVI LIST'],
     'text' => ['hello'],
+    'iphone photo' => ["\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic"],
+    'heif without avif' => ["\x00\x00\x00\x18ftypmif1\x00\x00\x00\x00mif1heic"],
+    'm4a audio' => ["\x00\x00\x00\x20ftypM4A \x00\x00\x00\x00"],
+    'quicktime' => ["\x00\x00\x00\x14ftypqt  "],
+    'made-up brand' => ['AAAAftypABCD<html>'],
 ]);

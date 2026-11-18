@@ -72,7 +72,9 @@ class WpMediaLibrary implements MediaLibraryInterface
 
     public function upload(MediaUpload $upload): MediaItem
     {
-        $id = $this->attachments->insert($upload->name, $upload->mimeType, $upload->bytes);
+        // WordPress stores and serves a file by its extension, so the name it is given carries the type found in the
+        // content, never the one the person typed.
+        $id = $this->attachments->insert($upload->storedName(), $upload->mimeType, $upload->bytes);
         $attachment = $this->attachments->attachment($id);
 
         if ($attachment === null)

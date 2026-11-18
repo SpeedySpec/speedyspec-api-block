@@ -99,3 +99,12 @@ test('the provider binds the WordPress media library', function () {
 
     expect($container->get(MediaLibraryInterface::class))->toBeInstanceOf(WpMediaLibrary::class);
 });
+
+test('WordPress is given a file name that matches what the file is', function () {
+    $attachments = new FakeAttachments();
+    (new WpMediaLibrary($attachments))->upload(
+        new \SpeedySpec\Block\Domain\ValueObjects\MediaUpload('photo.html', 'image/png', "\x89PNG\r\n\x1A\n"),
+    );
+
+    expect(end($attachments->attachments)['title'])->toBe('photo.png');
+});

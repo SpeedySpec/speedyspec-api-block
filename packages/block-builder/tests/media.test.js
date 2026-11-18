@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { accepts, mediaQuery, movedMedia, withMedia, withoutMediaAt } from '../src/media.js';
+import { accepts, addedMedia, mediaQuery, movedMedia, withMedia, withoutMediaAt } from '../src/media.js';
 
 test('a media query leaves out what is empty', () => {
     assert.deepEqual(mediaQuery('', 'cat', 2), { search: 'cat', page: 2, perPage: 24 });
@@ -36,4 +36,13 @@ test('the file chooser offers only files of the kind wanted', () => {
     assert.equal(accepts('audio'), 'audio/*');
     assert.equal(accepts('file'), 'image/*,video/*,audio/*,application/pdf');
     assert.equal(accepts(''), 'image/*,video/*,audio/*,application/pdf');
+});
+
+test('an image is added to the settings as they are when the choice is sent, keeping everything else', () => {
+    const latest = { media: ['a'], caption: 'Typed meanwhile' };
+
+    assert.deepEqual(addedMedia(latest, 'media', 'b'), { media: ['a', 'b'], caption: 'Typed meanwhile' });
+    assert.deepEqual(addedMedia(addedMedia({}, 'media', 'a'), 'media', 'b'), { media: ['a', 'b'] });
+    assert.deepEqual(addedMedia({ media: 'not a list' }, 'media', 'a'), { media: ['a'] });
+    assert.deepEqual(latest, { media: ['a'], caption: 'Typed meanwhile' });
 });
