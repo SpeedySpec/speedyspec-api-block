@@ -30,6 +30,18 @@ class BreakpointRegistry implements BreakpointRegistryInterface
         }
     }
 
+    /**
+     * Gives the breakpoints a site starts with when it names none of its own.
+     *
+     * @return list<Breakpoint>
+     *
+     * @since 0.1.0
+     */
+    public static function defaults(): array
+    {
+        return [new Breakpoint('tablet', 768), new Breakpoint('desktop', 1024)];
+    }
+
     public function add(Breakpoint $breakpoint): void
     {
         $this->breakpoints[$breakpoint->name] = $breakpoint;

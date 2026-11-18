@@ -83,7 +83,6 @@ use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StyleCollectorInterface;
 use SpeedySpec\Block\Domain\Contracts\UnresolvedBlockOutputInterface;
-use SpeedySpec\Block\Domain\ValueObjects\Breakpoint;
 
 /**
  * Binds the application implementations of the block contracts, one binding each so a host can replace any alone.
@@ -239,10 +238,10 @@ class AppServiceProvider
                     : []),
             ),
         );
-        $container->add(BreakpointRegistryInterface::class, fn () => new BreakpointRegistry(
-            new Breakpoint('tablet', 768),
-            new Breakpoint('desktop', 1024),
-        ));
+        $container->add(
+            BreakpointRegistryInterface::class,
+            fn () => new BreakpointRegistry(...BreakpointRegistry::defaults()),
+        );
         $container->add(DesignTokenRegistryInterface::class, fn () => new DesignTokenRegistry());
         $container->add(StyleCollectorInterface::class, fn (BlockServiceContainer $c) => new StyleCollector(
             $c->get(BreakpointRegistryInterface::class),
