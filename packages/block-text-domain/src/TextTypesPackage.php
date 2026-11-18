@@ -68,6 +68,8 @@ class TextTypesPackage implements BlockPackageInterface
                     'description' => 'The name a link uses to jump here. Empty: made from the text.',
                 ],
             ]],
+            // A package that sees the whole page may make heading ids unique; the heading then uses those.
+            'uses' => ['core/heading-ids'],
             'examples' => [['level' => 2, 'text' => 'A heading']],
         ]);
         $registrar->behaviour(BlockName::fromString('core/heading'), new HeadingBehaviour());
