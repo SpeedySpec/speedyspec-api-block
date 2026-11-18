@@ -518,3 +518,41 @@ if (!function_exists('catalogue'))
         return [$container->get(\SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface::class), $container];
     }
 }
+
+if (!function_exists('editor'))
+{
+    /**
+     * Builds the default document editor over a fresh container, after letting the test register what it needs.
+     *
+     * @return array{0: \SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface, 1: BlockServiceContainer}
+     */
+    function editor(?callable $setup = null): array
+    {
+        $container = new BlockServiceContainer();
+        (new MemoryServiceProvider())->register($container);
+        (new AppServiceProvider())->register($container);
+
+        if ($setup !== null)
+        {
+            $setup($container);
+        }
+
+        return [$container->get(\SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface::class), $container];
+    }
+}
+
+if (!function_exists('refusals'))
+{
+    /**
+     * Lists the kinds of refusal an edit came back with, in order.
+     *
+     * @return list<\SpeedySpec\Block\Domain\ValueObjects\EditRefusalKind>
+     */
+    function refusals(\SpeedySpec\Block\Domain\ValueObjects\EditResult $result): array
+    {
+        return array_map(
+            fn (\SpeedySpec\Block\Domain\ValueObjects\EditRefusal $refusal) => $refusal->kind,
+            $result->refusals,
+        );
+    }
+}

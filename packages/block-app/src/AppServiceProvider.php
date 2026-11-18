@@ -6,6 +6,7 @@ namespace SpeedySpec\Block\App;
 
 use SpeedySpec\Block\App\Building\BlockCatalogue;
 use SpeedySpec\Block\App\Building\BlockTemplateRegistry;
+use SpeedySpec\Block\App\Building\DocumentEditor;
 use SpeedySpec\Block\App\Building\PlacementRules;
 use SpeedySpec\Block\App\Ids\BlockDuplicator;
 use SpeedySpec\Block\App\Ids\RandomBlockIdGenerator;
@@ -42,6 +43,7 @@ use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
+use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface;
@@ -163,5 +165,14 @@ class AppServiceProvider
             $c->get(BlockTemplateRegistryInterface::class),
         ));
         $container->add(BlockTemplateRegistryInterface::class, fn () => new BlockTemplateRegistry());
+        $container->add(DocumentEditorInterface::class, fn (BlockServiceContainer $c) => new DocumentEditor(
+            $c->get(BlockTypeRegistryInterface::class),
+            $c->get(PlacementRulesInterface::class),
+            $c->get(SchemaValidatorInterface::class),
+            $c->get(DecoratorRegistryInterface::class),
+            $c->get(DataSourceRegistryInterface::class),
+            $c->get(BlockIdGeneratorInterface::class),
+            $c->get(BlockDuplicatorInterface::class),
+        ));
     }
 }
