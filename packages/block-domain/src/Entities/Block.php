@@ -39,10 +39,27 @@ class Block
         public readonly array $extensions = [],
         public readonly array $bindings = [],
         public readonly array $children = [],
-    ) {
+    )
+    {
         if ($id === '')
         {
             throw new InvalidArgumentException('A block id must not be empty.');
+        }
+
+        foreach ($extensions as $namespace => $extension)
+        {
+            if (!is_array($extension))
+            {
+                throw new InvalidArgumentException(sprintf('Extension "%s" settings must be an array.', $namespace));
+            }
+        }
+
+        foreach ($bindings as $path => $binding)
+        {
+            if (!$binding instanceof Binding)
+            {
+                throw new InvalidArgumentException(sprintf('Binding "%s" must be a Binding instance.', $path));
+            }
         }
 
         foreach ($children as $child)
@@ -97,7 +114,10 @@ class Block
      */
     public function withExtension(string $namespace, array $settings): self
     {
-        return $this->copy(extensions: [...$this->extensions, $namespace => $settings]);
+        $extensions = $this->extensions;
+        $extensions[$namespace] = $settings;
+
+        return $this->copy(extensions: $extensions);
     }
 
     /**
@@ -107,7 +127,10 @@ class Block
      */
     public function withBinding(SettingPath $path, Binding $binding): self
     {
-        return $this->copy(bindings: [...$this->bindings, $path->toString() => $binding]);
+        $bindings = $this->bindings;
+        $bindings[$path->toString()] = $binding;
+
+        return $this->copy(bindings: $bindings);
     }
 
     /**
@@ -140,7 +163,8 @@ class Block
         ?array $extensions = null,
         ?array $bindings = null,
         ?array $children = null,
-    ): self {
+    ): self
+    {
         return new self(
             $id ?? $this->id,
             $this->type,

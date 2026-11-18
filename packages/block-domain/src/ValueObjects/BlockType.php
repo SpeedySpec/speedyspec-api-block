@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SpeedySpec\Block\Domain\ValueObjects;
 
+use SpeedySpec\Block\Domain\Exceptions\InvalidBlockNameException;
 use SpeedySpec\Block\Domain\Exceptions\InvalidBlockTypeException;
 
 /**
@@ -43,7 +44,8 @@ class BlockType
         public readonly array $uses = [],
         public readonly array $assets = [],
         public readonly array $examples = [],
-    ) {
+    )
+    {
         $this->children = $children ?? ChildrenPolicy::none();
         $this->parents = $parents ?? ParentPolicy::any();
     }
@@ -80,12 +82,39 @@ class BlockType
             );
         }
 
+        try
+        {
+            $name = BlockName::fromString($data['name']);
+        }
+        catch (InvalidBlockNameException $e)
+        {
+            throw new InvalidBlockTypeException($e->getMessage(), 0, $e);
+        }
+
+        $settings = $data['settings'] ?? ['type' => 'object'];
+        $view = $data['view'] ?? null;
+
+        if (!is_array($settings) || ($view !== null && !is_array($view)))
+        {
+            throw new InvalidBlockTypeException(
+                sprintf('Block type "%s" needs array "settings" and an array or null "view".', $data['name'])
+            );
+        }
+
+        foreach (['keywords', 'provides', 'uses', 'assets', 'examples'] as $key)
+        {
+            if (isset($data[$key]) && !is_array($data[$key]))
+            {
+                throw new InvalidBlockTypeException(sprintf('Block type "%s" needs an array "%s".', $data['name'], $key));
+            }
+        }
+
         return new self(
-            BlockName::fromString($data['name']),
+            $name,
             CatalogueMetadata::fromArray($data),
             $version,
-            $data['settings'] ?? ['type' => 'object'],
-            $data['view'] ?? null,
+            $settings,
+            $view,
             ChildrenPolicy::fromArray($data['children'] ?? false),
             ParentPolicy::fromArray($data['parents'] ?? true),
             $data['provides'] ?? [],

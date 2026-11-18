@@ -29,7 +29,8 @@ class Decorator
         public readonly array $settingsSchema,
         public readonly ?array $appliesTo = null,
         public readonly ?array $viewSchema = null,
-    ) {
+    )
+    {
         BlockName::fromString($namespace);
     }
 

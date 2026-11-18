@@ -21,7 +21,8 @@ class CatalogueMetadata
         public readonly string $category = '',
         public readonly array $keywords = [],
         public readonly ?string $icon = null,
-    ) {
+    )
+    {
     }
 
     /**

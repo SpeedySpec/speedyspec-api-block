@@ -16,7 +16,8 @@ class Document
         public readonly string $kind,
         public readonly BlockTree $tree,
         public readonly int $formatVersion = 1,
-    ) {
+    )
+    {
     }
 
     /**

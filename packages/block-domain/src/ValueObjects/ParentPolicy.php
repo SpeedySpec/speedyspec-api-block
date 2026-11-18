@@ -11,6 +11,10 @@ namespace SpeedySpec\Block\Domain\ValueObjects;
  */
 class ParentPolicy
 {
+    /**
+     * @param bool|list<string> $rule
+     *   True for any, or the allowed parent names.
+     */
     private function __construct(private readonly bool|array $rule)
     {
     }

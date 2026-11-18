@@ -80,3 +80,17 @@ test('policies round-trip through arrays', function () {
         ->and(ParentPolicy::fromArray(true)->toArray())->toBeTrue()
         ->and(ParentPolicy::fromArray(['acme/form'])->toArray())->toBe(['acme/form']);
 });
+
+test('a malformed block type name throws InvalidBlockTypeException', function () {
+    expect(fn () => BlockType::fromArray(['name' => 'Bad', 'title' => 'T']))->toThrow(InvalidBlockTypeException::class);
+});
+
+test('block type array fields must have the right shape', function (array $extra) {
+    expect(fn () => BlockType::fromArray(['name' => 'acme/x', 'title' => 'T'] + $extra))
+        ->toThrow(InvalidBlockTypeException::class);
+})->with([[['settings' => 'x']], [['view' => 'x']], [['provides' => 'x']], [['uses' => 'x']], [['assets' => 'x']],
+    [['examples' => 'x']], [['keywords' => 'x']]]);
+
+test('Binding::fromArray needs a string source', function (array $data) {
+    expect(fn () => Binding::fromArray($data))->toThrow(InvalidArgumentException::class);
+})->with([[[]], [['source' => 5]]]);

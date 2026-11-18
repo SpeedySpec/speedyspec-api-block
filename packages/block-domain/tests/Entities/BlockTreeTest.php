@@ -84,3 +84,17 @@ test('a document can swap its tree', function () {
     expect($next->tree->ids())->toBe(['b'])->and($doc->tree->ids())->toBe(['a'])
         ->and($next->id)->toBe('d1')->and($next->kind)->toBe('page')->and($next->formatVersion)->toBe(1);
 });
+
+test('numeric binding paths keep their keys', function () {
+    $b = block('a')
+        ->withBinding(SettingPath::fromString('5'), Binding::to('s1'))
+        ->withBinding(SettingPath::fromString('two'), Binding::to('s2'));
+    expect(array_keys($b->bindings))->toBe([5, 'two'])
+        ->and(array_keys($b->withoutBinding(SettingPath::fromString('5'))->bindings))->toBe(['two']);
+});
+
+test('a block rejects malformed bindings and extensions', function () {
+    $name = BlockName::fromString('acme/box');
+    expect(fn () => new Block('a', $name, 1, [], [], ['x' => 'nope']))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => new Block('a', $name, 1, [], ['acme/v' => 'nope']))->toThrow(InvalidArgumentException::class);
+});

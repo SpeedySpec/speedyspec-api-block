@@ -20,7 +20,8 @@ class Binding
         public readonly array $arguments,
         public readonly mixed $fallback,
         public readonly bool $hasFallback,
-    ) {
+    )
+    {
     }
 
     /**
@@ -80,7 +81,12 @@ class Binding
      */
     public static function fromArray(array $data): self
     {
-        $binding = self::to((string) $data['source'], (array) ($data['arguments'] ?? []));
+        if (!isset($data['source']) || !is_string($data['source']))
+        {
+            throw new \InvalidArgumentException('A binding needs a string "source".');
+        }
+
+        $binding = self::to($data['source'], (array) ($data['arguments'] ?? []));
 
         return array_key_exists('fallback', $data) ? $binding->withFallback($data['fallback']) : $binding;
     }
