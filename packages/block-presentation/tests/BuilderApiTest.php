@@ -36,8 +36,30 @@ $block = fn (string $id, string $type, array $settings = [], Block ...$children)
     [],
     array_values($children),
 );
-$host = function (array $abilities = ['view', 'edit', 'manage-templates']) use ($block): array {
+$host = function (array $abilities = ['view', 'edit', 'manage-templates'], bool $editor = false) use ($block): array {
     $c = new BlockServiceContainer();
+
+    if ($editor)
+    {
+        $c->add(\SpeedySpec\Block\Domain\Contracts\EditorInterface::class, fn () => new class implements
+            \SpeedySpec\Block\Domain\Contracts\EditorInterface {
+            public function name(): string
+            {
+                return 'acme/editor';
+            }
+
+            public function title(): string
+            {
+                return 'Acme editor';
+            }
+
+            public function open(\SpeedySpec\Block\Domain\ValueObjects\EditorRequest $request): \SpeedySpec\Block\Domain\ValueObjects\EditorPage
+            {
+                return new \SpeedySpec\Block\Domain\ValueObjects\EditorPage([], '');
+            }
+        });
+    }
+
     (new MemoryServiceProvider())->register($c);
     (new AppServiceProvider())->register($c);
     (new PresentationServiceProvider())->register($c);
@@ -364,7 +386,7 @@ test('one block is previewed on its own, in either mode', function () use ($host
     [$mode] = $call($api, 'POST', '/documents/home/preview', [], ['block' => 't', 'mode' => 'sideways']);
 
     expect($status)->toBe(200)
-        ->and($body['output'])->toBe('<p data-block-id="t">Hi</p>')
+        ->and($body['output'])->toBe('<p>Hi</p>')
         ->and($body['block'])->toBe('t')
         ->and($missing)->toBe(404)
         ->and($mode)->toBe(400);
@@ -479,8 +501,17 @@ test('a template saved from a block does not carry its private settings', functi
         ->and($list['libraries'][1]['templates'][0]['blocks'][0]['children'][0]['settings'])->toBe(['text' => 'Hi']);
 });
 
-test('an editor\'s drawing names each block on its element, and a visitor\'s does not', function () use ($host, $call) {
+test('with no editor set up, an editor\'s drawing carries no editing marks', function () use ($host, $call) {
     [$api] = $host();
+
+    [, $admin] = $call($api, 'GET', '/documents/home/render', ['mode' => 'admin']);
+    [, $preview] = $call($api, 'POST', '/documents/home/preview', [], ['block' => 't', 'mode' => 'admin']);
+
+    expect($admin['output'])->toBe('<div><p>Hi</p></div>')->and($preview['output'])->toBe('<p>Hi</p>');
+});
+
+test('an editor\'s drawing names each block on its element, and a visitor\'s does not', function () use ($host, $call) {
+    [$api, $c] = $host(editor: true);
 
     [, $admin] = $call($api, 'GET', '/documents/home/render', ['mode' => 'admin']);
     [, $front] = $call($api, 'GET', '/documents/home/render');

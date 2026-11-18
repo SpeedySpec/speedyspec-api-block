@@ -19,6 +19,7 @@ use SpeedySpec\Block\Domain\Contracts\ConditionRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
+use SpeedySpec\Block\Domain\Contracts\EditorInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentIncluderInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
@@ -337,7 +338,7 @@ class BuilderApi
         $document = $this->document($id, $mode === Mode::Admin ? BuilderAbility::Edit : BuilderAbility::View);
         $this->startPage();
         $preview = $this->container->get(BlockPreviewInterface::class)
-            ->preview($document, $this->text($body, 'block'), new RenderRequest($mode));
+            ->preview($document, $this->text($body, 'block'), $this->renderRequest($mode));
 
         if ($preview === null)
         {
@@ -359,7 +360,7 @@ class BuilderApi
         $document = $this->document($id, $mode === Mode::Admin ? BuilderAbility::Edit : BuilderAbility::View);
         $this->startPage();
         $result = $this->container->get(DocumentRendererInterface::class)
-            ->render($document, new RenderRequest($mode));
+            ->render($document, $this->renderRequest($mode));
 
         return new ApiResponse(200, [
             'output' => $result->output,
@@ -367,6 +368,16 @@ class BuilderApi
             'assets' => $result->assets,
             'css' => $this->container->get(StyleCollectorInterface::class)->css(),
         ]);
+    }
+
+    /**
+     * Builds a drawing request, marked for editing when it is an admin drawing and the site has an editor.
+     *
+     * @since 0.1.0
+     */
+    private function renderRequest(Mode $mode): RenderRequest
+    {
+        return new RenderRequest($mode, 'html', $this->container->has(EditorInterface::class));
     }
 
     private function templates(): ApiResponse

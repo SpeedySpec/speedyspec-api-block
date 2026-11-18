@@ -48,3 +48,29 @@ test('the render stage has its own issue kinds', function () {
         ->and(IssueKind::OutputFailed->value)->toBe('output-failed')
         ->and(IssueKind::InvalidAttribute->value)->toBe('invalid-attribute');
 });
+
+test('a render request is only for editing in admin mode', function () {
+    expect((new RenderRequest(Mode::Admin, 'html', true))->editing)->toBeTrue()
+        ->and((new RenderRequest(Mode::Front, 'html', true))->editing)->toBeFalse()
+        ->and((new RenderRequest(Mode::Admin))->editing)->toBeFalse();
+});
+
+test('an output marks the setting a person can type into, only while editing', function () {
+    $bag = \SpeedySpec\Block\Domain\ValueObjects\AttributeBag::empty()->withClass('x');
+    $editing = renderInput(attributes: $bag, request: new RenderRequest(Mode::Admin, 'html', true));
+    $admin = renderInput(attributes: $bag, request: new RenderRequest(Mode::Admin));
+    $front = renderInput(attributes: $bag, request: new RenderRequest(Mode::Front, 'html', true));
+
+    expect($editing->editable('text')->attributes())->toBe(['data-block-setting' => 'text'])
+        ->and($editing->editable('text')->classes())->toBe(['x'])
+        ->and($admin->editable('text'))->toBe($bag)
+        ->and($front->editable('text'))->toBe($bag);
+});
+
+test('editor requests and pages carry what a host needs to open an editor', function () {
+    $request = new \SpeedySpec\Block\Domain\ValueObjects\EditorRequest('home', '/api', ['token' => 't']);
+    $page = new \SpeedySpec\Block\Domain\ValueObjects\EditorPage(['acme/editor'], '<div></div>');
+
+    expect([$request->documentId, $request->apiUrl, $request->values])->toBe(['home', '/api', ['token' => 't']])
+        ->and([$page->assets, $page->markup])->toBe([['acme/editor'], '<div></div>']);
+});

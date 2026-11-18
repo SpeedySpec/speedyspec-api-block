@@ -13,4 +13,9 @@ enum AssetKind: string
 {
     case Script = 'script';
     case Style = 'style';
+
+    /**
+     * A script loaded as a JavaScript module, which may import others.
+     */
+    case Module = 'module';
 }

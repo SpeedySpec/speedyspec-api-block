@@ -51,4 +51,24 @@ class RenderInput
     {
         return implode('', $this->childPasses);
     }
+
+    /**
+     * Gives the attributes for the element that shows a setting, marked so an editor can let a person type there.
+     *
+     * Outside an editing request it is the block's attributes unchanged, so the same output code serves a visitor.
+     *
+     * @param string $setting
+     *   The name of a plain or formatted text setting the element shows.
+     *
+     * @since 0.1.0
+     */
+    public function editable(string $setting): AttributeBag
+    {
+        if (!$this->request->editing)
+        {
+            return $this->attributes;
+        }
+
+        return $this->attributes->withAttribute('data-block-setting', $setting);
+    }
 }

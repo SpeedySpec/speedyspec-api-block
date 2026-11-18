@@ -79,7 +79,8 @@ const words = (name) => name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (
  * It knows no block type. What can be added comes from the catalogue, the settings from each type's schema, and
  * what is valid from the server, which refuses anything else and says why.
  *
- * Attributes: `api`, the address the API is mounted at, and `document`, the id of the document to edit.
+ * Attributes: `api`, the address the API is mounted at; `document`, the id of the document to edit; and `headers`,
+ * optionally, a JSON object of headers to send with every request.
  */
 export class BlockBuilderElement extends HTMLElement {
     connectedCallback() {
@@ -100,7 +101,7 @@ export class BlockBuilderElement extends HTMLElement {
             rules: null,
         };
         this.builder = createBuilder({
-            client: this.client ?? createClient({ baseUrl: this.getAttribute('api') ?? '/api' }),
+            client: this.client ?? createClient({ baseUrl: this.getAttribute('api') ?? '/api', headers: this.headers() }),
             documentId: this.getAttribute('document') ?? '',
         });
 
@@ -134,7 +135,20 @@ export class BlockBuilderElement extends HTMLElement {
         this.builder.load();
     }
 
-    disconnectedCallback() {
+    /**
+     * Reads the headers the host asked to send with every request, such as a request-forgery token.
+     */
+    headers() {
+        try {
+            const headers = JSON.parse(this.getAttribute('headers') ?? '{}');
+
+            return headers !== null && typeof headers === 'object' && !Array.isArray(headers) ? headers : {};
+        } catch {
+            return {};
+        }
+    }
+
+        disconnectedCallback() {
         this.stop?.();
         window.removeEventListener('resize', this.resize);
     }
