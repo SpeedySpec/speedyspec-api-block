@@ -146,6 +146,12 @@ test('a supported schema with annotations passes', function () {
     expect(true)->toBeTrue();
 });
 
+test('a setting may say which kind of media it holds', function () {
+    (new SubsetSchemaValidator())
+        ->assertSupported(['type' => 'string', 'x-control' => 'media', 'x-media-kind' => 'image']);
+    expect(true)->toBeTrue();
+});
+
 test('x-private is allowed only on top-level properties when asked', function () {
     $v = new SubsetSchemaValidator();
     $top = ['type' => 'object', 'properties' => ['to' => ['type' => 'string', 'x-private' => true], 'b' => ['type' => 'string']]];
@@ -188,6 +194,7 @@ test('assertSupported rejects a malformed argument for each keyword', function (
     'description array' => [['description' => []], 'description'],
     'x-control int' => [['x-control' => 5], 'x-control'],
     'x-group int' => [['x-group' => 5], 'x-group'],
+    'x-media-kind int' => [['x-media-kind' => 5], 'x-media-kind'],
     'nested x-private string' => [['properties' => ['a' => ['x-private' => 'yes']]], 'properties.a.x-private'],
 ]);
 

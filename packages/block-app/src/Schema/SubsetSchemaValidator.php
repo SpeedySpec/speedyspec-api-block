@@ -22,7 +22,7 @@ class SubsetSchemaValidator implements SchemaValidatorInterface
     private const array KEYWORDS = [
         'type', 'enum', 'const', 'default', 'required', 'properties', 'additionalProperties', 'items',
         'minLength', 'maxLength', 'pattern', 'minimum', 'maximum', 'minItems', 'maxItems',
-        'title', 'description', 'x-private', 'x-control', 'x-group',
+        'title', 'description', 'x-private', 'x-control', 'x-group', 'x-media-kind',
     ];
 
     /**
@@ -189,7 +189,7 @@ class SubsetSchemaValidator implements SchemaValidatorInterface
             'minLength', 'maxLength', 'minItems', 'maxItems' => is_int($argument) && $argument >= 0,
             'minimum', 'maximum' => $isNumber,
             'pattern' => $this->patternCompiles($argument),
-            'title', 'description', 'x-control', 'x-group' => is_string($argument),
+            'title', 'description', 'x-control', 'x-group', 'x-media-kind' => is_string($argument),
             'x-private' => is_bool($argument),
             default => true,
         };
