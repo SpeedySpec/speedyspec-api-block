@@ -18,6 +18,7 @@ its directory and run `composer install && vendor/bin/pest --colors=never`.
 | `block-structure` | The layout blocks: section, columns, column, grid and element. |
 | `block-presentation` | The builder contracts as a framework-free JSON API, behind an access rule the host supplies. |
 | `block-infra-wp` | The WordPress adapter: posts as documents, WordPress's block types and binding sources. |
+| `block-builder` | A reference builder in plain JavaScript, written against the builder API. See its README. |
 | `block-example` | A small block package; the model for writing one. See its README. |
 
 ## Storage
