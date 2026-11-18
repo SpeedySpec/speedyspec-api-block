@@ -8,6 +8,7 @@ import { createBuilder } from './store.js';
 import { accepts, addedMedia, mediaQuery, movedMedia, withoutMediaAt } from './media.js';
 import { STYLE } from './styles.js';
 import { pick } from './selection.js';
+import { SAVED_LIBRARY, matchTemplates, templateName } from './templates.js';
 import { find, positionOf, walk } from './tree.js';
 import {
     breadcrumb,
@@ -114,6 +115,12 @@ export class BlockBuilderElement extends HTMLElement {
             more: false,
             // A short note for the toast, such as what was copied; null when there is none.
             message: null,
+            // Which list the add drawer shows: `blocks` or `templates`.
+            adding: 'blocks',
+            // The saved template whose Remove button is asking to be clicked again; null when none is.
+            confirmRemove: null,
+            // The save-as-template form while it is open: the block and what has been typed so far.
+            saveForm: null,
         };
         // Media items already looked up, by id, so a chosen file shows its picture and name; null while loading.
         this.media = new Map();
@@ -156,7 +163,9 @@ export class BlockBuilderElement extends HTMLElement {
         this.addEventListener('keydown', this.keys);
         this.clip = (event) => this.clipboard(event, document);
         ['copy', 'cut', 'paste'].forEach((kind) => this.addEventListener(kind, this.clip));
-        this.builder.load();
+        // Templates are asked for up front, so the block bar knows whether to offer saving one.
+        this.templatesAsked = true;
+        this.builder.load().then(() => this.builder.loadTemplates());
     }
 
     /**
@@ -309,12 +318,30 @@ export class BlockBuilderElement extends HTMLElement {
         this.askAllowed(target.position);
         const allowed = this.ui.allowed;
         const sections = groupCatalogue(state.catalogue, state.packages, this.ui.query);
+        const templates = this.ui.adding === 'templates';
+        const kinds = el(
+            'div',
+            { class: 'bb-tabs bb-add-tabs', role: 'tablist' },
+            [['blocks', 'Blocks'], ['templates', 'Templates']].map(([name, label]) =>
+                el('button', {
+                    type: 'button',
+                    role: 'tab',
+                    text: label,
+                    'aria-selected': String(this.ui.adding === name),
+                    onclick: () => {
+                        this.ui.adding = name;
+                        this.render();
+                    },
+                }),
+            ),
+        );
 
         return [
             el(
                 'div',
                 { class: 'bb-drawer-head' },
                 el('h2', { text: 'Add a block' }),
+                kinds,
                 targets.length === 1
                     ? el('p', { class: 'bb-where-only', text: target.label })
                     : el(
@@ -335,8 +362,8 @@ export class BlockBuilderElement extends HTMLElement {
                 el('input', {
                     class: 'bb-input',
                     type: 'search',
-                    placeholder: 'Search blocks',
-                    'aria-label': 'Search blocks',
+                    placeholder: templates ? 'Search templates' : 'Search blocks',
+                    'aria-label': templates ? 'Search templates' : 'Search blocks',
                     'data-key': 'search',
                     value: this.ui.query,
                     oninput: (event) => {
@@ -345,7 +372,7 @@ export class BlockBuilderElement extends HTMLElement {
                     },
                 }),
             ),
-            el(
+            templates ? this.templateList(state, target.position) : el(
                 'div',
                 { class: 'bb-drawer-body' },
                 sections.length === 0 ? el('p', { class: 'bb-none', text: 'No block matches that search.' }) : null,
@@ -385,6 +412,89 @@ export class BlockBuilderElement extends HTMLElement {
                 ),
             ),
         ];
+    }
+
+    /**
+     * Lists the templates that can be inserted, by library, with Remove on saved ones for people who may.
+     */
+    templateList(state, position) {
+        if (state.templates === null) {
+            if (!this.templatesAsked) {
+                this.templatesAsked = true;
+                this.builder.loadTemplates();
+            }
+
+            return el('div', { class: 'bb-drawer-body' }, el('p', { class: 'bb-none', text: 'Loading templates…' }));
+        }
+
+        const libraries = matchTemplates(state.templates.libraries, this.ui.query);
+        const removable = (library) => state.templates.manage && library.name === SAVED_LIBRARY;
+        const remove = (template) => {
+            const asking = this.ui.confirmRemove === template.name;
+
+            return el('button', {
+                class: 'bb-link',
+                type: 'button',
+                'data-key': `remove-template-${template.name}`,
+                text: asking ? 'Remove for good?' : 'Remove',
+                'aria-label': asking ? `Remove ${template.title} for good?` : `Remove ${template.title}`,
+                onclick: () => {
+                    if (asking) {
+                        this.ui.confirmRemove = null;
+                        this.builder.removeTemplate(template.name);
+                    } else {
+                        this.ui.confirmRemove = template.name;
+                        this.render();
+                    }
+                },
+                onblur: () => {
+                    if (this.ui.confirmRemove === template.name) {
+                        this.ui.confirmRemove = null;
+                        this.render();
+                    }
+                },
+            });
+        };
+
+        return el(
+            'div',
+            { class: 'bb-drawer-body' },
+            libraries.length === 0
+                ? el('p', {
+                      class: 'bb-none',
+                      text: this.ui.query.trim() === '' ? 'There are no templates yet.' : 'No template matches that search.',
+                  })
+                : null,
+            libraries.map((library) =>
+                el(
+                    'section',
+                    { class: 'bb-section', 'aria-label': library.title },
+                    el('h3', { class: 'bb-section-title', text: library.title }),
+                    el(
+                        'div',
+                        { class: 'bb-tiles' },
+                        library.templates.map((template) =>
+                            el(
+                                'div',
+                                { class: 'bb-template' },
+                                el(
+                                    'button',
+                                    {
+                                        class: 'bb-tile',
+                                        type: 'button',
+                                        title: template.description || null,
+                                        onclick: () => this.builder.insertTemplate(template.name, position),
+                                    },
+                                    el('strong', { text: template.title }),
+                                    el('span', { text: template.description || template.category }),
+                                ),
+                                removable(library) ? remove(template) : null,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        );
     }
 
     /**
@@ -866,6 +976,17 @@ export class BlockBuilderElement extends HTMLElement {
             actions.push({ label: 'Paste after', run: () => this.pasteFromClipboard([block.id]) });
         }
 
+        if (state.templates?.manage === true) {
+            actions.push({
+                label: 'Save as template',
+                run: () => {
+                    this.ui.saveForm = { block: block.id, title: '', description: '', problem: null };
+                    this.render();
+                    this.querySelector('[data-key="template-title"]')?.focus();
+                },
+            });
+        }
+
         return actions;
     }
 
@@ -1227,6 +1348,10 @@ export class BlockBuilderElement extends HTMLElement {
             return this.picker(block);
         }
 
+        if (this.ui.saveForm !== null && this.ui.saveForm.block === block.id) {
+            return this.saveTemplateForm(state, entry?.title ?? block.type);
+        }
+
         const body = tab === 'style'
             ? this.styleTab(state, block, style)
             : tab === 'visibility'
@@ -1263,6 +1388,83 @@ export class BlockBuilderElement extends HTMLElement {
                     ? null
                     : el('div', { class: 'bb-toast', role: 'status' }, el('ul', {}, issues.map((issue) => el('li', { text: issue.message })))),
                 body,
+            ),
+        ];
+    }
+
+    /**
+     * Asks for what a new template is called, and shows the name it will be saved under before saving.
+     */
+    saveTemplateForm(state, blockTitle) {
+        const form = this.ui.saveForm;
+        const name = templateName(form.title);
+        const saved = state.templates?.libraries.find((library) => library.name === SAVED_LIBRARY)?.templates ?? [];
+        const replaces = name !== null && saved.some((template) => template.name === name);
+        const close = () => {
+            this.ui.saveForm = null;
+            this.render();
+        };
+        const typed = (key) => (event) => {
+            form[key] = event.target.value;
+            form.problem = null;
+            this.render();
+        };
+        const submit = async (event) => {
+            event.preventDefault();
+
+            if (name === null) {
+                form.problem = form.title.trim() === ''
+                    ? 'Give the template a title.'
+                    : 'Use some letters or digits in the title.';
+                this.render();
+
+                return;
+            }
+
+            if (await this.builder.saveTemplate({ block: form.block, title: form.title.trim(), description: form.description })) {
+                this.ui.saveForm = null;
+                this.say('Saved as a template');
+            }
+        };
+
+        return [
+            el(
+                'div',
+                { class: 'bb-side-head' },
+                el('h2', { text: 'Save as template' }),
+                el('p', { text: `The ${blockTitle.toLowerCase()} and everything inside it.` }),
+            ),
+            el(
+                'form',
+                { class: 'bb-side-body bb-save-template', onsubmit: submit },
+                el(
+                    'label',
+                    { class: 'bb-field' },
+                    el('span', { class: 'bb-label', text: 'Title' }),
+                    el('input', {
+                        class: 'bb-input',
+                        required: true,
+                        'data-key': 'template-title',
+                        value: form.title,
+                        'aria-invalid': form.problem === null ? null : 'true',
+                        oninput: typed('title'),
+                    }),
+                    form.problem === null ? null : el('span', { class: 'bb-wrong', text: form.problem }),
+                ),
+                el(
+                    'label',
+                    { class: 'bb-field' },
+                    el('span', { class: 'bb-label', text: 'Description' }),
+                    el('textarea', { class: 'bb-input', 'data-key': 'template-description', oninput: typed('description') }, form.description),
+                ),
+                el('p', { class: 'bb-help', text: name === null ? 'It will be named once it has a title.' : `Saved as ${name}` }),
+                replaces ? el('p', { class: 'bb-help', text: 'Replaces the saved template of this name.' }) : null,
+                el(
+                    'div',
+                    { class: 'bb-actions' },
+                    el('button', { class: 'bb-primary', type: 'submit', text: 'Save' }),
+                    el('button', { class: 'bb-link', type: 'button', text: 'Cancel', onclick: close }),
+                ),
             ),
         ];
     }

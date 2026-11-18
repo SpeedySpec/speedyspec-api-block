@@ -1,4 +1,5 @@
 import { Refused } from './api.js';
+import { templateName } from './templates.js';
 import { find, indentPosition, movePosition, outdentPosition, positionOf } from './tree.js';
 
 /**
@@ -29,6 +30,8 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         canUndo: false,
         canRedo: false,
         preview: { output: '', css: '', styles: [] },
+        // The template libraries and whether the person may save and remove templates; null until first asked.
+        templates: null,
     };
     const listeners = new Set();
     let queue = Promise.resolve();
@@ -124,6 +127,26 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
             },
         );
     }
+
+    /**
+     * Runs a change to the site rather than to the document, such as saving a template: it is not in the
+     * document's history, and a failure is shown rather than thrown.
+     *
+     * @returns {Promise<boolean>} Whether it worked.
+     */
+    async function siteChange(run) {
+        try {
+            await run();
+
+            return true;
+        } catch (error) {
+            set({ error: error.message });
+
+            return false;
+        }
+    }
+
+    const loadTemplates = () => siteChange(async () => set({ templates: await client.templates() }));
 
     const moveTo = (id, position) =>
         position === null ? Promise.resolve() : edit({ operation: 'move', block: id, position });
@@ -263,5 +286,23 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         redo: () => step(future, past),
 
         refreshPreview,
+
+        loadTemplates,
+
+        /**
+         * Saves a block, with everything inside it, as a template under a name made from its title.
+         *
+         * @param {{block: string, title: string, description: string}} template
+         * @returns {Promise<boolean>} Whether it was saved.
+         */
+        saveTemplate: ({ block, title, description }) => siteChange(async () => {
+            await client.saveTemplate({ document: documentId, block, name: templateName(title), title, description });
+            set({ templates: await client.templates() });
+        }),
+
+        removeTemplate: (name) => siteChange(async () => {
+            await client.removeTemplate(name);
+            set({ templates: await client.templates() });
+        }),
     };
 }

@@ -400,6 +400,14 @@ test('one block is previewed on its own, in either mode', function () use ($host
         ->and($mode)->toBe(400);
 });
 
+test('the template list says whether the person may save and remove templates', function () use ($host, $call) {
+    [$manager] = $host();
+    [$editor] = $host(['view', 'edit']);
+
+    expect($call($manager, 'GET', '/templates')[1]['manage'])->toBeTrue()
+        ->and($call($editor, 'GET', '/templates')[1]['manage'])->toBeFalse();
+});
+
 test('templates are listed by library, saved from a block, and removed', function () use ($host, $call) {
     [$api] = $host();
 

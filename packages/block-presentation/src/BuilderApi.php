@@ -440,14 +440,18 @@ class BuilderApi
     {
         $this->need(BuilderAbility::Edit);
 
-        return new ApiResponse(200, ['libraries' => array_map(
-            fn ($library): array => [
-                'name' => $library->name(),
-                'title' => $library->title(),
-                'templates' => array_map($this->templateData(...), $library->all()),
-            ],
-            $this->container->get(BlockTemplateLibraryRegistryInterface::class)->all(),
-        )]);
+        return new ApiResponse(200, [
+            'libraries' => array_map(
+                fn ($library): array => [
+                    'name' => $library->name(),
+                    'title' => $library->title(),
+                    'templates' => array_map($this->templateData(...), $library->all()),
+                ],
+                $this->container->get(BlockTemplateLibraryRegistryInterface::class)->all(),
+            ),
+            // A builder offers saving and removing only to people who may, rather than offering and being refused.
+            'manage' => $this->container->get(BuilderAccessInterface::class)->allows(BuilderAbility::ManageTemplates),
+        ]);
     }
 
     /**

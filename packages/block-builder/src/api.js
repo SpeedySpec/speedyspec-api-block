@@ -127,7 +127,16 @@ export function createClient({ baseUrl, fetch = globalThis.fetch, headers = {} }
 
         render: (id, mode = 'front') => send('GET', `/documents/${segment(id)}/render?mode=${segment(mode)}`),
 
-        templates: async () => (await send('GET', '/templates')).libraries,
+        /**
+         * Lists the template libraries, and whether the person may save and remove templates.
+         *
+         * @returns {Promise<{libraries: Array<object>, manage: boolean}>}
+         */
+        async templates() {
+            const answer = await send('GET', '/templates');
+
+            return { libraries: answer.libraries ?? [], manage: answer.manage === true };
+        },
 
         saveTemplate: (template) => send('POST', '/templates', template),
 

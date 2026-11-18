@@ -118,7 +118,7 @@ test('the remaining routes are reachable', async () => {
         { status: 204 },
         { status: 200, body: { output: '<p>', css: '' } },
         { status: 200, body: { output: '<p>', css: '' } },
-        { status: 200, body: { libraries: [] } },
+        { status: 200, body: { libraries: [{ name: 'core/saved' }], manage: true } },
         { status: 201, body: { template: { name: 'acme/x' } } },
         { status: 204 },
     );
@@ -129,7 +129,7 @@ test('the remaining routes are reachable', async () => {
     await client.deleteDocument('new');
     await client.preview('home', 't');
     await client.render('home', 'admin');
-    await client.templates();
+    const templates = await client.templates();
     await client.saveTemplate({ name: 'acme/x', title: 'X', document: 'home', block: 'b' });
     await client.removeTemplate('acme/x');
 
@@ -144,6 +144,7 @@ test('the remaining routes are reachable', async () => {
         'DELETE /api/templates/acme/x',
     ]);
     assert.deepEqual(JSON.parse(calls[3].body), { block: 't', mode: 'admin' });
+    assert.deepEqual(templates, { libraries: [{ name: 'core/saved' }], manage: true });
 });
 
 test('media are listed with only the filters given', async () => {

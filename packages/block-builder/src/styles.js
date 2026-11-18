@@ -218,6 +218,10 @@ block-builder .bb-rule { margin-bottom: .5rem; padding: .5rem; border: 1px solid
     background: var(--bb-panel); }
 block-builder .bb-rule-top { display: flex; gap: .4rem; margin-bottom: .4rem; }
 block-builder .bb-or { margin: .2rem 0; color: var(--bb-soft); text-align: center; }
+block-builder .bb-add-tabs { margin: 0 0 .6rem; padding: 0; }
+block-builder .bb-template { display: grid; gap: .15rem; align-content: start; }
+block-builder .bb-template .bb-link { justify-self: start; font-size: 12px; }
+block-builder .bb-actions { display: flex; align-items: center; gap: .8rem; margin-top: .9rem; }
 block-builder .bb-link { padding: .2rem 0; border: 0; color: var(--bb-pick); background: transparent; font-weight: 600; }
 block-builder .bb-icon { display: grid; place-items: center; flex: none; width: 2rem; height: 2rem;
     border: 1px solid var(--bb-line); border-radius: 6px; color: var(--bb-soft); background: var(--bb-panel); }

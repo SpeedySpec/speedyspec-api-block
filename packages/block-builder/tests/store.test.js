@@ -513,3 +513,56 @@ test('removing several blocks is one edit, and one undo puts them all back', asy
     assert.deepEqual(ids(builder), ['a', 'b']);
     assert.equal(builder.state().canUndo, false);
 });
+
+test('saving a template sends a name made from its title and the document, then lists templates again', async () => {
+    const client = fakeClient();
+    const lists = [];
+    client.templates = async () => {
+        lists.push('templates');
+
+        return { libraries: [{ name: 'core/saved', title: 'Saved', templates: [] }], manage: true };
+    };
+    client.saveTemplate = async (template) => {
+        client.calls.push(['saveTemplate', template]);
+
+        return { template };
+    };
+    client.removeTemplate = async (name) => {
+        client.calls.push(['removeTemplate', name]);
+    };
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+    await builder.duplicate('a');
+    const canUndo = builder.state().canUndo;
+
+    await builder.loadTemplates();
+    await builder.saveTemplate({ block: 'a', title: 'My hero', description: 'Big' });
+    await builder.removeTemplate('saved/my-hero');
+
+    assert.deepEqual(client.calls.find((call) => call[0] === 'saveTemplate')[1], {
+        document: 'home',
+        block: 'a',
+        name: 'saved/my-hero',
+        title: 'My hero',
+        description: 'Big',
+    });
+    assert.deepEqual(client.calls.find((call) => call[0] === 'removeTemplate')[1], 'saved/my-hero');
+    assert.equal(lists.length, 3);
+    assert.equal(builder.state().templates.manage, true);
+    assert.equal(builder.state().canUndo, canUndo);
+});
+
+test('a template that cannot be saved is shown as an error', async () => {
+    const client = fakeClient();
+    client.templates = async () => ({ libraries: [], manage: true });
+    client.saveTemplate = async () => {
+        throw new ApiError(403, 'You are not allowed to do that.');
+    };
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    const saved = await builder.saveTemplate({ block: 'a', title: 'X', description: '' });
+
+    assert.equal(saved, false);
+    assert.equal(builder.state().error, 'You are not allowed to do that.');
+});
