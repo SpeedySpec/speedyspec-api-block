@@ -147,6 +147,49 @@ class DocumentEditor implements DocumentEditorInterface
         return EditResult::accepted($document->withTree($tree), $affected);
     }
 
+    public function restore(Document $document, array $blocks): EditResult
+    {
+        $refusals = [];
+        $vetted = [];
+        $seen = [];
+
+        foreach ($blocks as $block)
+        {
+            if (!$block instanceof Block)
+            {
+                $refusals[] = new EditRefusal(
+                    EditRefusalKind::InvalidBlock,
+                    sprintf('Only blocks can be restored; one entry is %s.', get_debug_type($block)),
+                );
+
+                continue;
+            }
+
+            foreach ($this->subtreeIds($block) as $id)
+            {
+                if (isset($seen[$id]))
+                {
+                    $refusals[] = new EditRefusal(
+                        EditRefusalKind::InvalidBlock,
+                        sprintf('Block id "%s" is used more than once.', $id),
+                        $id,
+                    );
+                }
+
+                $seen[$id] = true;
+            }
+
+            $vetted[] = $this->vetted($block, null, $refusals);
+        }
+
+        if ($refusals !== [])
+        {
+            return EditResult::refused(...$refusals);
+        }
+
+        return EditResult::accepted($document->withTree(new BlockTree(...$vetted)), array_keys($seen));
+    }
+
     public function insertTemplate(Document $document, BlockTemplate $template, Position $position): EditResult
     {
         return $this->insertBlocks($document, $template->tree->roots(), $position);
@@ -453,6 +496,25 @@ class DocumentEditor implements DocumentEditorInterface
         }
 
         return $refusals;
+    }
+
+    /**
+     * Lists the ids of a block and everything inside it, in tree order, repeats included.
+     *
+     * @return list<string>
+     *
+     * @since 0.1.0
+     */
+    private function subtreeIds(Block $block): array
+    {
+        $ids = [$block->id];
+
+        foreach ($block->children as $child)
+        {
+            $ids = [...$ids, ...$this->subtreeIds($child)];
+        }
+
+        return $ids;
     }
 
     /**

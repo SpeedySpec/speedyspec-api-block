@@ -258,3 +258,147 @@ test('what the server refused can be put away once it has been read', async () =
     assert.equal(builder.state().error, null);
 });
 
+/**
+ * Builds a client stand-in that keeps a document and applies remove, duplicate and restore to it.
+ */
+function editingClient() {
+    const client = fakeClient((operation, document) => {
+        if (operation.operation === 'restore') {
+            return { document: { ...document, blocks: operation.blocks }, affected: [], issues: [] };
+        }
+
+        if (operation.operation === 'remove') {
+            const blocks = document.blocks.filter((entry) => entry.id !== operation.block);
+
+            return { document: { ...document, blocks }, affected: [], issues: [] };
+        }
+
+        return { document: { ...document, blocks: [...document.blocks, block(`copy${document.blocks.length}`)] }, affected: [], issues: [] };
+    });
+
+    return client;
+}
+
+const ids = (builder) => builder.state().document.blocks.map((entry) => entry.id);
+
+test('an edit can be undone and redone, by restoring the state the server gave before', async () => {
+    const client = editingClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    assert.deepEqual([builder.state().canUndo, builder.state().canRedo], [false, false]);
+
+    await builder.remove('b');
+    await builder.duplicate('a');
+
+    assert.deepEqual(ids(builder), ['a', 'copy1']);
+    assert.deepEqual([builder.state().canUndo, builder.state().canRedo], [true, false]);
+
+    await builder.undo();
+
+    assert.deepEqual(ids(builder), ['a']);
+    assert.deepEqual([builder.state().canUndo, builder.state().canRedo], [true, true]);
+    assert.deepEqual(client.calls.at(-2), ['operate', { operation: 'restore', blocks: [home().blocks[0]] }]);
+
+    await builder.undo();
+
+    assert.deepEqual(ids(builder), ['a', 'b']);
+    assert.deepEqual([builder.state().canUndo, builder.state().canRedo], [false, true]);
+
+    await builder.redo();
+    await builder.redo();
+
+    assert.deepEqual(ids(builder), ['a', 'copy1']);
+    assert.deepEqual([builder.state().canUndo, builder.state().canRedo], [true, false]);
+});
+
+test('a new edit after undoing forgets what could have been redone', async () => {
+    const builder = createBuilder({ client: editingClient(), documentId: 'home' });
+    await builder.load();
+    await builder.remove('b');
+    await builder.undo();
+
+    await builder.remove('a');
+
+    assert.deepEqual(ids(builder), ['b']);
+    assert.equal(builder.state().canRedo, false);
+
+    await builder.undo();
+
+    assert.deepEqual(ids(builder), ['a', 'b']);
+});
+
+test('undo and redo with nothing to do send nothing', async () => {
+    const client = editingClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.undo();
+    await builder.redo();
+
+    assert.equal(client.calls.filter((call) => call[0] === 'operate').length, 0);
+});
+
+test('a refused edit is not something to undo, and a refused undo keeps its place in the history', async () => {
+    let refuse = true;
+    const client = editingClient();
+    const answer = client.operate;
+    client.operate = async (id, operation) => {
+        if (refuse && operation.operation !== 'remove') {
+            throw new Refused([{ kind: 'unknown-type', message: 'That block type is gone.', block: null, path: null }]);
+        }
+
+        return answer(id, operation);
+    };
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.duplicate('a');
+
+    assert.equal(builder.state().canUndo, false);
+
+    await builder.remove('b');
+    await builder.undo();
+
+    assert.deepEqual(ids(builder), ['a']);
+    assert.equal(builder.state().refusals[0].message, 'That block type is gone.');
+    assert.deepEqual([builder.state().canUndo, builder.state().canRedo], [true, false]);
+
+    refuse = false;
+    await builder.undo();
+
+    assert.deepEqual(ids(builder), ['a', 'b']);
+});
+
+test('the history keeps a limited number of steps', async () => {
+    const builder = createBuilder({ client: editingClient(), documentId: 'home', historyLimit: 3 });
+    await builder.load();
+
+    for (let step = 0; step < 5; step++) {
+        await builder.duplicate('a');
+    }
+
+    for (let step = 0; step < 5; step++) {
+        await builder.undo();
+    }
+
+    assert.equal(ids(builder).length, 4);
+    assert.equal(builder.state().canUndo, false);
+});
+
+test('undoing keeps the selection when the block is still there, and drops it when it is not', async () => {
+    const builder = createBuilder({ client: editingClient(), documentId: 'home' });
+    await builder.load();
+    await builder.duplicate('a');
+    builder.select('copy2');
+
+    await builder.undo();
+
+    assert.equal(builder.state().selected, null);
+
+    builder.select('a');
+    await builder.redo();
+
+    assert.equal(builder.state().selected, 'a');
+});
+

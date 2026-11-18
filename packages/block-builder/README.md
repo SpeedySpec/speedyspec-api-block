@@ -13,7 +13,7 @@ It has no dependencies and no build step: plain ES modules.
 | `src/api.js` | A client for the builder API. A refused edit is a `Refused` error carrying every reason. |
 | `src/tree.js` | Reading a document: find a block, where it sits, and where to move it one step. |
 | `src/forms.js` | A settings form from a block type's schema, so no block type needs builder code. |
-| `src/store.js` | The state of one editing session; edits go to the server one at a time, in order. |
+| `src/store.js` | The state of one editing session; edits go to the server one at a time, in order. Keeps the history for undo and redo. |
 | `src/drag.js` | Where a dragged block lands: the part of the target under the pointer, and the position to send. |
 | `src/view.js` | What the interface shows: block types by category, where a new block goes, values by width. |
 | `src/builder-element.js` | The interface, as a `<block-builder>` element. |
@@ -36,6 +36,9 @@ It is laid out the way the block editors people already know are:
   before and after run across. A drop onto the block itself, into something inside it, or where it already is
   does nothing. Whether a block is allowed where it was dropped is the server's decision: a refused drop changes
   nothing and says why.
+- **Undo and redo**, from the top bar or with the usual keys (Ctrl or Cmd with Z; Shift with it, or Ctrl+Y, to
+  redo). Up to 50 steps are kept for the session. While the pointer is in a text field the keys are left to the
+  field, which has its own undo.
 - **Phone, Tablet, Full width** show the page at that width, so responsive styles can be checked.
 - **The inspector** on the right has three tabs. *Block* holds the block's own settings. *Style* holds the shared
   style settings in sections, with a switch for which widths a value applies from, colour pickers that offer the
@@ -94,5 +97,5 @@ They cover the client, tree, forms, store, view and drop-position logic. The ele
 
 ## Not included
 
-Undo and redo, typing directly on the page, editing bindings, inserting and saving templates, and
+Typing directly on the page, editing bindings, inserting and saving templates, and
 keyboard shortcuts.

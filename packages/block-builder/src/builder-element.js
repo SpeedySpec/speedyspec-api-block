@@ -32,6 +32,8 @@ const ICONS = {
     parent: '<path d="M12 13V8a3 3 0 0 0-3-3H4M7 2 4 5l3 3"/>',
     copy: '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M3 10.5V4a1.5 1.5 0 0 1 1.5-1.5H10"/>',
     remove: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/>',
+    undo: '<path d="M6 3 3 6l3 3M3 6h6.5a3.5 3.5 0 0 1 0 7H6"/>',
+    redo: '<path d="M10 3l3 3-3 3M13 6H6.5a3.5 3.5 0 0 0 0 7H10"/>',
 };
 
 /**
@@ -127,6 +129,8 @@ export class BlockBuilderElement extends HTMLElement {
         this.stop = this.builder.subscribe(() => this.render());
         this.resize = () => this.placeBar();
         window.addEventListener('resize', this.resize);
+        this.keys = (event) => this.shortcut(event);
+        this.addEventListener('keydown', this.keys);
         this.builder.load();
     }
 
@@ -180,6 +184,19 @@ export class BlockBuilderElement extends HTMLElement {
                 icon(glyph),
                 el('span', { text: label }),
             );
+        const history = (label, glyph, possible, run) =>
+            el(
+                'button',
+                {
+                    class: 'bb-topbtn bb-topicon',
+                    type: 'button',
+                    title: label,
+                    'aria-label': label,
+                    disabled: !possible,
+                    onclick: run,
+                },
+                icon(glyph),
+            );
         const sizes = devices(state.vocabulary).map((device) =>
             el('button', {
                 type: 'button',
@@ -209,6 +226,8 @@ export class BlockBuilderElement extends HTMLElement {
                 el('span', { class: 'bb-name', text: state.document?.id ?? this.getAttribute('document') ?? '' }),
                 toggle('add', 'Add block', 'add'),
                 toggle('outline', 'Outline', 'outline'),
+                history('Undo', 'undo', state.canUndo, () => this.builder.undo()),
+                history('Redo', 'redo', state.canRedo, () => this.builder.redo()),
             ),
             el('div', { class: 'bb-seg', role: 'group', 'aria-label': 'Preview width' }, sizes),
             el(
@@ -477,6 +496,7 @@ export class BlockBuilderElement extends HTMLElement {
 
             this.dragOver(event, block, block.getAttribute(NAMED), across);
         });
+        page.addEventListener('keydown', (event) => this.shortcut(event));
         page.addEventListener('drop', (event) => this.dropHere(event));
         page.addEventListener('dragend', () => this.endDrag());
         page.addEventListener('mouseleave', () => {
@@ -540,6 +560,27 @@ export class BlockBuilderElement extends HTMLElement {
 
         this.bar.style.top = `${top}px`;
         this.bar.style.left = `${left}px`;
+    }
+
+    /**
+     * Undoes or redoes on the usual keys, unless the person is typing: a text field has its own undo, and taking
+     * the keys from it would undo a block edit when they meant to undo a letter.
+     */
+    shortcut(event) {
+        const typing = Boolean(event.target.closest?.('input, textarea, select, [contenteditable]'));
+        const key = event.key.toLowerCase();
+
+        if (typing || !(event.metaKey || event.ctrlKey) || event.altKey || (key !== 'z' && key !== 'y')) {
+            return;
+        }
+
+        event.preventDefault();
+
+        if (key === 'y' || event.shiftKey) {
+            this.builder.redo();
+        } else {
+            this.builder.undo();
+        }
     }
 
     // ---- Dragging ------------------------------------------------------------------------------------------
