@@ -51,16 +51,18 @@ class BlockPreviewer implements BlockPreviewInterface
         $resolved = $this->resolver->resolve($document, $request->mode, $context);
         $block = $resolved->find($blockId);
 
-        if ($block === null)
-        {
-            return new BlockPreview($blockId, null, '', [], []);
-        }
-
         $ids = array_fill_keys((new BlockTree($stored))->ids(), true);
         $issues = array_values(array_filter(
             $resolved->issues,
             static fn (Issue $issue): bool => isset($ids[$issue->blockId]),
         ));
+
+        if ($block === null)
+        {
+            // Left out of the resolved tree, so there is nothing to draw; the reason, if it is the block's own,
+            // is among its issues.
+            return new BlockPreview($blockId, null, '', $issues, []);
+        }
         $result = $this->renderer->renderResolved(
             new ResolvedDocument($document, $request->mode, [$block], $issues),
             $request,

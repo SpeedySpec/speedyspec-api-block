@@ -107,3 +107,18 @@ test('a missing id gives no preview, and an unreached block gives one without a 
         ->and($unreached->output)->toBe('')
         ->and($unreached->issues)->toBe([]);
 });
+
+test('a misplaced block previews with the reason it was left out', function () use ($setup) {
+    [$previewer] = previewer(function ($c) use ($setup) {
+        $setup($c);
+        types($c)->add(type('acme/box', ['children' => true]));
+    });
+    $document = doc(block('b', 'acme/box', [], block('n', 'acme/field', ['key' => 'name'])));
+
+    $preview = $previewer->preview($document, 'n', new RenderRequest(Mode::Admin));
+
+    expect($preview->block)->toBeNull()
+        ->and($preview->output)->toBe('')
+        ->and(idsAndKinds($preview->issues))->toBe([['n', IssueKind::DisallowedChild]]);
+});
+

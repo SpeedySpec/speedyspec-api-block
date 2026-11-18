@@ -13,17 +13,21 @@ use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
 use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
+use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\BlockTree;
 use SpeedySpec\Block\Domain\Entities\Document;
+use SpeedySpec\Block\Domain\Exceptions\InvalidSettingPathException;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
+use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\EditRefusal;
 use SpeedySpec\Block\Domain\ValueObjects\EditRefusalKind;
 use SpeedySpec\Block\Domain\ValueObjects\EditResult;
 use SpeedySpec\Block\Domain\ValueObjects\Position;
 use SpeedySpec\Block\Domain\ValueObjects\SettingPath;
+use Throwable;
 
 /**
  * Applies editing operations only when the document that results is one the resolver will accept.
@@ -50,6 +54,7 @@ class DocumentEditor implements DocumentEditorInterface
         private readonly DataSourceRegistryInterface $sources,
         private readonly BlockIdGeneratorInterface $ids,
         private readonly BlockDuplicatorInterface $duplicator,
+        private readonly SettingsMigrationRegistryInterface $migrations,
     )
     {
     }
@@ -96,10 +101,21 @@ class DocumentEditor implements DocumentEditorInterface
 
         $parentType = $this->parentType($document->tree, $position);
         $refusals = [];
+        $vetted = [];
 
         foreach ($blocks as $block)
         {
-            $refusals = [...$refusals, ...$this->subtreeRefusals($block, $parentType)];
+            if (!$block instanceof Block)
+            {
+                $refusals[] = new EditRefusal(
+                    EditRefusalKind::InvalidBlock,
+                    sprintf('Only blocks can be inserted; one entry is %s.', get_debug_type($block)),
+                );
+
+                continue;
+            }
+
+            $vetted[] = $this->vetted($block, $parentType, $refusals);
         }
 
         if ($refusals !== [])
@@ -110,7 +126,7 @@ class DocumentEditor implements DocumentEditorInterface
         $tree = $document->tree;
         $affected = [];
 
-        foreach (array_values($blocks) as $offset => $block)
+        foreach ($vetted as $offset => $block)
         {
             $copy = $this->duplicator->duplicate($block, $tree->ids());
             $at = $position->parentId === null
@@ -235,18 +251,7 @@ class DocumentEditor implements DocumentEditorInterface
             return EditResult::refused($this->unknownBlock($blockId));
         }
 
-        $decorator = $this->decorators->get($namespace);
-
-        if ($decorator === null || !$decorator->appliesTo($block->type))
-        {
-            return EditResult::refused(new EditRefusal(
-                EditRefusalKind::UnknownDecorator,
-                sprintf('No decorator "%s" applies to block type "%s".', $namespace, $block->type->toString()),
-                $blockId,
-            ));
-        }
-
-        $refusals = $this->settingsRefusals($settings, $decorator->settingsSchema, $blockId, $namespace);
+        $refusals = $this->extensionRefusals($block->type, $blockId, $namespace, $settings);
 
         if ($refusals !== [])
         {
@@ -265,69 +270,7 @@ class DocumentEditor implements DocumentEditorInterface
             return EditResult::refused($this->unknownBlock($blockId));
         }
 
-        $schema = $this->schemaFor($block, $path);
-        $setting = $schema === null ? null : $this->validator->subschema($schema, $path->segments());
-
-        if ($schema === null || $setting === null)
-        {
-            return EditResult::refused($this->invalidBinding(
-                sprintf('"%s" is not a setting block "%s" declares.', $path->toString(), $blockId),
-                $blockId,
-                $path,
-            ));
-        }
-
-        if (in_array($path->segments()[0], $this->validator->privateProperties($schema), true))
-        {
-            return EditResult::refused(new EditRefusal(
-                EditRefusalKind::PrivateBinding,
-                sprintf('"%s" is private and cannot be bound to a data source.', $path->toString()),
-                $blockId,
-                $path->toString(),
-            ));
-        }
-
-        $refusals = [];
-        $source = $this->sources->get($binding->source);
-
-        if ($source === null)
-        {
-            $refusals[] = new EditRefusal(
-                EditRefusalKind::UnknownDataSource,
-                sprintf('No data source "%s" is registered.', $binding->source),
-                $blockId,
-                $path->toString(),
-            );
-        }
-        else
-        {
-            $arguments = $source->argumentsSchema();
-            $checked = $this->validator->validate(
-                $this->validator->withDefaults($binding->arguments, $arguments),
-                $arguments,
-            );
-
-            foreach ($checked->errors() as $error)
-            {
-                $refusals[] = $this->invalidBinding(
-                    sprintf('Argument "%s" of "%s": %s', $error->path, $binding->source, $error->message),
-                    $blockId,
-                    $path,
-                );
-            }
-        }
-
-        if ($binding->hasFallback)
-        {
-            foreach ($this->validator->validate($binding->fallback, $setting)->errors() as $error)
-            {
-                $refusals[] = $this->invalidBinding(
-                    sprintf('The fallback does not fit "%s": %s', $path->toString(), $error->message),
-                    $blockId,
-                    $path,
-                );
-            }
-        }
+        $refusals = $this->bindingRefusals($block->type, $blockId, $path, $binding);
 
         if ($refusals !== [])
         {
@@ -367,32 +310,35 @@ class DocumentEditor implements DocumentEditorInterface
      *
      * @since 0.1.0
      */
-    private function schemaFor(Block $block, SettingPath $path): ?array
+    private function schemaFor(BlockName $type, SettingPath $path): ?array
     {
         if ($path->namespace() === null)
         {
-            return $this->types->get($block->type)?->settingsSchema;
+            return $this->types->get($type)?->settingsSchema;
         }
 
         $decorator = $this->decorators->get($path->namespace());
 
-        return $decorator !== null && $decorator->appliesTo($block->type) ? $decorator->settingsSchema : null;
+        return $decorator !== null && $decorator->appliesTo($type) ? $decorator->settingsSchema : null;
     }
 
     /**
-     * Checks a block about to be placed, then its descendants, in tree order.
+     * Checks a block about to be placed, then its descendants, and readies it for the document.
+     *
+     * A pasted block is held to everything the single-block operations enforce, so an accepted paste resolves as
+     * cleanly as the same blocks built one edit at a time. Settings saved under an older version of the type are
+     * migrated first, as resolving would, and the block is stamped with the current version.
      *
      * @param BlockName|null $parent
      *   The type the block would sit inside; null at the document root.
-     *
-     * @return list<EditRefusal>
+     * @param list<EditRefusal> $refusals
+     *   Collects every reason found, block by block in tree order.
      *
      * @since 0.1.0
      */
-    private function subtreeRefusals(Block $block, ?BlockName $parent): array
+    private function vetted(Block $block, ?BlockName $parent, array &$refusals): Block
     {
         $type = $this->types->get($block->type);
-        $refusals = [];
 
         if ($type === null)
         {
@@ -400,15 +346,193 @@ class DocumentEditor implements DocumentEditorInterface
         }
         else
         {
-            $refusals = [
-                ...$this->placementRefusals($block->type, $parent, $block->id),
-                ...$this->settingsRefusals($block->settings, $type->settingsSchema, $block->id),
-            ];
+            $refusals = [...$refusals, ...$this->placementRefusals($block->type, $parent, $block->id)];
+            $settings = $this->migrated($block, $type, $refusals);
+
+            if ($settings !== null)
+            {
+                $refusals = [...$refusals, ...$this->settingsRefusals($settings, $type->settingsSchema, $block->id)];
+                $block = $block->withSettings($settings)->withTypeVersion($type->version);
+            }
+
+            foreach ($block->extensions as $namespace => $extension)
+            {
+                $refusals = [
+                    ...$refusals,
+                    ...$this->extensionRefusals($block->type, $block->id, (string) $namespace, $extension),
+                ];
+            }
+
+            foreach ($block->bindings as $path => $binding)
+            {
+                $refusals = [...$refusals, ...$this->storedBindingRefusals($block, (string) $path, $binding)];
+            }
         }
+
+        $children = [];
 
         foreach ($block->children as $child)
         {
-            $refusals = [...$refusals, ...$this->subtreeRefusals($child, $block->type)];
+            $children[] = $this->vetted($child, $block->type, $refusals);
+        }
+
+        return $block->withChildren(...$children);
+    }
+
+    /**
+     * Brings a block's settings to the type's current version through the registered migrations.
+     *
+     * @param list<EditRefusal> $refusals
+     *
+     * @return array<string, mixed>|null
+     *   Null when no chain of migrations leads from the block's version to the current one, or one of them fails.
+     *
+     * @since 0.1.0
+     */
+    private function migrated(Block $block, BlockType $type, array &$refusals): ?array
+    {
+        $chain = $this->migrations->chain($block->type, $block->typeVersion, $type->version);
+        $settings = $block->settings;
+
+        try
+        {
+            if ($chain === null)
+            {
+                throw new RuntimeException('no migration path');
+            }
+
+            foreach ($chain as $migration)
+            {
+                $settings = $migration->migrate($settings);
+            }
+        }
+        catch (Throwable)
+        {
+            $refusals[] = new EditRefusal(EditRefusalKind::UnsupportedVersion, sprintf(
+                'Settings of "%s" cannot be migrated from version %d to %d.',
+                $block->type->toString(),
+                $block->typeVersion,
+                $type->version,
+            ), $block->id);
+
+            return null;
+        }
+
+        return $settings;
+    }
+
+    /**
+     * Checks one decorator's settings on a block: the decorator must apply to the type and the settings fit it.
+     *
+     * @param array<string, mixed> $settings
+     *
+     * @return list<EditRefusal>
+     *
+     * @since 0.1.0
+     */
+    private function extensionRefusals(BlockName $type, string $blockId, string $namespace, array $settings): array
+    {
+        $decorator = $this->decorators->get($namespace);
+
+        if ($decorator === null || !$decorator->appliesTo($type))
+        {
+            return [new EditRefusal(
+                EditRefusalKind::UnknownDecorator,
+                sprintf('No decorator "%s" applies to block type "%s".', $namespace, $type->toString()),
+                $blockId,
+            )];
+        }
+
+        return $this->settingsRefusals($settings, $decorator->settingsSchema, $blockId, $namespace);
+    }
+
+    /**
+     * Checks a binding a block already carries, whose path is stored as text and may not even parse.
+     *
+     * @return list<EditRefusal>
+     *
+     * @since 0.1.0
+     */
+    private function storedBindingRefusals(Block $block, string $path, Binding $binding): array
+    {
+        try
+        {
+            $parsed = SettingPath::fromString($path);
+        }
+        catch (InvalidSettingPathException $e)
+        {
+            return [new EditRefusal(EditRefusalKind::InvalidBinding, $e->getMessage(), $block->id, $path)];
+        }
+
+        return $this->bindingRefusals($block->type, $block->id, $parsed, $binding);
+    }
+
+    /**
+     * Checks a binding the way resolving will: the setting, its privacy, the source, its arguments, the fallback.
+     *
+     * @return list<EditRefusal>
+     *
+     * @since 0.1.0
+     */
+    private function bindingRefusals(BlockName $type, string $blockId, SettingPath $path, Binding $binding): array
+    {
+        $schema = $this->schemaFor($type, $path);
+        $setting = $schema === null ? null : $this->validator->subschema($schema, $path->segments());
+
+        if ($schema === null || $setting === null)
+        {
+            return [$this->invalidBinding(
+                sprintf('"%s" is not a setting block "%s" declares.', $path->toString(), $blockId),
+                $blockId,
+                $path,
+            )];
+        }
+
+        if (in_array($path->segments()[0], $this->validator->privateProperties($schema), true))
+        {
+            return [new EditRefusal(
+                EditRefusalKind::PrivateBinding,
+                sprintf('"%s" is private and cannot be bound to a data source.', $path->toString()),
+                $blockId,
+                $path->toString(),
+            )];
+        }
+
+        $refusals = [];
+        $source = $this->sources->get($binding->source);
+
+        if ($source === null)
+        {
+            $refusals[] = new EditRefusal(
+                EditRefusalKind::UnknownDataSource,
+                sprintf('No data source "%s" is registered.', $binding->source),
+                $blockId,
+                $path->toString(),
+            );
+        }
+        else
+        {
+            // Judged as given, without defaults: resolving hands the source exactly these arguments.
+            foreach ($this->validator->validate($binding->arguments, $source->argumentsSchema())->errors() as $error)
+            {
+                $refusals[] = $this->invalidBinding(
+                    sprintf('Argument "%s" of "%s": %s', $error->path, $binding->source, $error->message),
+                    $blockId,
+                    $path,
+                );
+            }
+        }
+
+        if ($binding->hasFallback)
+        {
+            foreach ($this->validator->validate($binding->fallback, $setting)->errors() as $error)
+            {
+                $refusals[] = $this->invalidBinding(
+                    sprintf('The fallback does not fit "%s": %s', $path->toString(), $error->message),
+                    $blockId,
+                    $path,
+                );
+            }
         }
 
         return $refusals;

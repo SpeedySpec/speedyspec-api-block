@@ -21,4 +21,6 @@ enum EditRefusalKind: string
     case InvalidSettings = 'invalid-settings';
     case InvalidBinding = 'invalid-binding';
     case PrivateBinding = 'private-binding';
+    case InvalidBlock = 'invalid-block';
+    case UnsupportedVersion = 'unsupported-version';
 }

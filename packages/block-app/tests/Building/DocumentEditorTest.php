@@ -3,11 +3,15 @@
 declare(strict_types=1);
 
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DataSourceInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
+use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Entities\BlockTree;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
+use SpeedySpec\Block\Domain\ValueObjects\Context;
+use SpeedySpec\Block\Domain\ValueObjects\DataSourceResult;
 use SpeedySpec\Block\Domain\ValueObjects\Decorator;
 use SpeedySpec\Block\Domain\ValueObjects\EditRefusalKind;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
@@ -78,7 +82,8 @@ test('insert refuses what would break the document, with every reason', function
 test('pasted blocks always get new ids and are validated as a whole', function () use ($setup) {
     [$editor] = editor($setup);
     $document = doc(block('f', 'acme/form', [], block('n', 'acme/field', ['key' => 'name'])));
-    $pasted = [block('f', 'acme/form', [], block('n', 'acme/field', ['key' => 'again'])), block('b', 'acme/box')];
+    $again = block('n', 'acme/field', ['key' => 'again'])->withTypeVersion(2);
+    $pasted = [block('f', 'acme/form', [], $again), block('b', 'acme/box')];
 
     $result = $editor->insertBlocks($document, $pasted, Position::root(1));
 
@@ -91,7 +96,7 @@ test('pasted blocks always get new ids and are validated as a whole', function (
         ->and($result->document->tree->roots()[2]->id)->toBe($result->affectedIds[2])
         ->and($pasted[0]->id)->toBe('f');
 
-    $bad = [block('x', 'acme/box', [], block('y', 'acme/field', []))];
+    $bad = [block('x', 'acme/box', [], block('y', 'acme/field', [])->withTypeVersion(2))];
 
     expect(refusals($editor->insertBlocks($document, $bad, Position::root(0))))->toBe([
         EditRefusalKind::DisallowedPlacement,
@@ -101,7 +106,8 @@ test('pasted blocks always get new ids and are validated as a whole', function (
 
 test('a template can be inserted twice without id clashes and stays unchanged', function () use ($setup) {
     [$editor] = editor($setup);
-    $tree = new BlockTree(block('t', 'acme/form', [], block('u', 'acme/field', ['key' => 'email'])));
+    $field = block('u', 'acme/field', ['key' => 'email'])->withTypeVersion(2);
+    $tree = new BlockTree(block('t', 'acme/form', [], $field));
     $template = new BlockTemplate('acme/contact', 'Contact', $tree);
 
     $once = $editor->insertTemplate(doc(), $template, Position::root(0));
@@ -217,3 +223,92 @@ test('a document the editor accepts resolves without placement or settings issue
     expect($c->get(DocumentResolverInterface::class)->resolve($result->document, Mode::Front)->hasIssues())
         ->toBeFalse();
 });
+
+test('pasted blocks are refused for bindings and extensions the resolver would report', function () use ($setup) {
+    [$editor, $c] = editor($setup);
+    $values = Binding::to('acme/values', ['key' => 'k']);
+    $paste = fn ($block) => refusals($editor->insertBlocks(doc(), [$block], Position::root(0)));
+    $form = fn (string $path, Binding $binding) => block('f', 'acme/form')
+        ->withBinding(SettingPath::fromString($path), $binding);
+    $good = block('b', 'acme/box')->withExtension('acme/vis', ['hide' => true]);
+    $bound = $form('title', $values->withFallback('Hello'));
+
+    $wrong = block('b', 'acme/box')->withExtension('acme/vis', ['hide' => 'yes']);
+    $bad = $editor->insertBlocks(doc(), [$wrong], Position::root(0));
+    $ok = $editor->insertBlocks(doc(), [$good, $bound], Position::root(0));
+
+    expect($paste($form('to', $values)))->toBe([EditRefusalKind::PrivateBinding])
+        ->and($paste($form('title', Binding::to('nope/source'))))->toBe([EditRefusalKind::UnknownDataSource])
+        ->and($paste($form('missing', $values)))->toBe([EditRefusalKind::InvalidBinding])
+        ->and(refusals($bad))->toBe([EditRefusalKind::InvalidSettings])
+        ->and($bad->refusals[0]->path)->toBe('@acme/vis:hide')
+        ->and($bad->refusals[0]->blockId)->toBe('b')
+        ->and($paste(block('f', 'acme/form')->withExtension('acme/vis', [])))->toBe([EditRefusalKind::UnknownDecorator])
+        ->and($ok->isAccepted())->toBeTrue()
+        ->and($c->get(DocumentResolverInterface::class)->resolve($ok->document, Mode::Admin)->issues)->toBe([]);
+});
+
+test('pasted blocks are brought to the current type version, or refused when they cannot be', function () use ($setup) {
+    [$editor, $c] = editor($setup);
+    $at = Position::inside('f', 0);
+    $document = doc(block('f', 'acme/form'));
+    $old = block('n', 'acme/field', ['name' => 'legacy']);
+
+    $stuck = $editor->insertBlocks($document, [$old], $at);
+    $future = $editor->insertBlocks($document, [$old->withTypeVersion(99)], $at);
+    $c->get(SettingsMigrationRegistryInterface::class)
+        ->add(BlockName::fromString('acme/field'), migrationTo(['key' => 'legacy']));
+    $migrated = $editor->insertBlocks($document, [$old], $at);
+    $new = $migrated->document->tree->find($migrated->affectedIds[0]);
+
+    expect(refusals($stuck))->toBe([EditRefusalKind::UnsupportedVersion])
+        ->and(refusals($future))->toBe([EditRefusalKind::UnsupportedVersion])
+        ->and($new->typeVersion)->toBe(2)
+        ->and($new->settings)->toBe(['key' => 'legacy'])
+        ->and($old->settings)->toBe(['name' => 'legacy'])
+        ->and($c->get(DocumentResolverInterface::class)->resolve($migrated->document, Mode::Front)->issues)->toBe([]);
+});
+
+test('an entry that is not a block is refused rather than thrown on', function () use ($setup) {
+    [$editor] = editor($setup);
+
+    expect(refusals($editor->insertBlocks(doc(), [block('b', 'acme/box'), 'nope'], Position::root(0))))
+        ->toBe([EditRefusalKind::InvalidBlock]);
+});
+
+test('binding arguments are judged as given, the way the resolver judges them', function () use ($setup) {
+    [$editor, $c] = editor($setup);
+    sources($c)->add(new class implements DataSourceInterface {
+        public function name(): string
+        {
+            return 'acme/defaulted';
+        }
+
+        public function argumentsSchema(): array
+        {
+            return [
+                'type' => 'object',
+                'required' => ['key'],
+                'properties' => ['key' => ['type' => 'string', 'default' => 'k']],
+            ];
+        }
+
+        public function valueSchema(): array
+        {
+            return ['type' => 'string'];
+        }
+
+        public function resolve(array $arguments, Context $context, Mode $mode): DataSourceResult
+        {
+            return DataSourceResult::value('v');
+        }
+    });
+    $path = SettingPath::fromString('title');
+    $document = doc(block('f', 'acme/form'));
+
+    expect(refusals($editor->setBinding($document, 'f', $path, Binding::to('acme/defaulted'))))
+        ->toBe([EditRefusalKind::InvalidBinding])
+        ->and($editor->setBinding($document, 'f', $path, Binding::to('acme/defaulted', ['key' => 'k']))->isAccepted())
+        ->toBeTrue();
+});
+

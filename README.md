@@ -37,4 +37,5 @@ it was refused, so a builder can show them all at once. Saving the document is t
 
 Blocks are drawn in one of two modes. `front` is what a visitor sees. `admin` is what a builder shows: a block type
 may register a separate admin output, the block carries its issues and private settings, and a block that cannot be
-resolved is drawn as a placeholder instead of being left out.
+resolved is drawn as a placeholder instead of being left out. A block that sits where its type is not allowed is
+not drawn in either mode; resolving reports it as an issue.

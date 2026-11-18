@@ -36,7 +36,9 @@ interface DocumentEditorInterface
     /**
      * Adds existing blocks, such as pasted ones, giving every block a new id.
      *
-     * Nothing is added unless every block is valid where it would land.
+     * Nothing is added unless every block is valid where it would land, with its settings, decorator settings and
+     * bindings held to the same checks as the single-block operations. Settings saved under an older version of a
+     * type are migrated; a block that cannot be brought to the current version is refused.
      *
      * @param list<Block> $blocks
      *   Subtrees placed in order, starting at the position.
