@@ -56,6 +56,28 @@ $container->get(BlockPackageLoaderInterface::class)->load(FlowPackage::from($con
 A host adds its own conditions (signed in, a role, a date range) and collections (posts, products, rows) by
 implementing `ConditionInterface` and `CollectionSourceInterface` and adding them to the registries.
 
+## How blocks look
+
+One vocabulary for presentation, shared by every block package and builder:
+
+- **Breakpoints** come from `BreakpointRegistryInterface` (`tablet` at 768px and `desktop` at 1024px by default;
+  a host adds, removes or replaces them).
+- **A responsive value** is one stored shape, read with `ResponsiveValue`: a single value, or a map of `base` and
+  breakpoint names.
+- **Design tokens** are named values in `DesignTokenRegistryInterface`. A setting stores `token:color.primary`,
+  not the colour.
+- **Style rules** are handed to `StyleCollectorInterface` while a page is drawn; the block gets a class and the
+  host places `css()` in the page, then calls `clear()`. A `StyleRule` cannot be built from an unsafe value.
+- **`PresentationPackage`** adds the `core/style` decorator to every block type: padding, margin, gap, width,
+  maximum width, minimum height, text alignment, size, weight, line height, colour, background and corner radius,
+  each responsive, each with a strict value format.
+
+```php
+$container->get(BlockPackageLoaderInterface::class)->load(PresentationPackage::from($container));
+$result = $container->get(DocumentRendererInterface::class)->render($document, new RenderRequest());
+$css = $container->get(StyleCollectorInterface::class)->css();
+```
+
 ## For builders
 
 A builder is the interface where someone drops, arranges and configures blocks. It is not part of this repository;

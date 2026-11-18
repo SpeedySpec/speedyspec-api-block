@@ -17,6 +17,9 @@ use SpeedySpec\Block\App\Output\DocumentRenderer;
 use SpeedySpec\Block\App\Output\HtmlEscaper;
 use SpeedySpec\Block\App\Output\OutputEscaperRegistry;
 use SpeedySpec\Block\App\Packages\BlockPackageLoader;
+use SpeedySpec\Block\App\Presentation\BreakpointRegistry;
+use SpeedySpec\Block\App\Presentation\DesignTokenRegistry;
+use SpeedySpec\Block\App\Presentation\StyleCollector;
 use SpeedySpec\Block\App\Registries\BlockBehaviourRegistry;
 use SpeedySpec\Block\App\Registries\BlockTypeRegistry;
 use SpeedySpec\Block\App\Registries\CollectionSourceRegistry;
@@ -46,11 +49,13 @@ use SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BreakpointRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
 use SpeedySpec\Block\Domain\Contracts\CollectionSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ConditionRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
@@ -60,7 +65,9 @@ use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\StyleCollectorInterface;
 use SpeedySpec\Block\Domain\Contracts\UnresolvedBlockOutputInterface;
+use SpeedySpec\Block\Domain\ValueObjects\Breakpoint;
 
 /**
  * Binds the application implementations of the block contracts, one binding each so a host can replace any alone.
@@ -187,6 +194,15 @@ class AppServiceProvider
             $c->get(BlockTemplateRegistryInterface::class),
         ));
         $container->add(BlockTemplateRegistryInterface::class, fn () => new BlockTemplateRegistry());
+        $container->add(BreakpointRegistryInterface::class, fn () => new BreakpointRegistry(
+            new Breakpoint('tablet', 768),
+            new Breakpoint('desktop', 1024),
+        ));
+        $container->add(DesignTokenRegistryInterface::class, fn () => new DesignTokenRegistry());
+        $container->add(StyleCollectorInterface::class, fn (BlockServiceContainer $c) => new StyleCollector(
+            $c->get(BreakpointRegistryInterface::class),
+            $c->get(DesignTokenRegistryInterface::class),
+        ));
         $container->add(ConditionRegistryInterface::class, fn (BlockServiceContainer $c) => new ConditionRegistry(
             $c->get(SchemaValidatorInterface::class),
         ));
