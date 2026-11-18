@@ -10,6 +10,9 @@ use SpeedySpec\Block\App\Building\BlockTemplateRegistry;
 use SpeedySpec\Block\App\Building\DocumentEditor;
 use SpeedySpec\Block\App\Building\PlaceholderOutput;
 use SpeedySpec\Block\App\Building\PlacementRules;
+use SpeedySpec\Block\App\Documents\DocumentIncluder;
+use SpeedySpec\Block\App\Documents\RegisteredTemplateLibrary;
+use SpeedySpec\Block\App\Documents\SavedTemplateLibrary;
 use SpeedySpec\Block\App\Ids\BlockDuplicator;
 use SpeedySpec\Block\App\Ids\RandomBlockIdGenerator;
 use SpeedySpec\Block\App\Output\BlockOutputRegistry;
@@ -17,8 +20,14 @@ use SpeedySpec\Block\App\Output\DocumentRenderer;
 use SpeedySpec\Block\App\Output\HtmlEscaper;
 use SpeedySpec\Block\App\Output\OutputEscaperRegistry;
 use SpeedySpec\Block\App\Packages\BlockPackageLoader;
+use SpeedySpec\Block\App\Presentation\BreakpointRegistry;
+use SpeedySpec\Block\App\Presentation\DesignTokenRegistry;
+use SpeedySpec\Block\App\Presentation\StyleCollector;
 use SpeedySpec\Block\App\Registries\BlockBehaviourRegistry;
+use SpeedySpec\Block\App\Registries\BlockTemplateLibraryRegistry;
 use SpeedySpec\Block\App\Registries\BlockTypeRegistry;
+use SpeedySpec\Block\App\Registries\CollectionSourceRegistry;
+use SpeedySpec\Block\App\Registries\ConditionRegistry;
 use SpeedySpec\Block\App\Registries\DataSourceRegistry;
 use SpeedySpec\Block\App\Registries\DecoratorRegistry;
 use SpeedySpec\Block\App\Registries\SettingsMigrationRegistry;
@@ -31,6 +40,7 @@ use SpeedySpec\Block\App\Resolving\ValidateStage;
 use SpeedySpec\Block\App\Resolving\ViewStage;
 use SpeedySpec\Block\App\Schema\SubsetSchemaValidator;
 use SpeedySpec\Block\App\Serialization\ClientExport;
+use SpeedySpec\Block\App\Serialization\JsonBlockTemplateSerializer;
 use SpeedySpec\Block\App\Serialization\JsonDocumentSerializer;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
@@ -40,13 +50,23 @@ use SpeedySpec\Block\Domain\Contracts\BlockIdGeneratorInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockTemplateLibraryRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockTemplateRepositoryInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockTemplateSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BreakpointRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
 use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
+use SpeedySpec\Block\Domain\Contracts\CollectionSourceRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\ConditionRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
+use SpeedySpec\Block\Domain\Contracts\DocumentIncluderInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
+use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface;
@@ -54,7 +74,9 @@ use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\StyleCollectorInterface;
 use SpeedySpec\Block\Domain\Contracts\UnresolvedBlockOutputInterface;
+use SpeedySpec\Block\Domain\ValueObjects\Breakpoint;
 
 /**
  * Binds the application implementations of the block contracts, one binding each so a host can replace any alone.
@@ -97,6 +119,12 @@ class AppServiceProvider
             fn (BlockServiceContainer $c) => new BlockDuplicator($c->get(BlockIdGeneratorInterface::class)),
         );
         $container->add(DocumentSerializerInterface::class, fn () => new JsonDocumentSerializer());
+        $container->add(
+            BlockTemplateSerializerInterface::class,
+            fn (BlockServiceContainer $c) => new JsonBlockTemplateSerializer(
+                $c->get(DocumentSerializerInterface::class),
+            ),
+        );
         $container->add(ClientExportInterface::class, fn (BlockServiceContainer $c) => new ClientExport(
             $c->get(BlockTypeRegistryInterface::class),
             $c->get(SchemaValidatorInterface::class),
@@ -175,6 +203,37 @@ class AppServiceProvider
             $c->get(BlockTemplateRegistryInterface::class),
         ));
         $container->add(BlockTemplateRegistryInterface::class, fn () => new BlockTemplateRegistry());
+        $container->add(DocumentIncluderInterface::class, fn (BlockServiceContainer $c) => new DocumentIncluder(
+            $c->get(DocumentRepositoryInterface::class),
+            fn (): DocumentRendererInterface => $c->get(DocumentRendererInterface::class),
+            $c->has(BuilderAccessInterface::class) ? $c->get(BuilderAccessInterface::class) : null,
+        ));
+        $container->add(
+            BlockTemplateLibraryRegistryInterface::class,
+            // The saved library needs a repository, which only a host with storage binds.
+            fn (BlockServiceContainer $c) => new BlockTemplateLibraryRegistry(
+                new RegisteredTemplateLibrary($c->get(BlockTemplateRegistryInterface::class)),
+                ...($c->has(BlockTemplateRepositoryInterface::class)
+                    ? [new SavedTemplateLibrary($c->get(BlockTemplateRepositoryInterface::class))]
+                    : []),
+            ),
+        );
+        $container->add(BreakpointRegistryInterface::class, fn () => new BreakpointRegistry(
+            new Breakpoint('tablet', 768),
+            new Breakpoint('desktop', 1024),
+        ));
+        $container->add(DesignTokenRegistryInterface::class, fn () => new DesignTokenRegistry());
+        $container->add(StyleCollectorInterface::class, fn (BlockServiceContainer $c) => new StyleCollector(
+            $c->get(BreakpointRegistryInterface::class),
+            $c->get(DesignTokenRegistryInterface::class),
+        ));
+        $container->add(ConditionRegistryInterface::class, fn (BlockServiceContainer $c) => new ConditionRegistry(
+            $c->get(SchemaValidatorInterface::class),
+        ));
+        $container->add(
+            CollectionSourceRegistryInterface::class,
+            fn (BlockServiceContainer $c) => new CollectionSourceRegistry($c->get(SchemaValidatorInterface::class)),
+        );
         $container->add(DocumentEditorInterface::class, fn (BlockServiceContainer $c) => new DocumentEditor(
             $c->get(BlockTypeRegistryInterface::class),
             $c->get(PlacementRulesInterface::class),
@@ -184,6 +243,7 @@ class AppServiceProvider
             $c->get(BlockIdGeneratorInterface::class),
             $c->get(BlockDuplicatorInterface::class),
             $c->get(SettingsMigrationRegistryInterface::class),
+            $c->get(StepRegistryInterface::class),
         ));
     }
 }

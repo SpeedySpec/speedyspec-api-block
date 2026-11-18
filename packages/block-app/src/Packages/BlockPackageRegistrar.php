@@ -62,6 +62,11 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
     private array $pendingOther = [];
 
     /**
+     * @var array<string, BlockTemplate>
+     */
+    private array $pendingTemplates = [];
+
+    /**
      * Binds the registrar to one package so it can enforce what that package may claim.
      *
      * @param string $vendor
@@ -179,7 +184,16 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
             ));
         }
 
-        $this->pendingOther[] = fn () => $this->templates->add($template);
+        if ($this->templates->find($template->name) !== null || isset($this->pendingTemplates[$template->name]))
+        {
+            throw new BlockPackageException(sprintf(
+                'Package "%s" cannot add template "%s": a template of that name is already registered.',
+                $this->packageName,
+                $template->name,
+            ));
+        }
+
+        $this->pendingTemplates[$template->name] = $template;
     }
 
     /**
@@ -195,6 +209,7 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
         $types = [];
         $decorators = [];
         $sources = [];
+        $templates = [];
 
         try
         {
@@ -215,6 +230,12 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
                 $this->sources->add($source);
                 $sources[] = $source->name();
             }
+
+            foreach ($this->pendingTemplates as $template)
+            {
+                $this->templates->add($template);
+                $templates[] = $template->name;
+            }
         }
         catch (Throwable $e)
         {
@@ -231,6 +252,11 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
             foreach ($sources as $name)
             {
                 $this->sources->remove($name);
+            }
+
+            foreach ($templates as $name)
+            {
+                $this->templates->remove($name);
             }
 
             throw $e;

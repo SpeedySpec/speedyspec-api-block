@@ -108,7 +108,7 @@ test('a missing id gives no preview, and an unreached block gives one without a 
         ->and($unreached->issues)->toBe([]);
 });
 
-test('a misplaced block previews with the reason it was left out', function () use ($setup) {
+test('a misplaced block previews as a placeholder for an editor, with the reason', function () use ($setup) {
     [$previewer] = previewer(function ($c) use ($setup) {
         $setup($c);
         types($c)->add(type('acme/box', ['children' => true]));
@@ -117,8 +117,14 @@ test('a misplaced block previews with the reason it was left out', function () u
 
     $preview = $previewer->preview($document, 'n', new RenderRequest(Mode::Admin));
 
-    expect($preview->block)->toBeNull()
-        ->and($preview->output)->toBe('')
-        ->and(idsAndKinds($preview->issues))->toBe([['n', IssueKind::DisallowedChild]]);
+    $front = $previewer->preview($document, 'n', new RenderRequest(Mode::Front));
+
+    expect($preview->block->isResolved())->toBeFalse()
+        ->and($preview->output)
+        ->toBe('<div class="block-placeholder" data-block-id="n" data-block-type="acme/field"></div>')
+        ->and(idsAndKinds($preview->issues))->toBe([['n', IssueKind::DisallowedChild]])
+        ->and($front->block)->toBeNull()
+        ->and($front->output)->toBe('')
+        ->and(idsAndKinds($front->issues))->toBe([['n', IssueKind::DisallowedChild]]);
 });
 

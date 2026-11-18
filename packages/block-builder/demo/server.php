@@ -1,0 +1,126 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * A local host for trying the reference builder. Not for production: it lets anyone who can reach it edit.
+ *
+ * Run from the package directory:
+ *
+ *     composer install --working-dir=demo
+ *     php -S 127.0.0.1:8765 demo/server.php
+ */
+
+use SpeedySpec\Block\App\AppServiceProvider;
+use SpeedySpec\Block\App\Documents\DocumentsPackage;
+use SpeedySpec\Block\App\Flow\FlowPackage;
+use SpeedySpec\Block\App\Presentation\PresentationPackage;
+use SpeedySpec\Block\App\Storage\StorageServiceProvider;
+use SpeedySpec\Block\Domain\BlockServiceContainer;
+use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
+use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
+use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
+use SpeedySpec\Block\Domain\Entities\Block;
+use SpeedySpec\Block\Domain\Entities\BlockTree;
+use SpeedySpec\Block\Domain\Entities\Document;
+use SpeedySpec\Block\Domain\ValueObjects\BlockName;
+use SpeedySpec\Block\Domain\ValueObjects\BuilderAbility;
+use SpeedySpec\Block\Infra\Filesystem\FilesystemServiceProvider;
+use SpeedySpec\Block\Presentation\ApiRequest;
+use SpeedySpec\Block\Presentation\BuilderApi;
+use SpeedySpec\Block\Presentation\PresentationServiceProvider;
+use SpeedySpec\Block\Structure\StructurePackage;
+
+require __DIR__ . '/vendor/autoload.php';
+
+$path = (string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+
+if (!str_starts_with($path, '/api/'))
+{
+    $root = dirname(__DIR__);
+    $file = $path === '/' ? __DIR__ . '/index.html' : realpath($root . $path);
+    $types = ['html' => 'text/html', 'js' => 'text/javascript'];
+    $extension = is_string($file) ? pathinfo($file, PATHINFO_EXTENSION) : '';
+
+    // Only the package's own scripts and the demo page are served.
+    if (!is_string($file) || !str_starts_with($file, $root . '/') || !isset($types[$extension]) || !is_file($file))
+    {
+        http_response_code(404);
+
+        return;
+    }
+
+    header('Content-Type: ' . $types[$extension] . '; charset=utf-8');
+    readfile($file);
+
+    return;
+}
+
+// The demo answers only to the machine it runs on.
+if (!in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true))
+{
+    http_response_code(403);
+
+    return;
+}
+
+$container = new BlockServiceContainer();
+(new AppServiceProvider())->register($container);
+(new StorageServiceProvider())->register($container);
+(new FilesystemServiceProvider(sys_get_temp_dir() . '/speedyspec-block-builder-demo'))->register($container);
+(new PresentationServiceProvider())->register($container);
+$container->add(BuilderAccessInterface::class, fn () => new class implements BuilderAccessInterface {
+    public function allows(BuilderAbility $ability, ?string $documentId = null): bool
+    {
+        return true;
+    }
+});
+
+$loader = $container->get(BlockPackageLoaderInterface::class);
+$loader->load(FlowPackage::from($container));
+$loader->load(PresentationPackage::from($container));
+$loader->load(DocumentsPackage::from($container));
+$loader->load(StructurePackage::from($container));
+$container->get(DesignTokenRegistryInterface::class)->set('color.primary', '#2456d6');
+$container->get(DesignTokenRegistryInterface::class)->set('space.md', '1.5rem');
+
+$documents = $container->get(DocumentRepositoryInterface::class);
+
+if ($documents->find('home') === null)
+{
+    $element = fn (string $id, string $tag, string $text) => new Block(
+        $id,
+        BlockName::fromString('core/element'),
+        1,
+        ['tag' => $tag, 'text' => $text],
+    );
+    $column = fn (string $id, Block ...$children) => new Block(
+        $id,
+        BlockName::fromString('core/column'),
+        1,
+        [],
+        [],
+        [],
+        array_values($children),
+    );
+
+    $documents->save(new Document('home', 'page', new BlockTree(
+        $element('title', 'h1', 'A page made of blocks'),
+        new Block('columns', BlockName::fromString('core/columns'), 1, [], [], [], [
+            $column('left', $element('left-text', 'p', 'Select a block on the left to change it.')),
+            $column('right', $element('right-text', 'p', 'Add, move and remove blocks; the page redraws.')),
+        ]),
+    )));
+}
+
+$response = $container->get(BuilderApi::class)->handle(new ApiRequest(
+    $_SERVER['REQUEST_METHOD'] ?? 'GET',
+    substr($path, 4),
+    array_map(strval(...), array_filter($_GET, is_scalar(...))),
+    (string) file_get_contents('php://input'),
+));
+
+http_response_code($response->status);
+header('Content-Type: application/json; charset=utf-8');
+echo $response->json();

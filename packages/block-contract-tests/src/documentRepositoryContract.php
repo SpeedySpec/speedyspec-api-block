@@ -15,12 +15,15 @@ use SpeedySpec\Block\Domain\ValueObjects\BlockName;
  *
  * @param Closure $make
  *   Builds a fresh, empty DocumentRepositoryInterface for each test.
+ * @param int $formatVersion
+ *   A document format the repository can hold. One that stores objects passes a format no serializer writes,
+ *   which proves it carries the version instead of rebuilding the document with the default.
  *
  * @since 0.1.0
  */
-function documentRepositoryContract(Closure $make): void
+function documentRepositoryContract(Closure $make, int $formatVersion = 1): void
 {
-    describe('DocumentRepositoryInterface contract', function () use ($make) {
+    describe('DocumentRepositoryInterface contract', function () use ($make, $formatVersion) {
         $node = fn (string $id, Block ...$children): Block => new Block(
             $id,
             BlockName::fromString('acme/box'),
@@ -34,8 +37,47 @@ function documentRepositoryContract(Closure $make): void
             $id,
             $kind,
             new BlockTree(...$roots),
-            2,
+            $formatVersion,
         );
+
+        it('holds a document of an unknown format faithfully, or refuses it and stores nothing', function () use (
+            $make,
+            $node,
+        ) {
+            $repository = $make();
+            $strange = new Document('odd', 'page', new BlockTree($node('r1')), 99);
+
+            try
+            {
+                $repository->save($strange);
+            }
+            catch (\Throwable)
+            {
+                expect($repository->find('odd'))->toBeNull();
+
+                return;
+            }
+
+            expect($repository->find('odd')->formatVersion)->toBe(99);
+        });
+
+        it('lists the ids of stored documents in the order they were first saved', function () use (
+            $make,
+            $node,
+            $document,
+        ) {
+            $repository = $make();
+
+            expect($repository->ids())->toBe([]);
+
+            $repository->save($document('m', 'page', $node('r1')));
+            $repository->save($document('a', 'page', $node('r1')));
+            $repository->save($document('10', 'page', $node('r1')));
+            $repository->save($document('m', 'post', $node('r2')));
+            $repository->remove('a');
+
+            expect($repository->ids())->toBe(['m', '10']);
+        });
 
         it('returns null for an unknown id', function () use ($make) {
             expect($make()->find('nope'))->toBeNull();
@@ -45,6 +87,7 @@ function documentRepositoryContract(Closure $make): void
             $make,
             $node,
             $document,
+            $formatVersion,
         ) {
             $repository = $make();
             $repository->save($document('a', 'page', $node('r1', $node('c1')), $node('r2')));
@@ -54,7 +97,7 @@ function documentRepositoryContract(Closure $make): void
             expect($found)->not->toBeNull()
                 ->and($found->id)->toBe('a')
                 ->and($found->kind)->toBe('page')
-                ->and($found->formatVersion)->toBe(2)
+                ->and($found->formatVersion)->toBe($formatVersion)
                 ->and($found->tree->ids())->toBe(['r1', 'c1', 'r2']);
         });
 

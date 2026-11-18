@@ -15,6 +15,16 @@ use SpeedySpec\Block\Domain\ValueObjects\Decorator;
 interface DecoratorRegistryInterface
 {
     /**
+     * Lists every decorator, so a builder can offer their settings.
+     *
+     * @return list<Decorator>
+     *   In registration order.
+     *
+     * @since 0.1.0
+     */
+    public function all(): array;
+
+    /**
      * Registers a decorator, replacing any decorator with the same namespace in place.
      *
      * @throws \SpeedySpec\Block\Domain\Exceptions\UnsupportedSchemaException

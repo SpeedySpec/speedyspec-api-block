@@ -1,0 +1,22 @@
+{
+    "name": "speedyspec/block-builder-demo",
+    "description": "SpeedySpec Block System - a local host for trying the reference builder",
+    "type": "project",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.4",
+        "speedyspec/block-app": "^0.1",
+        "speedyspec/block-domain": "^0.1",
+        "speedyspec/block-infra-filesystem": "^0.1",
+        "speedyspec/block-presentation": "^0.1",
+        "speedyspec/block-structure": "^0.1"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../*"
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

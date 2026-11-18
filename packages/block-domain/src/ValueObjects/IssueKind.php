@@ -24,4 +24,10 @@ enum IssueKind: string
     case MissingOutput = 'missing-output';
     case OutputFailed = 'output-failed';
     case InvalidAttribute = 'invalid-attribute';
+    case UnknownCondition = 'unknown-condition';
+    case InvalidCondition = 'invalid-condition';
+    case UnknownCollection = 'unknown-collection';
+    case InvalidCollection = 'invalid-collection';
+    case UnknownDocument = 'unknown-document';
+    case DocumentLoop = 'document-loop';
 }

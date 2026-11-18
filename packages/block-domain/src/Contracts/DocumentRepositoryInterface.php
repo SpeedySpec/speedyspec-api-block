@@ -24,6 +24,16 @@ interface DocumentRepositoryInterface
     public function find(string $id): ?Document;
 
     /**
+     * Lists the ids of every stored document, so a builder can offer them to open.
+     *
+     * @return list<string>
+     *   Ids in the order the documents were first saved.
+     *
+     * @since 0.1.0
+     */
+    public function ids(): array;
+
+    /**
      * Stores a document under its id, replacing any previous one.
      *
      * @param Document $document

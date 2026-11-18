@@ -63,6 +63,9 @@ class DocumentRenderer implements DocumentRendererInterface
      */
     public function render(Document $document, RenderRequest $request, ?Context $context = null): RenderResult
     {
+        // Named so a block that includes other documents can tell it is being asked to include its own page.
+        $context = ($context ?? Context::empty())->with('core/document', $document->id);
+
         return $this->renderResolved($this->resolver->resolve($document, $request->mode, $context), $request);
     }
 

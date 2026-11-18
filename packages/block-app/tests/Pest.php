@@ -578,3 +578,111 @@ if (!function_exists('previewer'))
         return [$container->get(\SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface::class), $container];
     }
 }
+
+if (!function_exists('flow'))
+{
+    /**
+     * Builds a renderer over a fresh container with the flow package loaded, after the test registers what it needs.
+     *
+     * @return array{0: \SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface, 1: BlockServiceContainer}
+     */
+    function flow(?callable $setup = null): array
+    {
+        $container = new BlockServiceContainer();
+        (new MemoryServiceProvider())->register($container);
+        (new AppServiceProvider())->register($container);
+        $container->get(\SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface::class)
+            ->load(\SpeedySpec\Block\App\Flow\FlowPackage::from($container));
+        types($container)->add(type('acme/text', ['settings' => [
+            'type' => 'object',
+            'properties' => ['text' => ['type' => 'string', 'default' => 'none']],
+        ]]));
+        types($container)->add(type('acme/box', ['children' => true]));
+        outputs($container)->set(BlockName::fromString('acme/text'), tag('p'));
+        outputs($container)->set(BlockName::fromString('acme/box'), tag('div'));
+
+        if ($setup !== null)
+        {
+            $setup($container);
+        }
+
+        return [$container->get(\SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface::class), $container];
+    }
+}
+
+if (!function_exists('condition'))
+{
+    /**
+     * Builds a condition whose answer the test decides from the arguments and context it is given.
+     */
+    function condition(
+        string $name,
+        callable $holds,
+        array $schema = ['type' => 'object'],
+    ): \SpeedySpec\Block\Domain\Contracts\ConditionInterface
+    {
+        return new class($name, $holds, $schema) implements \SpeedySpec\Block\Domain\Contracts\ConditionInterface {
+            public function __construct(
+                private readonly string $name,
+                private readonly mixed $holds,
+                private readonly array $schema,
+            )
+            {
+            }
+
+            public function name(): string
+            {
+                return $this->name;
+            }
+
+            public function argumentsSchema(): array
+            {
+                return $this->schema;
+            }
+
+            public function holds(array $arguments, Context $context, Mode $mode): bool
+            {
+                return ($this->holds)($arguments, $context, $mode);
+            }
+        };
+    }
+}
+
+if (!function_exists('collection'))
+{
+    /**
+     * Builds a collection source whose items the test decides from the arguments it is given.
+     */
+    function collection(
+        string $name,
+        callable $items,
+        array $schema = ['type' => 'object'],
+    ): \SpeedySpec\Block\Domain\Contracts\CollectionSourceInterface
+    {
+        return new class($name, $items, $schema) implements
+            \SpeedySpec\Block\Domain\Contracts\CollectionSourceInterface {
+            public function __construct(
+                private readonly string $name,
+                private readonly mixed $items,
+                private readonly array $schema,
+            )
+            {
+            }
+
+            public function name(): string
+            {
+                return $this->name;
+            }
+
+            public function argumentsSchema(): array
+            {
+                return $this->schema;
+            }
+
+            public function items(array $arguments, Context $context, Mode $mode): array
+            {
+                return ($this->items)($arguments, $context, $mode);
+            }
+        };
+    }
+}

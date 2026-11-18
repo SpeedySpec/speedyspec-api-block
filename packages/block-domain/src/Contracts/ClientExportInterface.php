@@ -13,6 +13,10 @@ use SpeedySpec\Block\Domain\ValueObjects\Mode;
  * Resolved blocks and documents carry private settings in both modes; together with the default view, this export
  * is what is safe to send to a visitor.
  *
+ * The export removes private settings only. It carries every block as stored and does not run the steps that hide
+ * blocks, such as visibility rules, because those need the context a page is resolved in. A host must not send
+ * the export of a document whose rules hide content from the visitor; draw the document instead.
+ *
  * @since 0.1.0
  */
 interface ClientExportInterface

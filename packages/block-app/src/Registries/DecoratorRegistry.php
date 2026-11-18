@@ -68,6 +68,11 @@ class DecoratorRegistry implements DecoratorRegistryInterface
         return $this->decorators[$namespace] ?? null;
     }
 
+    public function all(): array
+    {
+        return array_values($this->decorators);
+    }
+
     /**
      * {@inheritDoc}
      *
