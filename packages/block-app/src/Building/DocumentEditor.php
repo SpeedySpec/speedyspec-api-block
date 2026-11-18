@@ -22,6 +22,7 @@ use SpeedySpec\Block\Domain\Entities\BlockTree;
 use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\Exceptions\InvalidSettingPathException;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
+use SpeedySpec\Block\Domain\ValueObjects\BlockLock;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
@@ -207,6 +208,15 @@ class DocumentEditor implements DocumentEditorInterface
             return EditResult::refused($this->unknownBlock($blockId));
         }
 
+        if (BlockLock::of($block)->move)
+        {
+            return EditResult::refused(new EditRefusal(
+                EditRefusalKind::Locked,
+                'This block is locked in place.',
+                $blockId,
+            ));
+        }
+
         if ($position->parentId !== null && in_array($position->parentId, (new BlockTree($block))->ids(), true))
         {
             return EditResult::refused(new EditRefusal(
@@ -236,12 +246,41 @@ class DocumentEditor implements DocumentEditorInterface
 
     public function remove(Document $document, string $blockId): EditResult
     {
-        if ($document->tree->find($blockId) === null)
+        $block = $document->tree->find($blockId);
+
+        if ($block === null)
         {
             return EditResult::refused($this->unknownBlock($blockId));
         }
 
+        $refusals = $this->removalLocks($block);
+
+        if ($refusals !== [])
+        {
+            return EditResult::refused(...$refusals);
+        }
+
         return EditResult::accepted($document->withTree($document->tree->remove($blockId)));
+    }
+
+    /**
+     * Finds the blocks locked against removal in a subtree about to be removed, so removing a parent cannot take a
+     * locked block with it.
+     *
+     * @return list<EditRefusal>
+     */
+    private function removalLocks(Block $block): array
+    {
+        $refusals = BlockLock::of($block)->remove
+            ? [new EditRefusal(EditRefusalKind::Locked, 'This block is locked against removal.', $block->id)]
+            : [];
+
+        foreach ($block->children as $child)
+        {
+            $refusals = [...$refusals, ...$this->removalLocks($child)];
+        }
+
+        return $refusals;
     }
 
     public function removeBlocks(Document $document, array $blockIds): EditResult
@@ -258,11 +297,23 @@ class DocumentEditor implements DocumentEditorInterface
 
         foreach ($blockIds as $blockId)
         {
-            if (!is_string($blockId) || $document->tree->find($blockId) === null)
+            $block = is_string($blockId) ? $document->tree->find($blockId) : null;
+
+            if ($block === null)
             {
                 $refusals[] = $this->unknownBlock(is_string($blockId) ? $blockId : get_debug_type($blockId));
+
+                continue;
+            }
+
+            foreach ($this->removalLocks($block) as $refusal)
+            {
+                // A locked block inside two listed blocks is reported once.
+                $refusals[$refusal->blockId] = $refusal;
             }
         }
+
+        $refusals = array_values($refusals);
 
         if ($refusals !== [])
         {

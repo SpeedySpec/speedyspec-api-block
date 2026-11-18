@@ -453,3 +453,73 @@ test('a transform that cannot keep everything keeps what it can, or is refused',
         ->and($box->document->tree->find('b')->settings)->toBe([])
         ->and($keptChildren->isAccepted())->toBeTrue();
 });
+
+$locks = function ($c) {
+    types($c)->add(type('acme/box', ['children' => true]));
+    $c->get(DecoratorRegistryInterface::class)->add(\SpeedySpec\Block\Domain\ValueObjects\BlockLock::decorator());
+};
+$locked = fn (string $id, array $lock, \SpeedySpec\Block\Domain\Entities\Block ...$children) => block($id, 'acme/box', [], ...$children)
+    ->withExtension('core/lock', $lock);
+
+test('a block locked in place cannot be moved, but its unlocked siblings can', function () use ($locks, $locked) {
+    [$editor] = editor($locks);
+    $document = doc($locked('a', ['move' => true]), block('b'), block('c'));
+
+    $refused = $editor->move($document, 'a', Position::root(2));
+
+    expect(refusals($refused))->toBe([EditRefusalKind::Locked])
+        ->and($refused->refusals[0]->blockId)->toBe('a')
+        ->and($refused->refusals[0]->message)->toBe('This block is locked in place.')
+        ->and($editor->move($document, 'c', Position::root(0))->isAccepted())->toBeTrue()
+        ->and($editor->remove($document, 'a')->isAccepted())->toBeTrue();
+});
+
+test('a block locked against removal cannot be removed, alone, with others or with its parent', function () use (
+    $locks,
+    $locked,
+) {
+    [$editor] = editor($locks);
+    $document = doc(block('p', 'acme/box', [], $locked('a', ['remove' => true])), block('b'));
+
+    $alone = $editor->remove($document, 'a');
+    $withParent = $editor->remove($document, 'p');
+    $many = $editor->removeBlocks($document, ['b', 'a']);
+
+    expect(refusals($alone))->toBe([EditRefusalKind::Locked])
+        ->and($alone->refusals[0]->message)->toBe('This block is locked against removal.')
+        ->and(refusals($withParent))->toBe([EditRefusalKind::Locked])
+        ->and($withParent->refusals[0]->blockId)->toBe('a')
+        ->and(refusals($many))->toBe([EditRefusalKind::Locked])
+        ->and($many->document)->toBeNull()
+        ->and($editor->remove($document, 'b')->isAccepted())->toBeTrue()
+        ->and($editor->move($document, 'a', Position::root(0))->isAccepted())->toBeTrue();
+});
+
+test('anyone who may edit may unlock', function () use ($locks, $locked) {
+    [$editor] = editor($locks);
+    $document = doc($locked('a', ['move' => true, 'remove' => true]));
+
+    $unlocked = $editor->updateExtension($document, 'a', 'core/lock', ['move' => false, 'remove' => false]);
+
+    expect($unlocked->isAccepted())->toBeTrue()
+        ->and($editor->remove($unlocked->document, 'a')->isAccepted())->toBeTrue();
+});
+
+test('undo is never stopped by a lock, so locking and pasting locked blocks can be undone', function () use (
+    $locks,
+    $locked,
+) {
+    [$editor] = editor($locks);
+    $before = doc(block('a'), block('b'));
+
+    $lockedNow = $editor->updateExtension($before, 'a', 'core/lock', ['move' => true, 'remove' => true]);
+    $undoLock = $editor->restore($lockedNow->document, $before->tree->roots());
+    $pasted = $editor->insertBlocks($before, [$locked('x', ['remove' => true])], Position::root(2));
+    $undoPaste = $editor->restore($pasted->document, $before->tree->roots());
+
+    expect($lockedNow->isAccepted())->toBeTrue()
+        ->and($undoLock->isAccepted())->toBeTrue()
+        ->and($pasted->isAccepted())->toBeTrue()
+        ->and($undoPaste->isAccepted())->toBeTrue()
+        ->and($undoPaste->document->tree->ids())->toBe(['a', 'b']);
+});

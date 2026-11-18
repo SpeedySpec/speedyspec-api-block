@@ -8,7 +8,7 @@ import {
 import { createBuilder } from './store.js';
 import { accepts, addedMedia, mediaQuery, movedMedia, withoutMediaAt } from './media.js';
 import { STYLE } from './styles.js';
-import { pick } from './selection.js';
+import { lockOf, pick } from './selection.js';
 import { isColourToken, tokenGroups, tokenNameProblem, widthProblem } from './site-styles.js';
 import { SAVED_LIBRARY, matchTemplates, templateName } from './templates.js';
 import { find, positionOf, walk } from './tree.js';
@@ -46,6 +46,7 @@ const ICONS = {
     undo: '<path d="M6 3 3 6l3 3M3 6h6.5a3.5 3.5 0 0 1 0 7H6"/>',
     redo: '<path d="M10 3l3 3-3 3M13 6H6.5a3.5 3.5 0 0 0 0 7H10"/>',
     styles: '<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11M8 2.5a5.5 5.5 0 0 0 0 11"/>',
+    lock: '<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>',
     more: '<circle cx="3.5" cy="8" r=".6"/><circle cx="8" cy="8" r=".6"/><circle cx="12.5" cy="8" r=".6"/>',
 };
 
@@ -723,7 +724,7 @@ export class BlockBuilderElement extends HTMLElement {
                 'button',
                 {
                     class: 'bb-row',
-                    draggable: 'true',
+                    draggable: String(!lockOf(block).move),
                     ondragstart: (event) => this.startDrag(event, { id: block.id }),
                     ondragend: () => this.endDrag(),
                     ondragover: (event) => this.dragOver(event, event.currentTarget, block.id, false),
@@ -735,6 +736,9 @@ export class BlockBuilderElement extends HTMLElement {
                 },
                 el('b', { text: titles[block.type] ?? block.type }),
                 el('small', { text: this.hint(block) }),
+                lockOf(block).move || lockOf(block).remove
+                    ? el('span', { class: 'bb-lock', title: 'Locked', 'aria-label': 'Locked' }, icon('lock'))
+                    : null,
                 troubled.has(block.id) ? el('span', { class: 'bb-dot', title: 'This block has a problem' }) : null,
             ),
         );
@@ -846,7 +850,11 @@ export class BlockBuilderElement extends HTMLElement {
         });
         // Blocks are dragged on the page itself. Whether "before" and "after" run across or down depends on how the
         // block's parent lays its children out, so a column is dropped beside its neighbour, not above it.
-        page.querySelectorAll(`[${NAMED}]`).forEach((node) => node.setAttribute('draggable', 'true'));
+        // A block locked in place is not offered for dragging, since the server would refuse the move.
+        page.querySelectorAll(`[${NAMED}]`).forEach((node) => node.setAttribute(
+            'draggable',
+            String(!lockOf(find(this.builder.state().document, node.getAttribute(NAMED))).move),
+        ));
         page.addEventListener('dragstart', (event) => {
             const block = named(event);
 
@@ -1130,6 +1138,7 @@ export class BlockBuilderElement extends HTMLElement {
         }
 
         const here = positionOf(state.document, block.id);
+        const lock = lockOf(block);
         const beside = here.parent === null ? state.document.blocks : find(state.document, here.parent).children;
         const tool = (label, glyph, run, disabled = false) =>
             el('button', { type: 'button', title: label, 'aria-label': label, disabled, onclick: run }, icon(glyph));
@@ -1137,11 +1146,11 @@ export class BlockBuilderElement extends HTMLElement {
         this.bar.replaceChildren(
             el('strong', { text: this.titles(state)[block.type] ?? block.type }),
             tool('Select the block this is inside', 'parent', () => this.select(here.parent), here.parent === null),
-            tool('Move up', 'up', () => this.builder.moveBy(block.id, -1), here.index === 0),
-            tool('Move down', 'down', () => this.builder.moveBy(block.id, 1), here.index === beside.length - 1),
+            tool('Move up', 'up', () => this.builder.moveBy(block.id, -1), here.index === 0 || lock.move),
+            tool('Move down', 'down', () => this.builder.moveBy(block.id, 1), here.index === beside.length - 1 || lock.move),
             tool('Duplicate', 'copy', () => this.builder.duplicate(block.id)),
             tool('Add a block', 'add', () => this.openDrawer('add')),
-            tool('Remove', 'remove', () => this.builder.remove(block.id)),
+            tool(lock.remove ? 'Remove (locked)' : 'Remove', 'remove', () => this.builder.remove(block.id), lock.remove),
             this.moreButton(state, block),
         );
         this.bar.hidden = false;
@@ -1165,7 +1174,7 @@ export class BlockBuilderElement extends HTMLElement {
     moreActions(state, block) {
         const actions = [
             { label: 'Copy', run: () => this.copyBlocks([block.id], false) },
-            { label: 'Cut', run: () => this.copyBlocks([block.id], true) },
+            { label: 'Cut', run: () => this.copyBlocks([block.id], true), disabled: lockOf(block).remove },
         ];
 
         if (typeof navigator.clipboard?.readText === 'function') {

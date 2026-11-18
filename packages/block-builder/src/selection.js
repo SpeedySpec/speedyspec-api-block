@@ -29,3 +29,19 @@ export function pick(document, ids) {
 
     return picked;
 }
+
+/**
+ * The extension a block's lock is kept in; the server refuses moving or removing a block it locks.
+ */
+export const LOCK_NS = 'core/lock';
+
+/**
+ * Reads a block's lock the way the server does, so the editor turns off what the server would refuse.
+ *
+ * @returns {{move: boolean, remove: boolean}}
+ */
+export function lockOf(block) {
+    const lock = block?.extensions?.[LOCK_NS] ?? {};
+
+    return { move: lock.move === true, remove: lock.remove === true };
+}

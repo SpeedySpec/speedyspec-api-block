@@ -3,6 +3,8 @@
  * does, and checking a link. Strings and plain objects in, strings out, so it is tested without a browser.
  */
 
+import { lockOf } from './selection.js';
+
 const ALLOWED = new Set(['strong', 'em', 's', 'code', 'sub', 'sup', 'mark', 'a']);
 const RENAMED = { b: 'strong', i: 'em', strike: 's', del: 's' };
 const BLOCKS = new Set(['div', 'p']);
@@ -162,7 +164,7 @@ const TYPED_CONTROLS = ['rich-text', 'table', 'code'];
  * @param {string} path
  */
 export function removableWhenEmpty(block, schema, path) {
-    if (path !== 'text' || (block?.children ?? []).length > 0) {
+    if (path !== 'text' || (block?.children ?? []).length > 0 || lockOf(block).remove) {
         return false;
     }
 

@@ -93,6 +93,7 @@ block-builder .bb-row[draggable], block-builder .bb-tile[draggable] { cursor: gr
 block-builder .bb-row[data-bb-drop="before"] { box-shadow: inset 0 2px 0 var(--bb-pick); }
 block-builder .bb-row[data-bb-drop="after"] { box-shadow: inset 0 -2px 0 var(--bb-pick); }
 block-builder .bb-row[data-bb-drop="inside"] { background: var(--bb-pick-wash); box-shadow: inset 0 0 0 2px var(--bb-pick); }
+block-builder .bb-lock { display: grid; flex: none; place-items: center; color: var(--bb-soft); }
 block-builder .bb-dot { flex: none; width: .5rem; height: .5rem; border-radius: 50%; background: var(--bb-bad); }
 
 /* Stage */

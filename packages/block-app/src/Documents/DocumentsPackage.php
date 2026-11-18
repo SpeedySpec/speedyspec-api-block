@@ -12,6 +12,7 @@ use SpeedySpec\Block\Domain\Contracts\CollectStepInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentIncluderInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\ValidateStepInterface;
+use SpeedySpec\Block\Domain\ValueObjects\BlockLock;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 
 /**
@@ -72,5 +73,7 @@ class DocumentsPackage implements BlockPackageInterface
         $registrar->output($name, $include);
         $registrar->step(ValidateStepInterface::class, $include);
         $registrar->step(CollectStepInterface::class, $include);
+        // Locks live here because every document can hold them; the document editor enforces them.
+        $registrar->decorator(BlockLock::decorator());
     }
 }
