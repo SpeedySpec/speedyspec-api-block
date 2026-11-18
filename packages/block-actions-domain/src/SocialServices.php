@@ -44,13 +44,13 @@ class SocialServices
      */
     private const array HOSTS = [
         'bluesky' => ['bsky.app'],
-        'facebook' => ['facebook.com', 'www.facebook.com'],
+        'facebook' => ['facebook.com', 'www.facebook.com', 'm.facebook.com'],
         'instagram' => ['instagram.com', 'www.instagram.com'],
-        'linkedin' => ['linkedin.com', 'www.linkedin.com'],
-        'x' => ['x.com', 'twitter.com'],
-        'youtube' => ['youtube.com', 'www.youtube.com'],
+        'linkedin' => ['linkedin.com', 'www.linkedin.com', 'm.linkedin.com'],
+        'x' => ['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com'],
+        'youtube' => ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'],
         'tiktok' => ['tiktok.com', 'www.tiktok.com'],
-        'github' => ['github.com'],
+        'github' => ['github.com', 'www.github.com'],
         'threads' => ['threads.net', 'www.threads.net'],
         'pinterest' => ['pinterest.com', 'www.pinterest.com'],
     ];

@@ -100,10 +100,12 @@ class ActionsOutput implements BlockOutputInterface, DeclaresAssetsInterface
 
         if (!$this->usable($input, $link))
         {
+            // The note sits below the greyed-out button, in the page's own colours, so it can be read on any button.
             return $input->request->mode !== Mode::Admin ? '' : sprintf(
-                '<span%s><span%s>%s</span>%s</span>',
+                '<span%s><span%s><span%s>%s</span></span>%s</span>',
+                $input->escaper->attributes($input->attributes->withClass('b-unset')),
                 $input->escaper->attributes(
-                    $input->attributes->withClass(...$classes)->withAttribute('aria-disabled', 'true'),
+                    AttributeBag::empty()->withClass(...$classes)->withAttribute('aria-disabled', 'true'),
                 ),
                 $input->escaper->attributes($this->mark($input, 'text')),
                 $text,

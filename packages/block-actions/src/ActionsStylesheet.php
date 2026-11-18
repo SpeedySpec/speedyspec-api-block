@@ -32,7 +32,8 @@ class ActionsStylesheet
             text-decoration: underline; text-underline-offset: .2em; }
         .b-button:focus-visible, .b-social-link:focus-visible { outline: 3px solid var(--color-focus, #f5a623);
             outline-offset: 2px; }
-        .b-button[aria-disabled="true"] { opacity: .55; cursor: default; }
+        .b-unset { display: inline-flex; flex-direction: column; align-items: flex-start; gap: .25em; }
+        .b-button[aria-disabled="true"], .b-social-link[aria-disabled="true"] { opacity: .55; cursor: default; }
         .b-note { display: block; margin-top: .25em; font-size: .75em; font-weight: 400; color: #5b6472; }
         .b-buttons { display: flex; flex-wrap: wrap; gap: var(--space-sm, .75rem); }
         .b-buttons--center { justify-content: center; }

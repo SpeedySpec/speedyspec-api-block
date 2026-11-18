@@ -41,6 +41,13 @@ test('a social link to its own service is shown with its name', function (string
     ['website', 'https://e.test', 'Website'],
     ['mastodon', 'https://any.social/@someone', 'Mastodon'],
     ['email', 'mailto:a@e.test', 'Email'],
+    'a phone link to Facebook' => ['facebook', 'https://m.facebook.com/someone', 'Facebook'],
+    'a short YouTube link' => ['youtube', 'https://youtu.be/abcdefghijk', 'YouTube'],
+    'a phone link to YouTube' => ['youtube', 'https://m.youtube.com/@someone', 'YouTube'],
+    'X with www' => ['x', 'https://www.x.com/someone', 'X'],
+    'a phone link to Twitter' => ['x', 'https://mobile.twitter.com/someone', 'X'],
+    'GitHub with www' => ['github', 'https://www.github.com/someone', 'GitHub'],
+    'a phone link to LinkedIn' => ['linkedin', 'https://m.linkedin.com/in/someone', 'LinkedIn'],
 ]);
 
 test('a social link with no link yet is not set up: an empty link and no issue', function () {

@@ -116,8 +116,8 @@ test('a button or social link without a usable link is not set up', function (st
 
     expect(page(button(['text' => 'Go', 'link' => $link])))->toBe('')
         ->and(page(button(['text' => 'Go', 'link' => $link]), true))
-        ->toBe('<span class="b-button b-button--primary b-button--medium" aria-disabled="true">'
-            . '<span data-block-setting="text">Go</span>'
+        ->toBe('<span class="b-unset"><span class="b-button b-button--primary b-button--medium"'
+            . ' aria-disabled="true"><span data-block-setting="text">Go</span></span>'
             . '<span class="b-note">Add a link in the block\'s settings.</span></span>')
         ->and(page($social()))->not->toContain('href')
         ->and(page($social()))->not->toContain('<li');
@@ -165,6 +165,12 @@ test('every block brings the actions stylesheet, listed once per page', function
     ]);
 
     expect(array_count_values($result->assets)['core/actions'] ?? 0)->toBe(1);
+});
+
+test('a block not set up shows its note in the page\'s own colours, below it, not faded', function () {
+    expect(ActionsStylesheet::CSS)->toContain('.b-unset {')
+        ->and(ActionsStylesheet::CSS)->toMatch('/\\.b-unset \\{[^}]*flex-direction: column/')
+        ->and(ActionsStylesheet::CSS)->toContain('.b-social-link[aria-disabled="true"]');
 });
 
 test('the stylesheet loads nothing else and keeps focus visible', function () {
