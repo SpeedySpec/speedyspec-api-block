@@ -43,6 +43,8 @@ block-builder .bb-name { margin-right: .5rem; overflow: hidden; font-size: 15px;
 block-builder .bb-topbtn { display: inline-flex; align-items: center; gap: .4rem; height: 2rem; padding: 0 .7rem;
     border: 1px solid #3a3f4b; border-radius: 6px; color: #e9ebf0; background: transparent; }
 block-builder .bb-topbtn:hover { background: #262a33; }
+block-builder .bb-topicon { width: 2rem; padding: 0; justify-content: center; }
+block-builder .bb-topbtn:disabled { border-color: #2c3038; }
 block-builder .bb-topbtn[aria-pressed="true"] { border-color: var(--bb-pick); color: #fff; background: var(--bb-pick); }
 block-builder .bb-seg { display: inline-flex; padding: 2px; border-radius: 7px; background: #262a33; }
 block-builder .bb-seg button { height: 1.75rem; padding: 0 .7rem; border: 0; border-radius: 5px; color: #b9bfcb;

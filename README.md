@@ -172,7 +172,7 @@ echo $response->json();
 | `POST /documents` | Creates an empty document from `id` and `kind`. | edit |
 | `GET /documents/{id}` | The document as stored, with its issues. | edit |
 | `DELETE /documents/{id}` | Removes it. | edit |
-| `POST /documents/{id}/operations` | One editing operation; saves on success, `422` with every refusal otherwise. | edit |
+| `POST /documents/{id}/operations` | One editing operation, including `restore`, which puts back a whole earlier state and is what undo is built on; saves on success, `422` with every refusal otherwise. | edit |
 | `POST /documents/{id}/preview` | Draws one block; `mode` is `admin` or `front`. | edit, or view for front |
 | `GET /documents/{id}/render` | Draws the page, with its stylesheet. | view, or edit for `mode=admin` |
 | `GET /templates` | Template libraries and their templates. | edit |

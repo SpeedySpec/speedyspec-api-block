@@ -51,6 +51,20 @@ interface DocumentEditorInterface
     public function insertBlocks(Document $document, array $blocks, Position $position): EditResult;
 
     /**
+     * Replaces every block of the document with the given ones, keeping their ids.
+     *
+     * This is what undo and redo are built on: a builder keeps the states it was given and hands one back. The
+     * state is checked like any other edit, since it arrives from outside and block types may have changed since
+     * it was taken. Unlike a paste, ids are kept, so a block is the same block before and after.
+     *
+     * @param list<Block> $blocks
+     *   The document's root blocks. Every id in them must be different.
+     *
+     * @since 0.1.0
+     */
+    public function restore(Document $document, array $blocks): EditResult;
+
+    /**
      * Adds a copy of a template's blocks; the template itself is unchanged and can be inserted again.
      *
      * @since 0.1.0

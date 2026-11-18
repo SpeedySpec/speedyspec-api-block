@@ -312,3 +312,35 @@ test('binding arguments are judged as given, the way the resolver judges them', 
         ->toBeTrue();
 });
 
+test('restore puts back a whole earlier state of the document, keeping every id', function () use ($setup) {
+    [$editor, $c] = editor($setup);
+    $field = block('n', 'acme/field', ['key' => 'name'])->withTypeVersion(2);
+    $earlier = [block('f', 'acme/form', ['title' => 'Hi'], $field), block('b', 'acme/box')];
+    $now = doc(block('z', 'acme/box'));
+
+    $result = $editor->restore($now, $earlier);
+
+    expect($result->isAccepted())->toBeTrue()
+        ->and($result->document->tree->ids())->toBe(['f', 'n', 'b'])
+        ->and($result->document->id)->toBe($now->id)
+        ->and($result->affectedIds)->toBe(['f', 'n', 'b'])
+        ->and($now->tree->ids())->toBe(['z'])
+        ->and($editor->restore($now, [])->document->tree->ids())->toBe([])
+        ->and($c->get(DocumentResolverInterface::class)->resolve($result->document, Mode::Front)->issues)->toBe([]);
+});
+
+test('restore is held to the same checks as any other edit', function () use ($setup) {
+    [$editor] = editor($setup);
+    $now = doc(block('z', 'acme/box'));
+    $try = fn (array $blocks) => refusals($editor->restore($now, $blocks));
+
+    expect($try([block('n', 'acme/field', ['key' => 'k'])->withTypeVersion(2)]))
+        ->toBe([EditRefusalKind::DisallowedPlacement])
+        ->and($try([block('f', 'acme/form', ['title' => 'far too long a title'])]))
+        ->toBe([EditRefusalKind::InvalidSettings])
+        ->and($try([block('g', 'gone/away')]))->toBe([EditRefusalKind::UnknownType])
+        ->and($try(['nope']))->toBe([EditRefusalKind::InvalidBlock])
+        ->and($try([block('a', 'acme/box'), block('a', 'acme/box')]))->toBe([EditRefusalKind::InvalidBlock])
+        ->and($try([block('a', 'acme/box', [], block('a', 'acme/box'))]))->toBe([EditRefusalKind::InvalidBlock])
+        ->and($editor->restore($now, ['nope'])->document)->toBeNull();
+});

@@ -119,7 +119,7 @@ class BuilderApi
             $method === 'GET' && $root === 'documents' && $count === 2 => $this->read($path[1]),
             $method === 'DELETE' && $root === 'documents' && $count === 2 => $this->delete($path[1]),
             $method === 'POST' && $root === 'documents' && $count === 3 && $path[2] === 'operations'
-                => $this->operate($path[1], $this->body($request)),
+                => $this->operate($path[1], $request),
             $method === 'POST' && $root === 'documents' && $count === 3 && $path[2] === 'preview'
                 => $this->preview($path[1], $this->body($request)),
             $method === 'GET' && $root === 'documents' && $count === 3 && $path[2] === 'render'
@@ -236,10 +236,10 @@ class BuilderApi
      *
      * @since 0.1.0
      */
-    private function operate(string $id, array $body): ApiResponse
+    private function operate(string $id, ApiRequest $request): ApiResponse
     {
         $document = $this->document($id, BuilderAbility::Edit);
-        $result = $this->edit($document, $body);
+        $result = $this->edit($document, $this->body($request), $request);
 
         if (!$result->isAccepted())
         {
@@ -270,7 +270,7 @@ class BuilderApi
      *
      * @since 0.1.0
      */
-    private function edit(Document $document, array $body): EditResult
+    private function edit(Document $document, array $body, ApiRequest $request): EditResult
     {
         $editor = $this->container->get(DocumentEditorInterface::class);
         $block = fn (): string => $this->text($body, 'block');
@@ -284,7 +284,7 @@ class BuilderApi
                 $this->position($body),
                 $this->map($body, 'settings'),
             ),
-            'insertBlocks' => $editor->insertBlocks($document, $this->blocks($body), $this->position($body)),
+            'insertBlocks' => $editor->insertBlocks($document, $this->blocks($request), $this->position($body)),
             'insertTemplate' => $editor->insertTemplate(
                 $document,
                 $this->template($this->text($body, 'template')),
@@ -302,6 +302,7 @@ class BuilderApi
             ),
             'setBinding' => $editor->setBinding($document, $block(), $path(), $this->binding($body)),
             'clearBinding' => $editor->clearBinding($document, $block(), $path()),
+            'restore' => $editor->restore($document, $this->blocks($request)),
             default => throw new ApiProblem(400, 'The request names no editing operation this API knows.'),
         };
     }
@@ -626,19 +627,18 @@ class BuilderApi
     /**
      * Reads pasted blocks, which arrive in the same form documents are stored in.
      *
-     * @param array<string, mixed> $body
-     *
      * @return list<Block>
      *
      * @throws ApiProblem
      *
      * @since 0.1.0
      */
-    private function blocks(array $body): array
+    private function blocks(ApiRequest $request): array
     {
-        $blocks = $body['blocks'] ?? null;
+        // Read as objects rather than maps: a block's empty settings must stay `{}`, which a PHP array cannot say.
+        $blocks = json_decode($request->body, false, 64)->blocks ?? null;
 
-        if (!is_array($blocks) || !array_is_list($blocks))
+        if (!is_array($blocks))
         {
             throw new ApiProblem(400, '"blocks" must be a list of blocks.');
         }

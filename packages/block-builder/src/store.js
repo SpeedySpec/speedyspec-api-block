@@ -8,9 +8,13 @@ import { find, indentPosition, movePosition, outdentPosition } from './tree.js';
  * reasons it refused; the store shows whichever came back. Edits are sent one at a time, in the order they were
  * made, so the document on screen is always the one the server last answered with.
  *
- * @param {{client: object, documentId: string}} options
+ * Undo and redo work on whole states: the store keeps the blocks the server gave it before each edit and asks
+ * the server to restore them, which checks them like any other edit. It keeps no inverse of each operation.
+ *
+ * @param {{client: object, documentId: string, historyLimit?: number}} options `historyLimit` is how many steps
+ *   can be undone.
  */
-export function createBuilder({ client, documentId }) {
+export function createBuilder({ client, documentId, historyLimit = 50 }) {
     let state = {
         status: 'idle',
         document: null,
@@ -21,10 +25,17 @@ export function createBuilder({ client, documentId }) {
         refusals: [],
         error: null,
         saving: false,
+        canUndo: false,
+        canRedo: false,
         preview: { output: '', css: '' },
     };
     const listeners = new Set();
     let queue = Promise.resolve();
+
+    // Earlier and later states of the document's blocks, nearest last. Kept out of the state: they are large, and
+    // an interface only needs to know whether there is anything to go back or forward to.
+    const past = [];
+    const future = [];
 
     function set(changes) {
         state = { ...state, ...changes };
@@ -43,23 +54,36 @@ export function createBuilder({ client, documentId }) {
     /**
      * Sends one operation after any already under way, and shows the answer.
      *
-     * @param {object} operation The operation as the API takes it.
+     * @param {object|(() => ?object)} operation The operation as the API takes it, or a function that decides it
+     *   when its turn comes; returning null sends nothing.
      * @param {(result: object) => object} [after] Extra state to set once the edit is accepted.
+     * @param {(before: Array<object>) => void} [remember] What to do with the blocks as they were before, once
+     *   the edit is accepted. An ordinary edit makes them the next thing to undo to.
      */
-    function edit(operation, after = () => ({})) {
+    function edit(operation, after = () => ({}), remember = record) {
         queue = queue.then(async () => {
+            const wanted = typeof operation === 'function' ? operation() : operation;
+
+            if (wanted === null) {
+                return;
+            }
+
             set({ saving: true });
 
             try {
-                const result = await client.operate(documentId, operation);
+                const before = state.document.blocks;
+                const result = await client.operate(documentId, wanted);
                 const selected = find(result.document, state.selected) === null ? null : state.selected;
 
+                remember(before);
                 set({
                     document: result.document,
                     issues: result.issues,
                     refusals: [],
                     error: null,
                     selected,
+                    canUndo: past.length > 0,
+                    canRedo: future.length > 0,
                     ...after(result),
                 });
                 await refreshPreview();
@@ -75,6 +99,29 @@ export function createBuilder({ client, documentId }) {
         });
 
         return queue;
+    }
+
+    function record(before) {
+        past.push(before);
+        future.length = 0;
+
+        if (past.length > historyLimit) {
+            past.shift();
+        }
+    }
+
+    /**
+     * Restores the nearest state from one pile and, once the server accepts it, moves the current one to the other.
+     */
+    function step(from, to) {
+        return edit(
+            () => (from.length === 0 ? null : { operation: 'restore', blocks: from.at(-1) }),
+            () => ({}),
+            (before) => {
+                from.pop();
+                to.push(before);
+            },
+        );
     }
 
     const moveTo = (id, position) =>
@@ -157,6 +204,16 @@ export function createBuilder({ client, documentId }) {
 
         updateExtension: (id, namespace, settings) =>
             edit({ operation: 'updateExtension', block: id, namespace, settings }),
+
+        /**
+         * Takes the document back to how it was before the last edit.
+         */
+        undo: () => step(past, future),
+
+        /**
+         * Puts back the edit that was last undone.
+         */
+        redo: () => step(future, past),
 
         refreshPreview,
     };

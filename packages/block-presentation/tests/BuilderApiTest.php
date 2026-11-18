@@ -491,3 +491,35 @@ test('an editor\'s drawing names each block on its element, and a visitor\'s doe
         ->and($preview['output'])->toBe('<p data-block-id="t">Hi</p>');
 });
 
+test('a whole earlier state of a document can be restored, and is checked like any edit', function () use (
+    $host,
+    $call,
+) {
+    [$api, $c] = $host();
+    [, $before, $raw] = $call($api, 'GET', '/documents/home');
+    $call($api, 'POST', '/documents/home/operations', [], ['operation' => 'remove', 'block' => 't']);
+
+    // Sent back as a browser would: decoded as objects, so an empty map stays a map.
+    [$status, $body] = $call($api, 'POST', '/documents/home/operations', [], [
+        'operation' => 'restore',
+        'blocks' => json_decode($raw)->document->blocks,
+    ]);
+    [$bad] = $call($api, 'POST', '/documents/home/operations', [], [
+        'operation' => 'restore',
+        'blocks' => [['id' => 'x', 'type' => 'gone/away']],
+    ]);
+    [$twice] = $call($api, 'POST', '/documents/home/operations', [], [
+        'operation' => 'restore',
+        'blocks' => [['id' => 'x', 'type' => 'acme/box'], ['id' => 'x', 'type' => 'acme/box']],
+    ]);
+    [$missing] = $call($api, 'POST', '/documents/home/operations', [], ['operation' => 'restore']);
+    $stored = $c->get(DocumentRepositoryInterface::class)->find('home');
+
+    expect($status)->toBe(200)
+        ->and($body['document']['blocks'])->toBe($before['document']['blocks'])
+        ->and($stored->tree->find('t')->settings)->toBe(['text' => 'Hi', 'note' => 'secret'])
+        ->and($bad)->toBe(422)
+        ->and($twice)->toBe(400)
+        ->and($missing)->toBe(400)
+        ->and($stored->tree->ids())->toBe(['b', 't']);
+});
