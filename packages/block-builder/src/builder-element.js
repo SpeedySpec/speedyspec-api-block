@@ -17,6 +17,7 @@ import {
     withoutRule,
     writeResponsive,
 } from './view.js';
+import { dropPosition, dropZone } from './drag.js';
 
 const STYLE_NS = 'core/style';
 const RULES_NS = 'core/visibility';
@@ -106,7 +107,14 @@ export class BlockBuilderElement extends HTMLElement {
         this.bar = el('div', { class: 'bb-bar', hidden: true });
         this.page = el('div', { class: 'bb-page' }, this.frame, this.bar);
         this.toast = el('div', { class: 'bb-toast', role: 'alert', hidden: true });
-        this.blank = el('div', { class: 'bb-blank', hidden: true });
+        this.blank = el('div', {
+            class: 'bb-blank',
+            hidden: true,
+            ondragover: (event) => this.dragOver(event, null, null, false),
+            ondrop: (event) => this.dropHere(event),
+        });
+        this.drag = null;
+        this.drop = null;
         this.regions = {
             top: el('header', { class: 'bb-top' }),
             drawer: el('aside', { class: 'bb-drawer' }),
@@ -288,6 +296,9 @@ export class BlockBuilderElement extends HTMLElement {
                                 'button',
                                 {
                                     class: 'bb-tile',
+                                    draggable: fits ? 'true' : null,
+                                    ondragstart: (event) => this.startDrag(event, { type: entry.name }),
+                                    ondragend: () => this.endDrag(),
                                     type: 'button',
                                     disabled: !fits,
                                     title: fits ? entry.description : `${entry.title} cannot go there.`,
@@ -342,6 +353,11 @@ export class BlockBuilderElement extends HTMLElement {
                 'button',
                 {
                     class: 'bb-row',
+                    draggable: 'true',
+                    ondragstart: (event) => this.startDrag(event, { id: block.id }),
+                    ondragend: () => this.endDrag(),
+                    ondragover: (event) => this.dragOver(event, event.currentTarget, block.id, false),
+                    ondrop: (event) => this.dropHere(event),
                     type: 'button',
                     style: `padding-left: ${0.4 + depth * 1.1}rem`,
                     'aria-current': String(state.selected === block.id),
@@ -436,6 +452,33 @@ export class BlockBuilderElement extends HTMLElement {
             page.querySelectorAll('[data-bb-over]').forEach((node) => node.removeAttribute('data-bb-over'));
             named(event)?.setAttribute('data-bb-over', '');
         });
+        // Blocks are dragged on the page itself. Whether "before" and "after" run across or down depends on how the
+        // block's parent lays its children out, so a column is dropped beside its neighbour, not above it.
+        page.querySelectorAll(`[${NAMED}]`).forEach((node) => node.setAttribute('draggable', 'true'));
+        page.addEventListener('dragstart', (event) => {
+            const block = named(event);
+
+            if (block !== null) {
+                this.startDrag(event, { id: block.getAttribute(NAMED) });
+            }
+        });
+        page.addEventListener('dragover', (event) => {
+            const block = named(event);
+
+            if (block === null) {
+                this.dragOver(event, null, null, false);
+
+                return;
+            }
+
+            const layout = page.defaultView.getComputedStyle(block.parentElement);
+            const across = (layout.display.includes('flex') && layout.flexDirection.startsWith('row'))
+                || (layout.display.includes('grid') && layout.gridTemplateColumns.trim().split(/\s+/).length > 1);
+
+            this.dragOver(event, block, block.getAttribute(NAMED), across);
+        });
+        page.addEventListener('drop', (event) => this.dropHere(event));
+        page.addEventListener('dragend', () => this.endDrag());
         page.addEventListener('mouseleave', () => {
             page.querySelectorAll('[data-bb-over]').forEach((node) => node.removeAttribute('data-bb-over'));
         });
@@ -499,10 +542,90 @@ export class BlockBuilderElement extends HTMLElement {
         this.bar.style.left = `${left}px`;
     }
 
+    // ---- Dragging ------------------------------------------------------------------------------------------
+
+    /**
+     * Begins dragging a block that is on the page (`id`) or a new one from the add-block panel (`type`).
+     */
+    startDrag(event, drag) {
+        this.drag = drag;
+        event.stopPropagation();
+        event.dataTransfer.effectAllowed = drag.id === undefined ? 'copy' : 'move';
+        event.dataTransfer.setData('text/plain', drag.id ?? drag.type);
+    }
+
+    endDrag() {
+        this.drag = null;
+        this.clearDropMarks();
+    }
+
+    clearDropMarks() {
+        this.drop = null;
+
+        for (const root of [this, this.frame.contentDocument]) {
+            root?.querySelectorAll('[data-bb-drop]').forEach((node) => node.removeAttribute('data-bb-drop'));
+        }
+    }
+
+    /**
+     * Works out where a drop would land while something is dragged over a block, and shows it.
+     *
+     * @param {?Element} node The block's element, in the outline or on the page; null over the page itself.
+     * @param {?string} id The block under the pointer; null for the end of the page.
+     * @param {boolean} across Whether the block's siblings run across rather than down.
+     */
+    dragOver(event, node, id, across) {
+        if (this.drag === null) {
+            return;
+        }
+
+        const state = this.builder.state();
+        const block = id === null ? null : find(state.document, id);
+        const holds = state.catalogue.find((entry) => entry.name === block?.type)?.acceptsChildren === true;
+        const box = node?.getBoundingClientRect();
+        const zone = box === undefined
+            ? 'inside'
+            : across
+              ? dropZone(event.clientX - box.left, box.width, holds)
+              : dropZone(event.clientY - box.top, box.height, holds);
+        const position = dropPosition(state.document, this.drag.id ?? null, id, zone);
+
+        this.clearDropMarks();
+        event.stopPropagation();
+
+        // Leaving the event alone tells the browser this is not a place to drop.
+        if (position === null) {
+            return;
+        }
+
+        event.preventDefault();
+        this.drop = position;
+        node?.setAttribute('data-bb-drop', zone === 'inside' || !across ? zone : `${zone}-x`);
+    }
+
+    dropHere(event) {
+        const { drag, drop } = this;
+
+        if (drag === null || drop === null) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        this.endDrag();
+
+        if (drag.id === undefined) {
+            this.builder.insert(drag.type, drop);
+        } else {
+            this.builder.move(drag.id, drop);
+        }
+    }
+
     select(id, reveal = false) {
         this.ui.errors = {};
         this.ui.target = 0;
         this.ui.rules = null;
+        this.builder.dismiss();
         this.builder.select(id);
 
         if (reveal && id !== null) {
@@ -526,6 +649,7 @@ export class BlockBuilderElement extends HTMLElement {
 
         this.toast.hidden = false;
         this.toast.replaceChildren(
+            el('button', { class: 'bb-link', type: 'button', text: 'Dismiss', style: 'float:right', onclick: () => this.builder.dismiss() }),
             loose.length === 1
                 ? el('p', { text: loose[0].message })
                 : el('ul', {}, loose.map((refusal) => el('li', { text: refusal.message }))),

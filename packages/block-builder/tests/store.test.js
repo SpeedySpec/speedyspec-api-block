@@ -244,3 +244,17 @@ test('the store says when an edit is on its way and when it has landed', async (
     assert.equal(builder.state().saving, false);
 });
 
+test('what the server refused can be put away once it has been read', async () => {
+    const client = fakeClient(() => {
+        throw new Refused([{ kind: 'disallowed-placement', message: 'Not there.', block: null, path: null }]);
+    });
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+    await builder.move('b', { parent: 'a', index: 0 });
+
+    builder.dismiss();
+
+    assert.deepEqual(builder.state().refusals, []);
+    assert.equal(builder.state().error, null);
+});
+
