@@ -1,0 +1,65 @@
+<?php
+
+declare(strict_types=1);
+
+namespace SpeedySpec\Block\Domain\ValueObjects;
+
+/**
+ * The outcome of validating a value, so callers get every failure at once instead of the first exception.
+ *
+ * @since 0.1.0
+ */
+class ValidationResult
+{
+    /**
+     * @param list<ValidationError> $errors
+     */
+    private function __construct(private readonly array $errors)
+    {
+    }
+
+    /**
+     * Returns a result with no errors.
+     *
+     * @since 0.1.0
+     */
+    public static function valid(): self
+    {
+        return new self([]);
+    }
+
+    /**
+     * Returns a result carrying the given errors; with none given it is valid.
+     *
+     * @param ValidationError ...$errors
+     *   The failures found.
+     *
+     * @since 0.1.0
+     */
+    public static function invalid(ValidationError ...$errors): self
+    {
+        return new self(array_values($errors));
+    }
+
+    /**
+     * Tells whether the value satisfied the schema.
+     *
+     * @since 0.1.0
+     */
+    public function isValid(): bool
+    {
+        return $this->errors === [];
+    }
+
+    /**
+     * Returns every failure found.
+     *
+     * @return list<ValidationError>
+     *
+     * @since 0.1.0
+     */
+    public function errors(): array
+    {
+        return $this->errors;
+    }
+}
