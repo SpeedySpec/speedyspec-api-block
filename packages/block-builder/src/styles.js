@@ -109,7 +109,16 @@ block-builder .bb-bar strong { padding: 0 .6rem; font-weight: 600; white-space: 
 block-builder .bb-bar button { display: grid; place-items: center; width: 2rem; height: 2rem; border: 0;
     border-left: 1px solid rgb(255 255 255 / .25); color: #fff; background: transparent; }
 block-builder .bb-bar button:hover:not(:disabled) { background: rgb(0 0 0 / .18); }
-block-builder .bb-bar button:last-child { border-radius: 0 6px 6px 0; }
+block-builder .bb-bar > button:last-of-type { border-radius: 0 6px 6px 0; }
+block-builder .bb-menu { position: absolute; top: calc(100% + 4px); right: 0; display: flex; flex-direction: column;
+    min-width: 11rem; padding: .25rem; border: 1px solid var(--bb-line); border-radius: 8px; color: var(--bb-ink);
+    background: #fff; box-shadow: 0 8px 24px -10px rgb(22 24 29 / .4); }
+block-builder .bb-menu button { justify-content: start; width: auto; height: 2rem; padding: 0 .6rem; border: 0;
+    border-radius: 5px; color: inherit; text-align: left; }
+block-builder .bb-menu button:hover:not(:disabled), block-builder .bb-menu button:focus-visible {
+    background: var(--bb-stage); }
+block-builder .bb-menu button:disabled { color: var(--bb-soft); }
+block-builder .bb-menu-head { margin: .4rem .6rem .15rem; color: var(--bb-soft); font-size: 12px; }
 block-builder .bb-format { position: absolute; z-index: 3; display: flex; border-radius: 6px; color: #fff;
     background: var(--bb-ink); box-shadow: 0 4px 12px -4px rgb(22 24 29 / .5); }
 block-builder .bb-format[hidden] { display: none; }
@@ -123,6 +132,7 @@ block-builder .bb-primary { height: 2.1rem; padding: 0 .9rem; border: 0; border-
 block-builder .bb-toast { position: sticky; bottom: 0; left: 0; z-index: 3; width: min(32rem, 100%); margin: 1rem auto 0;
     padding: .6rem .8rem; border: 1px solid #efc1bb; border-radius: 8px; color: #7d1a12; background: var(--bb-bad-wash);
     box-shadow: 0 8px 24px -10px rgb(22 24 29 / .4); }
+block-builder .bb-toast[data-kind="note"] { border-color: var(--bb-line); color: var(--bb-ink); background: #fff; }
 block-builder .bb-toast ul { margin: 0; padding-left: 1.1rem; }
 block-builder .bb-toast p { margin: 0; }
 

@@ -267,8 +267,9 @@ function editingClient() {
             return { document: { ...document, blocks: operation.blocks }, affected: [], issues: [] };
         }
 
-        if (operation.operation === 'remove') {
-            const blocks = document.blocks.filter((entry) => entry.id !== operation.block);
+        if (operation.operation === 'remove' || operation.operation === 'removeBlocks') {
+            const gone = operation.ids ?? [operation.block];
+            const blocks = document.blocks.filter((entry) => !gone.includes(entry.id));
 
             return { document: { ...document, blocks }, affected: [], issues: [] };
         }
@@ -471,4 +472,44 @@ test('the preview keeps the page\'s stylesheets, and has none when the server se
     await builder.updateSettings('b', { text: 'x' });
 
     assert.deepEqual(builder.state().preview.styles, [{ name: 'a', href: '/a.css' }]);
+});
+
+test('pasting sends the blocks to insert and selects the first one added', async () => {
+    const client = fakeClient((operation, document) => ({
+        document: { ...document, blocks: [...document.blocks, block('p1'), block('p2')] },
+        affected: ['p1', 'p2'],
+        issues: [],
+    }));
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.paste([block('a')], { parent: null, index: 2 });
+
+    assert.deepEqual(client.calls.filter((call) => call[0] === 'operate').at(-1)[1], {
+        operation: 'insertBlocks',
+        blocks: [block('a')],
+        position: { parent: null, index: 2 },
+    });
+    assert.equal(builder.state().selected, 'p1');
+});
+
+test('removing several blocks is one edit, and one undo puts them all back', async () => {
+    const client = editingClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.removeMany(['b']);
+    await builder.undo();
+    await builder.removeMany(['a', 'b']);
+
+    const operations = client.calls.filter((call) => call[0] === 'operate').map((call) => call[1]);
+
+    assert.deepEqual(operations[0], { operation: 'remove', block: 'b' });
+    assert.deepEqual(operations[2], { operation: 'removeBlocks', ids: ['a', 'b'] });
+    assert.deepEqual(ids(builder), []);
+
+    await builder.undo();
+
+    assert.deepEqual(ids(builder), ['a', 'b']);
+    assert.equal(builder.state().canUndo, false);
 });

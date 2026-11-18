@@ -150,6 +150,21 @@ test('remove and duplicate', function () use ($setup) {
         ->and(count(array_unique($copy->document->tree->ids())))->toBe(5);
 });
 
+test('removeBlocks removes every listed block in one edit, or nothing', function () use ($setup) {
+    [$editor] = editor($setup);
+    $document = doc(block('a', 'acme/box', [], block('a1'), block('a2')), block('b'));
+
+    $some = $editor->removeBlocks($document, ['a1', 'b']);
+    $nested = $editor->removeBlocks($document, ['a', 'a1']);
+
+    expect($some->isAccepted())->toBeTrue()
+        ->and($some->document->tree->ids())->toBe(['a', 'a2'])
+        ->and($nested->document->tree->ids())->toBe(['b'])
+        ->and(refusals($editor->removeBlocks($document, ['a1', 'nope'])))->toBe([EditRefusalKind::UnknownBlock])
+        ->and(refusals($editor->removeBlocks($document, [])))->toBe([EditRefusalKind::UnknownBlock])
+        ->and($document->tree->ids())->toBe(['a', 'a1', 'a2', 'b']);
+});
+
 test('updateSettings replaces settings, validates them and updates the type version', function () use ($setup) {
     [$editor] = editor($setup);
     $old = block('n', 'acme/field', ['key' => 'name'])

@@ -324,6 +324,7 @@ class BuilderApi
             ),
             'move' => $editor->move($document, $block(), $this->position($body)),
             'remove' => $editor->remove($document, $block()),
+            'removeBlocks' => $editor->removeBlocks($document, $this->ids($body)),
             'duplicate' => $editor->duplicate($document, $block()),
             'updateSettings' => $editor->updateSettings($document, $block(), $this->map($body, 'settings', true)),
             'updateExtension' => $editor->updateExtension(
@@ -744,6 +745,36 @@ class BuilderApi
         }
 
         return $value;
+    }
+
+    /**
+     * Reads the list of block ids an operation on several blocks names.
+     *
+     * @param array<string, mixed> $body
+     * @return list<string>
+     *
+     * @throws ApiProblem
+     *
+     * @since 0.1.0
+     */
+    private function ids(array $body): array
+    {
+        $ids = $body['ids'] ?? null;
+
+        if (!is_array($ids) || !array_is_list($ids))
+        {
+            throw new ApiProblem(400, 'The request needs "ids", a list of block ids.');
+        }
+
+        foreach ($ids as $id)
+        {
+            if (!is_string($id) || $id === '')
+            {
+                throw new ApiProblem(400, 'Every entry of "ids" must be a block id.');
+            }
+        }
+
+        return $ids;
     }
 
     /**

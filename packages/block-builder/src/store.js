@@ -207,6 +207,23 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
 
         remove: (id) => edit({ operation: 'remove', block: id }),
 
+        /**
+         * Removes several blocks as one edit, so one undo puts them all back.
+         *
+         * @param {string[]} ids
+         */
+        removeMany: (ids) => (ids.length === 1
+            ? edit({ operation: 'remove', block: ids[0] })
+            : edit({ operation: 'removeBlocks', ids })),
+
+        /**
+         * Adds copied blocks, which the server gives new ids, and selects the first.
+         *
+         * @param {Array<object>} blocks As the clipboard holds them.
+         * @param {{parent: ?string, index: number}} position
+         */
+        paste: (blocks, position) => edit({ operation: 'insertBlocks', blocks, position }, selectFirst),
+
         duplicate: (id) => edit({ operation: 'duplicate', block: id }, selectFirst),
 
         move: (id, position) => moveTo(id, position),

@@ -244,6 +244,45 @@ class DocumentEditor implements DocumentEditorInterface
         return EditResult::accepted($document->withTree($document->tree->remove($blockId)));
     }
 
+    public function removeBlocks(Document $document, array $blockIds): EditResult
+    {
+        if ($blockIds === [])
+        {
+            return EditResult::refused(new EditRefusal(
+                EditRefusalKind::UnknownBlock,
+                'Name at least one block to remove.',
+            ));
+        }
+
+        $refusals = [];
+
+        foreach ($blockIds as $blockId)
+        {
+            if (!is_string($blockId) || $document->tree->find($blockId) === null)
+            {
+                $refusals[] = $this->unknownBlock(is_string($blockId) ? $blockId : get_debug_type($blockId));
+            }
+        }
+
+        if ($refusals !== [])
+        {
+            return EditResult::refused(...$refusals);
+        }
+
+        $tree = $document->tree;
+
+        foreach ($blockIds as $blockId)
+        {
+            // A block inside one already removed has gone with it.
+            if ($tree->find($blockId) !== null)
+            {
+                $tree = $tree->remove($blockId);
+            }
+        }
+
+        return EditResult::accepted($document->withTree($tree));
+    }
+
     public function duplicate(Document $document, string $blockId): EditResult
     {
         $block = $document->tree->find($blockId);

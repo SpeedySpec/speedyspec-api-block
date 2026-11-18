@@ -261,6 +261,10 @@ test('every editing operation is reachable', function (array $body, callable $ch
         ['operation' => 'remove', 'block' => 't'],
         fn (array $blocks) => expect($blocks[0]['children'])->toBe([]),
     ],
+    'remove several' => [
+        ['operation' => 'removeBlocks', 'ids' => ['t', 'b']],
+        fn (array $blocks) => expect($blocks)->toBe([]),
+    ],
     'duplicate' => [
         ['operation' => 'duplicate', 'block' => 't'],
         fn (array $blocks) => expect($blocks[0]['children'])->toHaveCount(2),
@@ -320,6 +324,10 @@ test('a request that makes no sense is a bad request, never a server error', fun
     ['POST', '/documents/home/operations', ['operation' => 'move', 'block' => 't', 'position' => ['index' => -1]], 400],
     ['POST', '/documents/home/operations', ['operation' => 'setBinding', 'block' => 't', 'path' => '..'], 400],
     ['POST', '/documents/home/operations', ['operation' => 'insertBlocks', 'blocks' => 'x'], 400],
+    ['POST', '/documents/home/operations', ['operation' => 'removeBlocks', 'ids' => 't'], 400],
+    ['POST', '/documents/home/operations', ['operation' => 'removeBlocks', 'ids' => ['t', 3]], 400],
+    ['POST', '/documents/home/operations', ['operation' => 'removeBlocks', 'ids' => ['t', '']], 400],
+    ['POST', '/documents/home/operations', ['operation' => 'removeBlocks', 'ids' => ['a' => 't']], 400],
     [
         'POST',
         '/documents/home/operations',

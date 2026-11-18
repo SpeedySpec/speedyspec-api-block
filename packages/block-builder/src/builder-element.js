@@ -1,4 +1,5 @@
 import { createClient } from './api.js';
+import { clipboardText, pastePosition, readClipboard } from './clipboard.js';
 import {
     FieldError, fields, movedListItem, parseField, tableShape, withColumn, withListItem, withListText, withoutColumn,
     withoutListItem, withoutRow, withRow, withTyped, withValue,
@@ -6,6 +7,7 @@ import {
 import { createBuilder } from './store.js';
 import { accepts, addedMedia, mediaQuery, movedMedia, withoutMediaAt } from './media.js';
 import { STYLE } from './styles.js';
+import { pick } from './selection.js';
 import { find, positionOf, walk } from './tree.js';
 import {
     breadcrumb,
@@ -40,6 +42,7 @@ const ICONS = {
     remove: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/>',
     undo: '<path d="M6 3 3 6l3 3M3 6h6.5a3.5 3.5 0 0 1 0 7H6"/>',
     redo: '<path d="M10 3l3 3-3 3M13 6H6.5a3.5 3.5 0 0 0 0 7H10"/>',
+    more: '<circle cx="3.5" cy="8" r=".6"/><circle cx="8" cy="8" r=".6"/><circle cx="12.5" cy="8" r=".6"/>',
 };
 
 /**
@@ -107,6 +110,10 @@ export class BlockBuilderElement extends HTMLElement {
             rules: null,
             // The media picker, while one is open: which setting it fills, and the page of the library it shows.
             picker: null,
+            // Whether the block bar's list of more actions is open.
+            more: false,
+            // A short note for the toast, such as what was copied; null when there is none.
+            message: null,
         };
         // Media items already looked up, by id, so a chosen file shows its picture and name; null while loading.
         this.media = new Map();
@@ -147,6 +154,8 @@ export class BlockBuilderElement extends HTMLElement {
         window.addEventListener('resize', this.resize);
         this.keys = (event) => this.shortcut(event);
         this.addEventListener('keydown', this.keys);
+        this.clip = (event) => this.clipboard(event, document);
+        ['copy', 'cut', 'paste'].forEach((kind) => this.addEventListener(kind, this.clip));
         this.builder.load();
     }
 
@@ -564,6 +573,7 @@ export class BlockBuilderElement extends HTMLElement {
             this.dragOver(event, block, block.getAttribute(NAMED), across);
         });
         page.addEventListener('keydown', (event) => this.shortcut(event));
+        ['copy', 'cut', 'paste'].forEach((kind) => page.addEventListener(kind, (event) => this.clipboard(event, page)));
         page.addEventListener('drop', (event) => this.dropHere(event));
         page.addEventListener('dragend', () => this.endDrag());
         page.addEventListener('mouseleave', () => {
@@ -826,6 +836,7 @@ export class BlockBuilderElement extends HTMLElement {
             tool('Duplicate', 'copy', () => this.builder.duplicate(block.id)),
             tool('Add a block', 'add', () => this.openDrawer('add')),
             tool('Remove', 'remove', () => this.builder.remove(block.id)),
+            this.moreButton(state, block),
         );
         this.bar.hidden = false;
 
@@ -836,6 +847,209 @@ export class BlockBuilderElement extends HTMLElement {
 
         this.bar.style.top = `${top}px`;
         this.bar.style.left = `${left}px`;
+    }
+
+    // ---- More actions and the clipboard ---------------------------------------------------------------------
+
+    /**
+     * Lists what the block bar's More button offers for the selected block.
+     *
+     * @returns {Array<{label: string, run: () => void, disabled?: boolean}>}
+     */
+    moreActions(state, block) {
+        const actions = [
+            { label: 'Copy', run: () => this.copyBlocks([block.id], false) },
+            { label: 'Cut', run: () => this.copyBlocks([block.id], true) },
+        ];
+
+        if (typeof navigator.clipboard?.readText === 'function') {
+            actions.push({ label: 'Paste after', run: () => this.pasteFromClipboard([block.id]) });
+        }
+
+        return actions;
+    }
+
+    /**
+     * Draws the More button and, while it is open, its list of actions under the block bar.
+     */
+    moreButton(state, block) {
+        const button = el(
+            'button',
+            {
+                type: 'button',
+                title: 'More',
+                'aria-label': 'More',
+                'aria-haspopup': 'menu',
+                'aria-expanded': String(this.ui.more),
+                'data-key': 'bar-more',
+                onclick: () => this.toggleMore(!this.ui.more),
+            },
+            icon('more'),
+        );
+
+        if (!this.ui.more) {
+            return button;
+        }
+
+        const menu = el(
+            'div',
+            {
+                class: 'bb-menu',
+                role: 'menu',
+                onkeydown: (event) => {
+                    if (event.key === 'Escape') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        this.toggleMore(false);
+                        this.bar.querySelector('[data-key="bar-more"]')?.focus();
+                    }
+                },
+            },
+            this.moreActions(state, block).map((action) =>
+                action.heading !== undefined
+                    ? el('p', { class: 'bb-menu-head', text: action.heading })
+                    : el('button', {
+                          type: 'button',
+                          role: 'menuitem',
+                          text: action.label,
+                          disabled: action.disabled === true,
+                          onclick: () => {
+                              this.toggleMore(false);
+                              action.run();
+                          },
+                      }),
+            ),
+        );
+
+        return [button, menu];
+    }
+
+    toggleMore(open) {
+        this.ui.more = open;
+        this.placeBar();
+
+        if (open) {
+            this.bar.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
+        }
+    }
+
+    /**
+     * Shows a short note in the toast for a moment, such as what was just copied.
+     */
+    say(message) {
+        clearTimeout(this.sayTimer);
+        this.ui.message = message;
+        this.render();
+        this.sayTimer = setTimeout(() => {
+            this.ui.message = null;
+            this.render();
+        }, 2500);
+    }
+
+    /**
+     * Gives the ids of the blocks an action works on: the selection.
+     */
+    chosen(state) {
+        if (Array.isArray(state.selection) && state.selection.length > 0) {
+            return state.selection;
+        }
+
+        return state.selected === null ? [] : [state.selected];
+    }
+
+    copiedText(state, ids) {
+        return clipboardText(pick(state.document, ids));
+    }
+
+    copiedNote(state, ids) {
+        const count = pick(state.document, ids).length;
+
+        return count === 1 ? 'Copied 1 block' : `Copied ${count} blocks`;
+    }
+
+    /**
+     * Copies blocks through the browser's clipboard, for the More list, where there is no clipboard event.
+     */
+    async copyBlocks(ids, cut) {
+        const state = this.builder.state();
+
+        try {
+            await navigator.clipboard.writeText(this.copiedText(state, ids));
+        } catch {
+            this.say('The browser did not allow copying. Use the keyboard shortcut instead.');
+
+            return;
+        }
+
+        if (cut) {
+            this.builder.removeMany(pick(state.document, ids).map((block) => block.id));
+        } else {
+            this.say(this.copiedNote(state, ids));
+        }
+    }
+
+    async pasteFromClipboard(ids) {
+        let text = '';
+
+        try {
+            text = await navigator.clipboard.readText();
+        } catch {
+            this.say('The browser did not allow pasting. Use the keyboard shortcut instead.');
+
+            return;
+        }
+
+        const blocks = readClipboard(text);
+        const state = this.builder.state();
+
+        if (blocks === null) {
+            this.say('The clipboard holds no blocks.');
+        } else {
+            this.builder.paste(blocks, pastePosition(state.document, ids));
+        }
+    }
+
+    /**
+     * Copies, cuts and pastes blocks on the usual keys, unless the person is working with text: then the browser's
+     * own copy and paste go ahead, as they would anywhere else.
+     *
+     * @param {Document} from The document the event happened in, the builder's own or the page's.
+     */
+    clipboard(event, from) {
+        const state = this.builder.state();
+        const typing = this.typing !== null
+            || Boolean(event.target.closest?.('input, textarea, select, [contenteditable]'));
+        const selectedText = from.getSelection?.()?.isCollapsed === false;
+
+        if (typing || state.document === null || event.clipboardData === null) {
+            return;
+        }
+
+        if (event.type === 'paste') {
+            const blocks = readClipboard(event.clipboardData.getData('text/plain'));
+
+            if (blocks !== null) {
+                event.preventDefault();
+                this.builder.paste(blocks, pastePosition(state.document, this.chosen(state)));
+            }
+
+            return;
+        }
+
+        const ids = pick(state.document, this.chosen(state)).map((block) => block.id);
+
+        if (ids.length === 0 || selectedText) {
+            return;
+        }
+
+        event.preventDefault();
+        event.clipboardData.setData('text/plain', this.copiedText(state, ids));
+
+        if (event.type === 'cut') {
+            this.builder.removeMany(ids);
+        } else {
+            this.say(this.copiedNote(state, ids));
+        }
     }
 
     /**
@@ -939,6 +1153,7 @@ export class BlockBuilderElement extends HTMLElement {
     }
 
     select(id, reveal = false) {
+        this.ui.more = false;
         this.ui.errors = {};
         this.ui.target = 0;
         this.ui.rules = null;
@@ -959,12 +1174,17 @@ export class BlockBuilderElement extends HTMLElement {
         const loose = state.refusals.filter((refusal) => refusal.path === null || refusal.block !== state.selected);
 
         if (loose.length === 0) {
-            this.toast.hidden = true;
+            this.toast.hidden = this.ui.message === null;
+            this.toast.dataset.kind = 'note';
+            this.toast.setAttribute('role', 'status');
+            this.toast.replaceChildren(el('p', { text: this.ui.message ?? '' }));
 
             return;
         }
 
         this.toast.hidden = false;
+        delete this.toast.dataset.kind;
+        this.toast.setAttribute('role', 'alert');
         this.toast.replaceChildren(
             el('button', { class: 'bb-link', type: 'button', text: 'Dismiss', style: 'float:right', onclick: () => this.builder.dismiss() }),
             loose.length === 1
