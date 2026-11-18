@@ -16,6 +16,7 @@ use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
 use SpeedySpec\Block\Domain\Exceptions\BlockPackageException;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
+use SpeedySpec\Block\Domain\ValueObjects\Mode;
 
 /**
  * Loads block packages into the host's registries.
@@ -36,6 +37,13 @@ class BlockPackageLoader implements BlockPackageLoaderInterface
      * @var array<string, array{title: string, description: string}>
      */
     private array $details = [];
+
+    /**
+     * The package that last registered each output, by {@link self::outputKey()}.
+     *
+     * @var array<string, string>
+     */
+    private array $owners = [];
 
     /**
      * Takes each registry a package may write to, as a contract.
@@ -98,6 +106,11 @@ class BlockPackageLoader implements BlockPackageLoaderInterface
 
         $this->packages[$name] = $registrar->types();
         $this->details[$name] = ['title' => $title, 'description' => trim($package->description())];
+
+        foreach ($registrar->outputKeys() as $key)
+        {
+            $this->owners[$key] = $name;
+        }
     }
 
     public function loaded(): array
@@ -113,6 +126,21 @@ class BlockPackageLoader implements BlockPackageLoaderInterface
     public function details(string $packageName): ?array
     {
         return $this->details[$packageName] ?? null;
+    }
+
+    public function outputOwner(BlockName $type, Mode $mode, string $target = 'html'): ?string
+    {
+        return $this->owners[self::outputKey($type, $mode, $target)] ?? null;
+    }
+
+    /**
+     * Builds the key an output is recorded under; shared with the registrar so the two cannot disagree.
+     *
+     * @since 0.1.0
+     */
+    public static function outputKey(BlockName $type, Mode $mode, string $target): string
+    {
+        return $type->toString() . '|' . $mode->value . '|' . $target;
     }
 
     public function packageOf(BlockName $type): ?string

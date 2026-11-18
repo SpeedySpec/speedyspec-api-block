@@ -6,6 +6,7 @@ namespace SpeedySpec\Block\Domain\Contracts;
 
 use SpeedySpec\Block\Domain\Exceptions\BlockPackageException;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
+use SpeedySpec\Block\Domain\ValueObjects\Mode;
 
 /**
  * Loads block packages into a host and remembers what each one added.
@@ -67,4 +68,16 @@ interface BlockPackageLoaderInterface
      * @since 0.1.0
      */
     public function details(string $packageName): ?array;
+
+    /**
+     * Names the package whose output draws a block type, so a site can see which plugin's version is in use.
+     *
+     * When several packages register an output for the same type, mode and target, the last one loaded draws it.
+     *
+     * @return string|null
+     *   Null when no package loaded through this loader registered that output.
+     *
+     * @since 0.1.0
+     */
+    public function outputOwner(BlockName $type, Mode $mode, string $target = 'html'): ?string;
 }

@@ -67,6 +67,11 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
     private array $pendingTemplates = [];
 
     /**
+     * @var list<string>
+     */
+    private array $outputKeys = [];
+
+    /**
      * Binds the registrar to one package so it can enforce what that package may claim.
      *
      * @param string $vendor
@@ -141,6 +146,7 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
     ): void
     {
         $this->pendingOther[] = fn () => $this->outputs->set($type, $output, $mode, $target);
+        $this->outputKeys[] = BlockPackageLoader::outputKey($type, $mode, $target);
     }
 
     public function decorator(Decorator $decorator): void
@@ -278,5 +284,18 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
     public function types(): array
     {
         return $this->types;
+    }
+
+    /**
+     * Lists the outputs this package registered, for the loader to record who draws what.
+     *
+     * @return list<string>
+     *   Keys built by {@link BlockPackageLoader::outputKey()}.
+     *
+     * @since 0.1.0
+     */
+    public function outputKeys(): array
+    {
+        return $this->outputKeys;
     }
 }
