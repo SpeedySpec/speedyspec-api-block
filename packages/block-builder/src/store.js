@@ -124,6 +124,15 @@ export function createBuilder({ client, documentId }) {
         },
 
         /**
+         * Puts away what the server last refused, once the person has read it.
+         */
+        dismiss() {
+            if (state.refusals.length > 0 || state.error !== null) {
+                set({ refusals: [], error: null });
+            }
+        },
+
+        /**
          * Asks which block types may be placed at a position.
          */
         placeable: (position) => client.catalogue({ document: documentId, ...position }),

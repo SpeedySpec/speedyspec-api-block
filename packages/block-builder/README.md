@@ -14,11 +14,12 @@ It has no dependencies and no build step: plain ES modules.
 | `src/tree.js` | Reading a document: find a block, where it sits, and where to move it one step. |
 | `src/forms.js` | A settings form from a block type's schema, so no block type needs builder code. |
 | `src/store.js` | The state of one editing session; edits go to the server one at a time, in order. |
+| `src/drag.js` | Where a dragged block lands: the part of the target under the pointer, and the position to send. |
 | `src/view.js` | What the interface shows: block types by category, where a new block goes, values by width. |
 | `src/builder-element.js` | The interface, as a `<block-builder>` element. |
 | `src/styles.js` | The interface's appearance, scoped to the element. |
 
-The first five have no interface and can drive one of your own.
+The first six have no interface and can drive one of your own.
 
 ## The interface
 
@@ -29,6 +30,12 @@ It is laid out the way the block editors people already know are:
 - **Add block** opens a searchable panel of block types by category. It says where the block will go (inside or
   after the selected block) and dims the types the server does not allow there.
 - **Outline** lists the page's blocks as a tree, marks the ones with problems, and selects on click.
+- **Drag and drop.** A block can be dragged on the page or in the outline, and a block type can be dragged from
+  the add-block panel. The edges of the block under the pointer mean before and after, its middle means inside
+  when it can hold blocks; a line or a dashed frame shows which. Where siblings sit side by side, such as columns,
+  before and after run across. A drop onto the block itself, into something inside it, or where it already is
+  does nothing. Whether a block is allowed where it was dropped is the server's decision: a refused drop changes
+  nothing and says why.
 - **Phone, Tablet, Full width** show the page at that width, so responsive styles can be checked.
 - **The inspector** on the right has three tabs. *Block* holds the block's own settings. *Style* holds the shared
   style settings in sections, with a switch for which widths a value applies from, colour pickers that offer the
@@ -83,9 +90,9 @@ the machine edit, and is not for production.
 npm test
 ```
 
-They cover the client, tree, forms, store and view logic. The element is checked by hand against the demo.
+They cover the client, tree, forms, store, view and drop-position logic. The element is checked by hand against the demo.
 
 ## Not included
 
-Undo and redo, drag and drop, typing directly on the page, editing bindings, inserting and saving templates, and
+Undo and redo, typing directly on the page, editing bindings, inserting and saving templates, and
 keyboard shortcuts.
