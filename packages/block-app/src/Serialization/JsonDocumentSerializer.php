@@ -39,6 +39,12 @@ class JsonDocumentSerializer implements DocumentSerializerInterface
      */
     public function serialize(Document $document): string
     {
+        // parse() refuses a document with no id or kind, so writing one would store something unreadable.
+        if ($document->id === '' || $document->kind === '')
+        {
+            throw new InvalidDocumentException('A document needs a non-empty id and kind to be serialized.');
+        }
+
         // Writing another format would produce a document that parse() then refuses.
         if ($document->formatVersion !== self::FORMAT)
         {
