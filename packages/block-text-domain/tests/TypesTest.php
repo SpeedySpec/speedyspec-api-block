@@ -5,6 +5,9 @@ declare(strict_types=1);
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
 use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
+use SpeedySpec\Block\Domain\Entities\Block;
+use SpeedySpec\Block\Domain\Entities\BlockTree;
+use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\EditRefusalKind;
 use SpeedySpec\Block\Domain\ValueObjects\Position;
@@ -27,6 +30,36 @@ test('the text blocks have the settings this plan fixes', function () use ($type
         ->and($type('core/paragraph')->settingsSchema['properties']['text'])
         ->toBe(['type' => 'string', 'default' => '', 'x-control' => 'rich-text', 'title' => 'Text'])
         ->and($type('core/heading')->catalogue->category)->toBe('text');
+});
+
+test('paragraph, heading and quote can each be turned into the other two, keeping their text', function () use (
+    $type,
+) {
+    $turns = fn (string $name) => array_map(
+        static fn ($transform): array => [$transform->to->toString(), $transform->settings],
+        $type($name)->transforms,
+    );
+
+    $text = ['text' => 'text'];
+
+    expect($turns('core/paragraph'))->toBe([['core/heading', $text], ['core/quote', $text]])
+        ->and($turns('core/heading'))->toBe([['core/paragraph', $text], ['core/quote', $text]])
+        ->and($turns('core/quote'))->toBe([['core/paragraph', $text], ['core/heading', $text]]);
+});
+
+test('a paragraph turned into a heading keeps its id and text, and becomes a level 2 heading', function () {
+    $editor = textContainer()->get(DocumentEditorInterface::class);
+    $document = new Document('d', 'page', new BlockTree(
+        new Block('p', BlockName::fromString('core/paragraph'), 1, ['text' => 'Hi']),
+    ));
+
+    $result = $editor->transform($document, 'p', BlockName::fromString('core/heading'));
+    $heading = $result->document?->tree->find('p');
+
+    expect($result->isAccepted())->toBeTrue()
+        ->and($heading->type->toString())->toBe('core/heading')
+        ->and($heading->settings['text'])->toBe('Hi')
+        ->and($heading->settings['level'] ?? 2)->toBe(2);
 });
 
 test('a heading gets an id from its anchor, or from its text', function (array $settings, string $id) {

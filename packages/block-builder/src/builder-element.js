@@ -1172,6 +1172,20 @@ export class BlockBuilderElement extends HTMLElement {
             actions.push({ label: 'Paste after', run: () => this.pasteFromClipboard([block.id]) });
         }
 
+        const entry = state.catalogue.find((candidate) => candidate.name === block.type);
+        const targets = (entry?.transforms ?? [])
+            .map((name) => state.catalogue.find((candidate) => candidate.name === name))
+            .filter((target) => target !== undefined);
+
+        if (targets.length > 0) {
+            actions.push({ heading: 'Turn into' });
+            targets.forEach((target) => actions.push({
+                label: target.title,
+                aria: `Turn into ${target.title.toLowerCase()}`,
+                run: () => this.builder.transform(block.id, target.name),
+            }));
+        }
+
         if (state.templates?.manage === true) {
             actions.push({
                 label: 'Save as template',
@@ -1229,6 +1243,7 @@ export class BlockBuilderElement extends HTMLElement {
                           type: 'button',
                           role: 'menuitem',
                           text: action.label,
+                          'aria-label': action.aria ?? null,
                           disabled: action.disabled === true,
                           onclick: () => {
                               this.toggleMore(false);

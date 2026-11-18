@@ -201,7 +201,8 @@ class BuilderApi
             'breakpoints' => $this->breakpointList(),
             'tokens' => $this->tokenList(),
             // A builder offers its site styles screen only to people who may change them.
-            'manageStyles' => $this->container->get(BuilderAccessInterface::class)->allows(BuilderAbility::ManageStyles),
+            'manageStyles' => $this->container->get(BuilderAccessInterface::class)
+                ->allows(BuilderAbility::ManageStyles),
             'conditions' => array_map($described, $this->container->get(ConditionRegistryInterface::class)->all()),
             'collections' => array_map(
                 $described,
@@ -447,6 +448,7 @@ class BuilderApi
             'remove' => $editor->remove($document, $block()),
             'removeBlocks' => $editor->removeBlocks($document, $this->ids($body)),
             'duplicate' => $editor->duplicate($document, $block()),
+            'transform' => $editor->transform($document, $block(), BlockName::fromString($this->text($body, 'type'))),
             'updateSettings' => $editor->updateSettings($document, $block(), $this->map($body, 'settings', true)),
             'updateExtension' => $editor->updateExtension(
                 $document,

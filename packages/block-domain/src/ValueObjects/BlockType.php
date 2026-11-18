@@ -33,9 +33,12 @@ class BlockType
      *   Asset handles the block needs.
      * @param list<array<string, mixed>> $examples
      *   Sample settings arrays.
+     * @param list<BlockTransform> $transforms
+     *   The types a block of this type can be turned into, at most one transform for each.
      *
      * @throws InvalidBlockTypeException
-     *   When `provides`, `uses`, `assets` or `examples` has the wrong shape.
+     *   When `provides`, `uses`, `assets` or `examples` has the wrong shape, or a transform could not be carried
+     *   out: one to this type itself, two to the same type, or one taking a setting this type does not declare.
      */
     public function __construct(
         public readonly BlockName $name,
@@ -49,6 +52,7 @@ class BlockType
         public readonly array $uses = [],
         public readonly array $assets = [],
         public readonly array $examples = [],
+        public readonly array $transforms = [],
     )
     {
         $subject = sprintf('Block type "%s"', $name->toString());
@@ -78,6 +82,7 @@ class BlockType
             );
         }
 
+        $this->assertTransforms($subject);
         $this->children = $children ?? ChildrenPolicy::none();
         $this->parents = $parents ?? ParentPolicy::any();
     }
@@ -133,7 +138,7 @@ class BlockType
             );
         }
 
-        foreach (['keywords', 'provides', 'uses', 'assets', 'examples'] as $key)
+        foreach (['keywords', 'provides', 'uses', 'assets', 'examples', 'transforms'] as $key)
         {
             if (isset($data[$key]) && !is_array($data[$key]))
             {
@@ -155,7 +160,95 @@ class BlockType
             $data['uses'] ?? [],
             $data['assets'] ?? [],
             $data['examples'] ?? [],
+            self::transformsFrom($data['name'], $data['transforms'] ?? []),
         );
+    }
+
+    /**
+     * Finds how a block of this type is turned into another type.
+     *
+     * @return BlockTransform|null
+     *   Null when this type declares no transform to that type.
+     *
+     * @since 0.1.0
+     */
+    public function transformTo(BlockName $to): ?BlockTransform
+    {
+        foreach ($this->transforms as $transform)
+        {
+            if ($transform->to->equals($to))
+            {
+                return $transform;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<mixed> $transforms
+     * @return list<BlockTransform>
+     *
+     * @throws InvalidBlockTypeException
+     */
+    private static function transformsFrom(string $name, array $transforms): array
+    {
+        if (!array_is_list($transforms) || array_filter($transforms, 'is_array') !== $transforms)
+        {
+            throw new InvalidBlockTypeException(
+                sprintf('Block type "%s" needs "transforms" to be a list of transforms.', $name)
+            );
+        }
+
+        return array_map(BlockTransform::fromArray(...), $transforms);
+    }
+
+    /**
+     * @throws InvalidBlockTypeException
+     */
+    private function assertTransforms(string $subject): void
+    {
+        $seen = [];
+
+        if (!array_is_list($this->transforms))
+        {
+            throw new InvalidBlockTypeException(sprintf('%s needs "transforms" to be a list.', $subject));
+        }
+
+        foreach ($this->transforms as $transform)
+        {
+            if (!$transform instanceof BlockTransform)
+            {
+                throw new InvalidBlockTypeException(sprintf('%s needs "transforms" to hold transforms.', $subject));
+            }
+
+            $to = $transform->to->toString();
+
+            if ($transform->to->equals($this->name) || isset($seen[$to]))
+            {
+                throw new InvalidBlockTypeException(sprintf(
+                    '%s declares a transform to "%s" that is %s.',
+                    $subject,
+                    $to,
+                    isset($seen[$to]) ? 'already declared' : 'itself',
+                ));
+            }
+
+            foreach ($transform->settings as $source)
+            {
+                if (!isset($this->settingsSchema['properties'][$source]))
+                {
+                    throw new InvalidBlockTypeException(sprintf(
+                        '%s turns into "%s" using a setting it does not have, "%s".',
+                        $subject,
+                        $to,
+                        $source,
+                    ));
+                }
+            }
+
+            $seen[$to] = true;
+        }
     }
 
     /**
@@ -216,6 +309,10 @@ class BlockType
             'uses' => $this->uses,
             'assets' => $this->assets,
             'examples' => $this->examples,
+            'transforms' => array_map(
+                static fn (BlockTransform $transform): array => $transform->toArray(),
+                $this->transforms,
+            ),
         ];
     }
 }

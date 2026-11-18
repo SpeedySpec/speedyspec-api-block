@@ -605,3 +605,23 @@ test('a site style change updates the vocabulary and the preview, and is not som
     assert.deepEqual(builder.state().vocabulary.breakpoints, [{ name: 'tablet', minWidth: 768 }]);
     assert.equal(builder.state().canUndo, false);
 });
+
+test('turning a block into another type sends the operation and keeps the block selected', async () => {
+    const client = fakeClient((operation, document) => ({
+        document: { ...document, blocks: document.blocks.map((entry) => (entry.id === 'b' ? { ...entry, type: 'acme/other' } : entry)) },
+        affected: ['b'],
+        issues: [],
+    }));
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+    builder.select('b');
+
+    await builder.transform('b', 'acme/other');
+
+    assert.deepEqual(client.calls.filter((call) => call[0] === 'operate').at(-1)[1], {
+        operation: 'transform',
+        block: 'b',
+        type: 'acme/other',
+    });
+    assert.equal(builder.state().selected, 'b');
+});

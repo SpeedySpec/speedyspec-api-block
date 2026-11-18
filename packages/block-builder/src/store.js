@@ -273,6 +273,11 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
 
         duplicate: (id) => edit({ operation: 'duplicate', block: id }, selectFirst),
 
+        /**
+         * Turns a block into another type its own type declares; it stays the same block, so it stays selected.
+         */
+        transform: (id, type) => edit({ operation: 'transform', block: id, type }),
+
         move: (id, position) => moveTo(id, position),
 
         moveBy: (id, step) => moveTo(id, movePosition(state.document, id, step)),

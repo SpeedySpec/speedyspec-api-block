@@ -103,6 +103,17 @@ interface DocumentEditorInterface
     public function removeBlocks(Document $document, array $blockIds): EditResult;
 
     /**
+     * Turns a block into a block of another type, as its own type declares, keeping its id and place.
+     *
+     * Only the settings the transform maps are carried over, and bindings move with them. Decorator settings are
+     * kept where the decorator applies to the new type, and children are kept; when the new type cannot hold them,
+     * the whole edit is refused rather than losing them.
+     *
+     * @since 0.1.0
+     */
+    public function transform(Document $document, string $blockId, BlockName $to): EditResult;
+
+    /**
      * Places a copy of a block, with new ids throughout, directly after it.
      *
      * @since 0.1.0

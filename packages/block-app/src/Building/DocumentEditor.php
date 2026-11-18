@@ -283,6 +283,121 @@ class DocumentEditor implements DocumentEditorInterface
         return EditResult::accepted($document->withTree($tree));
     }
 
+    public function transform(Document $document, string $blockId, BlockName $to): EditResult
+    {
+        $block = $document->tree->find($blockId);
+
+        if ($block === null)
+        {
+            return EditResult::refused($this->unknownBlock($blockId));
+        }
+
+        $from = $this->types->get($block->type);
+        $target = $this->types->get($to);
+
+        if ($from === null || $target === null)
+        {
+            return EditResult::refused($this->unknownType($from === null ? $block->type : $to, $blockId));
+        }
+
+        $transform = $from->transformTo($to);
+
+        if ($transform === null)
+        {
+            return EditResult::refused(new EditRefusal(
+                EditRefusalKind::NoTransform,
+                sprintf(
+                    'A %s block cannot be turned into a %s block.',
+                    $from->catalogue->title,
+                    $target->catalogue->title,
+                ),
+                $blockId,
+            ));
+        }
+
+        $settings = [];
+
+        foreach ($transform->settings as $setting => $source)
+        {
+            if (array_key_exists($source, $block->settings))
+            {
+                $settings[$setting] = $block->settings[$source];
+            }
+        }
+
+        $extensions = array_filter(
+            $block->extensions,
+            fn (string $namespace): bool => $this->decorators->get($namespace)?->appliesTo($to) === true,
+            ARRAY_FILTER_USE_KEY,
+        );
+        $replacement = new Block(
+            $block->id,
+            $to,
+            $target->version,
+            $settings,
+            $extensions,
+            $this->carriedBindings($block, $transform->settings, $extensions),
+            $block->children,
+        );
+        $refusals = [];
+        $vetted = $this->vetted(
+            $replacement,
+            $this->parentType($document->tree, $document->tree->positionOf($blockId)),
+            $refusals,
+        );
+
+        if ($refusals !== [])
+        {
+            return EditResult::refused(...$refusals);
+        }
+
+        return $this->replaced($document, $vetted);
+    }
+
+    /**
+     * Moves a block's bindings to the settings that take over from the ones they fed.
+     *
+     * A binding on a setting the transform does not carry over is dropped with the setting. A binding on a
+     * decorator's setting stays when that decorator's settings stay.
+     *
+     * @param array<string, string> $map
+     *   The transform's map, new setting to old.
+     * @param array<string, mixed> $extensions
+     *   The decorator settings the new block keeps.
+     * @return array<string, Binding>
+     */
+    private function carriedBindings(Block $block, array $map, array $extensions): array
+    {
+        $bindings = [];
+
+        foreach ($block->bindings as $key => $binding)
+        {
+            $path = SettingPath::fromString((string) $key);
+
+            if ($path->namespace() !== null)
+            {
+                if (array_key_exists($path->namespace(), $extensions))
+                {
+                    $bindings[(string) $key] = $binding;
+                }
+
+                continue;
+            }
+
+            [$first, $rest] = [$path->segments()[0], array_slice($path->segments(), 1)];
+
+            foreach ($map as $setting => $source)
+            {
+                if ($source === $first)
+                {
+                    $bindings[implode('.', [(string) $setting, ...$rest])] = $binding;
+                }
+            }
+        }
+
+        return $bindings;
+    }
+
     public function duplicate(Document $document, string $blockId): EditResult
     {
         $block = $document->tree->find($blockId);

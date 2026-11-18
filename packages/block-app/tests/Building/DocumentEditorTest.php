@@ -359,3 +359,97 @@ test('restore is held to the same checks as any other edit', function () use ($s
         ->and($try([block('a', 'acme/box', [], block('a', 'acme/box'))]))->toBe([EditRefusalKind::InvalidBlock])
         ->and($editor->restore($now, ['nope'])->document)->toBeNull();
 });
+
+$texts = function ($c) {
+    $text = ['type' => 'string'];
+    types($c)->add(type('acme/para', ['settings' => ['type' => 'object', 'properties' => ['text' => $text]],
+        'transforms' => [
+            ['to' => 'acme/head', 'settings' => ['text' => 'text']],
+            ['to' => 'acme/quote', 'settings' => ['text' => 'text']],
+            ['to' => 'acme/box', 'settings' => []],
+        ]]));
+    types($c)->add(type('acme/head', ['version' => 3, 'settings' => ['type' => 'object', 'properties' => [
+        'text' => $text,
+        'level' => ['type' => 'integer', 'default' => 2],
+    ]], 'transforms' => [['to' => 'acme/para', 'settings' => ['text' => 'text']]]]));
+    types($c)->add(type('acme/quote', ['children' => true, 'settings' => ['type' => 'object', 'properties' => [
+        'text' => $text,
+        'citation' => $text,
+    ]], 'transforms' => [['to' => 'acme/para', 'settings' => ['text' => 'text']]]]));
+    types($c)->add(type('acme/box', ['children' => true]));
+    types($c)->add(type('acme/plain'));
+    sources($c)->add(new ArrayDataSource('acme/values', ['k' => 'v'], ['type' => 'string']));
+    $c->get(DecoratorRegistryInterface::class)->add(new Decorator(
+        'acme/para-only',
+        ['type' => 'object', 'properties' => ['x' => ['type' => 'boolean']]],
+        ['acme/para'],
+    ));
+    $c->get(DecoratorRegistryInterface::class)->add(new Decorator(
+        'acme/any',
+        ['type' => 'object', 'properties' => ['y' => ['type' => 'boolean']]],
+    ));
+};
+
+test('a block turns into another type, keeping its id and the settings the transform maps', function () use ($texts) {
+    [$editor] = editor($texts);
+    $document = doc(block('p', 'acme/para', ['text' => 'Hello']), block('z', 'acme/plain'));
+
+    $result = $editor->transform($document, 'p', BlockName::fromString('acme/head'));
+    $heading = $result->document?->tree->find('p');
+
+    expect($result->isAccepted())->toBeTrue()
+        ->and($result->affectedIds)->toBe(['p'])
+        ->and($heading->type->toString())->toBe('acme/head')
+        ->and($heading->typeVersion)->toBe(3)
+        ->and($heading->settings)->toBe(['text' => 'Hello'])
+        ->and($result->document->tree->ids())->toBe(['p', 'z'])
+        ->and($document->tree->find('p')->type->toString())->toBe('acme/para');
+});
+
+test('settings the other type has no place for are left behind', function () use ($texts) {
+    [$editor] = editor($texts);
+    $document = doc(block('q', 'acme/quote', ['text' => 'Said', 'citation' => 'Someone']));
+
+    expect($editor->transform($document, 'q', BlockName::fromString('acme/para'))->document->tree->find('q')->settings)
+        ->toBe(['text' => 'Said']);
+});
+
+test('a block can only turn into a type its own type declares', function () use ($texts) {
+    [$editor] = editor($texts);
+    $document = doc(block('h', 'acme/head', ['text' => 'x']), block('g', 'gone/away'));
+
+    expect(refusals($editor->transform($document, 'h', BlockName::fromString('acme/quote'))))
+        ->toBe([EditRefusalKind::NoTransform])
+        ->and(refusals($editor->transform($document, 'nope', BlockName::fromString('acme/para'))))
+        ->toBe([EditRefusalKind::UnknownBlock])
+        ->and(refusals($editor->transform($document, 'g', BlockName::fromString('acme/para'))))
+        ->toBe([EditRefusalKind::UnknownType]);
+});
+
+test('a transform that cannot keep everything keeps what it can, or is refused', function () use ($texts) {
+    [$editor] = editor($texts);
+    $quote = block('q', 'acme/quote', ['text' => 'Said'], block('c', 'acme/plain'));
+    $bound = block('p', 'acme/para', ['text' => 'x'])
+        ->withBinding(SettingPath::fromString('text'), Binding::to('acme/values', ['key' => 'k']))
+        ->withExtension('acme/para-only', ['x' => true])
+        ->withExtension('acme/any', ['y' => true]);
+    $quoteBound = block('r', 'acme/quote', ['text' => 'x'])
+        ->withBinding(SettingPath::fromString('citation'), Binding::to('acme/values', ['key' => 'k']));
+
+    $refused = $editor->transform(doc($quote), 'q', BlockName::fromString('acme/para'));
+    $heading = $editor->transform(doc($bound), 'p', BlockName::fromString('acme/head'))->document->tree->find('p');
+    $para = $editor->transform(doc($quoteBound), 'r', BlockName::fromString('acme/para'))->document->tree->find('r');
+    $box = $editor->transform(doc(block('b', 'acme/para', ['text' => 'x'])), 'b', BlockName::fromString('acme/box'));
+    $keptChildren = $editor->transform(
+        doc(block('p2', 'acme/para', ['text' => 'x'])),
+        'p2',
+        BlockName::fromString('acme/quote'),
+    );
+
+    expect(refusals($refused))->toBe([EditRefusalKind::DisallowedPlacement])
+        ->and(array_keys($heading->bindings))->toBe(['text'])
+        ->and(array_keys($heading->extensions))->toBe(['acme/any'])
+        ->and($para->bindings)->toBe([])
+        ->and($box->document->tree->find('b')->settings)->toBe([])
+        ->and($keptChildren->isAccepted())->toBeTrue();
+});

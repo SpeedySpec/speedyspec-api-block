@@ -16,7 +16,7 @@ test('a block type round-trips through an array', function () {
     $data = ['name' => 'acme/field', 'version' => 2, 'title' => 'Field', 'description' => 'd', 'category' => 'forms',
         'keywords' => ['input'], 'icon' => 'text', 'settings' => ['type' => 'object', 'properties' => ['label' => ['type' => 'string']]],
         'view' => null, 'children' => false, 'parents' => ['acme/form'], 'provides' => [], 'uses' => ['acme/form-id'],
-        'assets' => ['acme-field'], 'examples' => [['label' => 'Name']]];
+        'assets' => ['acme-field'], 'examples' => [['label' => 'Name']], 'transforms' => []];
     expect(BlockType::fromArray($data)->toArray())->toBe($data);
 });
 
@@ -28,7 +28,8 @@ test('a block type applies defaults for omitted keys', function () {
     $type = BlockType::fromArray(['name' => 'acme/x', 'title' => 'X']);
     expect($type->toArray())->toBe(['name' => 'acme/x', 'version' => 1, 'title' => 'X', 'description' => '',
         'category' => '', 'keywords' => [], 'icon' => null, 'settings' => ['type' => 'object'], 'view' => null,
-        'children' => false, 'parents' => true, 'provides' => [], 'uses' => [], 'assets' => [], 'examples' => []])
+        'children' => false, 'parents' => true, 'provides' => [], 'uses' => [], 'assets' => [], 'examples' => [],
+        'transforms' => []])
         ->and($type->children->allows(BlockName::fromString('acme/y')))->toBeFalse()
         ->and($type->parents->allows(null))->toBeTrue();
 });

@@ -90,7 +90,7 @@ $host = function (array $abilities = ['view', 'edit', 'manage-templates'], bool 
             'text' => ['type' => 'string', 'default' => '', 'maxLength' => 20],
             'note' => ['type' => 'string', 'default' => '', 'x-private' => true],
         ],
-    ]]));
+    ], 'transforms' => [['to' => 'acme/box', 'settings' => []]]]));
     $draw = fn (string $tag) => new class($tag) implements BlockOutputInterface {
         public function __construct(private readonly string $tag)
         {
@@ -134,6 +134,7 @@ test('the catalogue lists block types, and narrows to what fits at a position', 
     expect($status)->toBe(200)
         ->and(array_column($all['blocks'], 'name'))->toBe(['core/repeat', 'acme/box', 'acme/text'])
         ->and($all['blocks'][2]['settings']['properties']['text']['maxLength'])->toBe(20)
+        ->and($all['blocks'][2]['transforms'])->toBe(['acme/box'])
         ->and(array_column($inside['blocks'], 'name'))->toBe(['core/repeat', 'acme/box', 'acme/text'])
         ->and($bad)->toBe(200);
 });
@@ -281,6 +282,12 @@ test('every editing operation is reachable', function (array $body, callable $ch
     'remove several' => [
         ['operation' => 'removeBlocks', 'ids' => ['t', 'b']],
         fn (array $blocks) => expect($blocks)->toBe([]),
+    ],
+    'transform' => [
+        ['operation' => 'transform', 'block' => 't', 'type' => 'acme/box'],
+        fn (array $blocks, array $result) => expect($blocks[0]['children'][0]['type'])->toBe('acme/box')
+            ->and($blocks[0]['children'][0]['id'])->toBe('t')
+            ->and($result['affected'])->toBe(['t']),
     ],
     'duplicate' => [
         ['operation' => 'duplicate', 'block' => 't'],
