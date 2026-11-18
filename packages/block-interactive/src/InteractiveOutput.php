@@ -59,7 +59,7 @@ class InteractiveOutput implements BlockOutputInterface, DeclaresAssetsInterface
                 '<section%s><h3%s>%s</h3><div class="b-tab-panel">%s</div></section>',
                 $e->attributes($this->own($input, $values, 'b-tab')->withAttribute('data-b-tab', '')),
                 $e->attributes($this->mark($input, 'label')->withClass('b-tab-label')),
-                $e->text($this->string($values, 'label')),
+                $e->text($this->named($input, $values, 'label', 'Tab')),
                 $input->children(),
             ),
             'slider' => $this->slider($input, $values),
@@ -108,7 +108,7 @@ class InteractiveOutput implements BlockOutputInterface, DeclaresAssetsInterface
         $interval = is_int($values['interval'] ?? null) ? max(3, min(30, $values['interval'])) : 6;
         $bag = $this->own($input, $values, 'b-slider')
             ->withAttribute('aria-roledescription', 'carousel')
-            ->withAttribute('aria-label', $this->string($values, 'label'))
+            ->withAttribute('aria-label', $this->named($input, $values, 'label', 'Slides'))
             ->withAttribute('data-b-slider', '')
             ->withAttribute('data-autoplay', ($values['autoplay'] ?? false) === true ? '1' : '0')
             ->withAttribute('data-interval', (string) $interval);
@@ -295,6 +295,19 @@ class InteractiveOutput implements BlockOutputInterface, DeclaresAssetsInterface
             $input->escaper,
             $input->admin,
         ))->editable($setting);
+    }
+
+    /**
+     * Reads a label that names a control; a cleared one falls back for visitors, so nothing they reach is unnamed,
+     * and stays empty while editing, so it can be typed into.
+     *
+     * @param array<string, mixed> $values
+     */
+    private function named(RenderInput $input, array $values, string $key, string $fallback): string
+    {
+        $text = $this->string($values, $key);
+
+        return trim($text) === '' && !$input->request->editing ? $fallback : $text;
     }
 
     private function number(mixed $value): string

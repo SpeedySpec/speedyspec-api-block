@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { clamp, countAt, formatNumber, nextTab, remaining, slideLabel } from '../../assets/logic.js';
+import { clamp, countAt, formatNumber, nextTab, remaining, slideLabel, tabLabel } from '../../assets/logic.js';
 
 test('a number read from the page is kept within its bounds, or replaced when it is not a number', () => {
     assert.equal(clamp('0', 3, 30, 6), 3);
@@ -49,4 +49,10 @@ test('a number is written with its decimals, prefix and suffix', () => {
 
 test('a slide without a name is called by its place', () => {
     assert.equal(slideLabel(1, 5), 'Slide 2 of 5');
+});
+
+test('a tab with no label is called by its place', () => {
+    assert.equal(tabLabel('  ', 2), 'Tab 3');
+    assert.equal(tabLabel(undefined, 0), 'Tab 1');
+    assert.equal(tabLabel(' Overview ', 0), 'Overview');
 });

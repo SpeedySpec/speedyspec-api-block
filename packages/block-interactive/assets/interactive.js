@@ -6,7 +6,7 @@
  * sets text with textContent and reads numbers from data- attributes, leaving anything it cannot read as drawn.
  * Each element is set up once, however often the script loads or blocks are added.
  */
-import { clamp, countAt, formatNumber, nextTab, remaining, slideLabel } from './logic.js';
+import { clamp, countAt, formatNumber, nextTab, remaining, slideLabel, tabLabel } from './logic.js';
 
 const READY = 'data-b-ready';
 
@@ -45,7 +45,7 @@ function setUpTabs(set) {
             role: 'tab',
             id: `${tab.id}-tab`,
             'aria-controls': tab.id,
-        }, label?.textContent ?? `Tab ${index + 1}`);
+        }, tabLabel(label?.textContent, index));
 
         label?.classList.add('b-visually-hidden');
         tab.setAttribute('role', 'tabpanel');

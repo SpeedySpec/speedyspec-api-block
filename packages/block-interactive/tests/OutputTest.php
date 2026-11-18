@@ -138,3 +138,13 @@ test('the stylesheet loads nothing else and slides snap without a script', funct
         ->and(InteractiveStylesheet::CSS)->toContain('prefers-reduced-motion')
         ->and(InteractiveStylesheet::CSS)->toContain('.b-visually-hidden');
 });
+
+test('a slider or tab whose label was cleared still has a name for visitors', function () {
+    $slider = page(block('s', 'core/slider', ['label' => '  '], block('a', 'core/slide')));
+    $tab = page(block('t', 'core/tabs', [], block('a', 'core/tab', ['label' => ''])));
+
+    expect($slider)->toContain('aria-label="Slides"')
+        ->and($tab)->toContain('<h3 class="b-tab-label">Tab</h3>')
+        ->and(page(block('t', 'core/tabs', [], block('a', 'core/tab', ['label' => ''])), true))
+        ->toContain('<h3 class="b-tab-label" data-block-setting="label"></h3>');
+});

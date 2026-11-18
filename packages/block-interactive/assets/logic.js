@@ -90,6 +90,18 @@ export function formatNumber(value, decimals, prefix, suffix) {
 }
 
 /**
+ * Names a tab by its label, or by its place when the label is empty, so no tab is left without a name.
+ *
+ * @param {?string} text
+ * @param {number} index Counted from 0.
+ */
+export function tabLabel(text, index) {
+    const label = String(text ?? '').trim();
+
+    return label === '' ? `Tab ${index + 1}` : label;
+}
+
+/**
  * Names a slide that has no name of its own by its place.
  *
  * @param {number} index Counted from 0.

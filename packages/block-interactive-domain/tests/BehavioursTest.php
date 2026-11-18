@@ -58,11 +58,21 @@ test('a counter writes its final value with its decimals, prefix and suffix', fu
 });
 
 test('element ids come from block ids, made safe', function () {
-    expect(ElementIds::for('a b/c', 'x'))->toBe('b-a-b-c-x')
+    expect(ElementIds::for('a b/c', 'x'))->toBe('b-a_20b_2fc-x')
         ->and(ElementIds::for('tabs1', 'panel'))->toBe('b-tabs1-panel')
         ->and(viewOf(block('t1', 'core/tabs'))['id'])->toBe('b-t1-x')
-        ->and(viewOf(block('m"1', 'core/modal'))['id'])->toBe('b-m-1-x');
+        ->and(viewOf(block('m"1', 'core/modal'))['id'])->toBe('b-m_221-x');
 });
+
+test('two different block ids never make the same element id', function (string $one, string $other) {
+    expect(ElementIds::for($one, 'x'))->not->toBe(ElementIds::for($other, 'x'));
+})->with([
+    ['a.b', 'a-b'],
+    ['a b', 'a-b'],
+    ['a_2eb', 'a.b'],
+    ['ü', '-'],
+    ['a', 'a_'],
+]);
 
 test('an accordion\'s items share one group only when one may be open at a time', function () {
     $single = resolve(block('a', 'core/accordion', ['single' => true], block('i', 'core/accordion-item')));
