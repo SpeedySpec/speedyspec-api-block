@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SpeedySpec\Block\App;
 
+use SpeedySpec\Block\App\Building\BlockCatalogue;
 use SpeedySpec\Block\App\Building\PlacementRules;
 use SpeedySpec\Block\App\Ids\BlockDuplicator;
 use SpeedySpec\Block\App\Ids\RandomBlockIdGenerator;
@@ -29,6 +30,7 @@ use SpeedySpec\Block\App\Serialization\ClientExport;
 use SpeedySpec\Block\App\Serialization\JsonDocumentSerializer;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockDuplicatorInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockIdGeneratorInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
@@ -129,6 +131,11 @@ class AppServiceProvider
         ));
         $container->add(PlacementRulesInterface::class, fn (BlockServiceContainer $c) => new PlacementRules(
             $c->get(BlockTypeRegistryInterface::class),
+        ));
+        $container->add(BlockCatalogueInterface::class, fn (BlockServiceContainer $c) => new BlockCatalogue(
+            $c->get(BlockTypeRegistryInterface::class),
+            $c->get(PlacementRulesInterface::class),
+            $c->get(BlockPackageLoaderInterface::class),
         ));
         $container->add(OutputEscaperRegistryInterface::class, function (): OutputEscaperRegistryInterface {
             $escapers = new OutputEscaperRegistry();

@@ -94,6 +94,11 @@ class BlockPackageLoader implements BlockPackageLoaderInterface
         return $this->packages[$packageName] ?? [];
     }
 
+    public function packageOf(BlockName $type): ?string
+    {
+        return $this->claimed()[$type->toString()] ?? null;
+    }
+
     /**
      * Maps every block type a loaded package added to that package, so a later package cannot take the name.
      *

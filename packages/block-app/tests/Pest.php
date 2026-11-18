@@ -468,3 +468,53 @@ if (!function_exists('migrationTo'))
         };
     }
 }
+
+if (!function_exists('package'))
+{
+    /**
+     * Builds a block package from a name and a callable that receives the registrar.
+     */
+    function package(string $name, callable $register): \SpeedySpec\Block\Domain\Contracts\BlockPackageInterface
+    {
+        return new class($name, $register) implements \SpeedySpec\Block\Domain\Contracts\BlockPackageInterface {
+            private $register;
+
+            public function __construct(private readonly string $name, callable $register)
+            {
+                $this->register = $register;
+            }
+
+            public function name(): string
+            {
+                return $this->name;
+            }
+
+            public function register(\SpeedySpec\Block\Domain\Contracts\BlockPackageRegistrarInterface $registrar): void
+            {
+                ($this->register)($registrar);
+            }
+        };
+    }
+}
+
+if (!function_exists('catalogue'))
+{
+    /**
+     * Builds a block catalogue from a fresh container with the memory and application providers registered.
+     *
+     * @return array{0: \SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface, 1: BlockServiceContainer}
+     */
+    function catalogue(?callable $setup = null): array
+    {
+        $container = new BlockServiceContainer();
+        (new MemoryServiceProvider())->register($container);
+        (new AppServiceProvider())->register($container);
+
+        if ($setup !== null)
+        {
+            $setup($container);
+        }
+
+        return [$container->get(\SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface::class), $container];
+    }
+}
