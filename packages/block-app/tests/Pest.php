@@ -474,12 +474,23 @@ if (!function_exists('package'))
     /**
      * Builds a block package from a name and a callable that receives the registrar.
      */
-    function package(string $name, callable $register): \SpeedySpec\Block\Domain\Contracts\BlockPackageInterface
+    function package(
+        string $name,
+        callable $register,
+        string $title = 'Test blocks',
+        string $description = 'Blocks for a test.',
+    ): \SpeedySpec\Block\Domain\Contracts\BlockPackageInterface
     {
-        return new class($name, $register) implements \SpeedySpec\Block\Domain\Contracts\BlockPackageInterface {
+        return new class($name, $register, $title, $description) implements
+            \SpeedySpec\Block\Domain\Contracts\BlockPackageInterface {
             private $register;
 
-            public function __construct(private readonly string $name, callable $register)
+            public function __construct(
+                private readonly string $name,
+                callable $register,
+                private readonly string $title,
+                private readonly string $description,
+            )
             {
                 $this->register = $register;
             }
@@ -487,6 +498,16 @@ if (!function_exists('package'))
             public function name(): string
             {
                 return $this->name;
+            }
+
+            public function title(): string
+            {
+                return $this->title;
+            }
+
+            public function description(): string
+            {
+                return $this->description;
             }
 
             public function register(\SpeedySpec\Block\Domain\Contracts\BlockPackageRegistrarInterface $registrar): void

@@ -87,6 +87,9 @@ class BlockCatalogue implements BlockCatalogueInterface
      */
     private function entry(BlockType $type): CatalogueEntry
     {
-        return new CatalogueEntry($type, $this->packages->packageOf($type->name));
+        $package = $this->packages->packageOf($type->name);
+        $title = $package === null ? '' : ($this->packages->details($package)['title'] ?? '');
+
+        return new CatalogueEntry($type, $package, $title);
     }
 }

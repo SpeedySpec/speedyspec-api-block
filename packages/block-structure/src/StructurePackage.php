@@ -63,6 +63,16 @@ class StructurePackage implements BlockPackageInterface
         return 'core/structure';
     }
 
+    public function title(): string
+    {
+        return 'Layout';
+    }
+
+    public function description(): string
+    {
+        return 'Sections, columns and grids to arrange a page with.';
+    }
+
     public function register(BlockPackageRegistrarInterface $registrar): void
     {
         $count = fn (string $title): array => [

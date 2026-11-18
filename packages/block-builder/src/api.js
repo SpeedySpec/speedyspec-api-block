@@ -77,7 +77,7 @@ export function createClient({ baseUrl, fetch = globalThis.fetch, headers = {} }
 
     return {
         /**
-         * Lists block types; with a position, only those that may be placed there.
+         * Lists block types, and the packages that defined them; with a position, only those that may go there.
          *
          * @param {{document: string, parent: ?string, index: number}} [position]
          */
@@ -96,7 +96,9 @@ export function createClient({ baseUrl, fetch = globalThis.fetch, headers = {} }
 
             const suffix = query.size === 0 ? '' : `?${query}`;
 
-            return (await send('GET', `/catalogue${suffix}`)).blocks;
+            const answer = await send('GET', `/catalogue${suffix}`);
+
+            return { packages: answer.packages ?? [], blocks: answer.blocks ?? [] };
         },
 
         vocabulary: () => send('GET', '/vocabulary'),

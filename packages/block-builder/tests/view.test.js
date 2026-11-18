@@ -28,18 +28,38 @@ const page = {
     blocks: [block('s', 'core/section', block('e', 'core/element'), block('p', 'shop/price')), block('z', 'acme/odd')],
 };
 
-test('block types are grouped by category in the order categories first appear', () => {
-    const groups = groupCatalogue(catalogue, '');
+const packages = [
+    { name: 'core/structure-types', title: 'Layout', description: 'Sections and columns.' },
+    { name: 'shop/blocks', title: 'Shop', description: 'Prices.' },
+];
+const owned = [
+    { ...catalogue[0], package: 'core/structure-types' },
+    { ...catalogue[1], package: 'core/structure-types', category: 'text' },
+    { ...catalogue[2], package: 'shop/blocks' },
+    { ...catalogue[3], package: null },
+];
+const names = (sections) =>
+    sections.flatMap((section) => section.groups.flatMap((group) => group.entries.map((entry) => entry.name)));
 
-    assert.deepEqual(groups.map((group) => [group.category, group.entries.map((entry) => entry.name)]), [
-        ['Layout', ['core/section', 'core/element']],
-        ['Shop', ['shop/price']],
-        ['Other', ['acme/odd']],
-    ]);
+test('the add-block panel has a section per plugin, in the order the plugins are listed', () => {
+    const sections = groupCatalogue(owned, packages, '');
+
+    assert.deepEqual(sections.map((section) => section.title), ['Layout', 'Shop', 'Added by the site']);
+    assert.equal(sections[0].description, 'Sections and columns.');
+    assert.deepEqual(sections[0].groups.map((group) => group.category), ['Layout', 'Text']);
+    assert.deepEqual(sections[1].groups.map((group) => group.category), ['']);
+    assert.deepEqual(names(sections), ['core/section', 'core/element', 'shop/price', 'acme/odd']);
+});
+
+test('searching covers every section and matches a plugin by its title', () => {
+    assert.deepEqual(groupCatalogue(owned, packages, 'shop').map((section) => section.title), ['Shop']);
+    assert.deepEqual(names(groupCatalogue(owned, packages, 'layout')), ['core/section', 'core/element']);
+    assert.deepEqual(groupCatalogue(owned, packages, 'nothing like this'), []);
 });
 
 test('searching matches a title, a keyword or a description, whatever the case', () => {
-    const names = (query) => groupCatalogue(catalogue, query).flatMap((group) => group.entries.map((entry) => entry.name));
+    const names = (query) => groupCatalogue(catalogue, [], query)
+        .flatMap((section) => section.groups.flatMap((group) => group.entries.map((entry) => entry.name)));
 
     assert.deepEqual(names('SEC'), ['core/section']);
     assert.deepEqual(names('text'), ['core/element']);

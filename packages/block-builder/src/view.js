@@ -6,28 +6,62 @@ import { find, positionOf, walk } from './tree.js';
 const titleCase = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /**
- * Groups block types for the "add a block" panel, keeping only those that match a search.
+ * Arranges block types for the "add a block" panel: a section per package that defined them, searchable across all.
  *
- * @param {Array<object>} entries Catalogue entries.
- * @param {string} query What was typed; matched against title, name, keywords and description.
- * @returns {Array<{category: string, entries: Array<object>}>} Categories in the order they first appear.
+ * Sections follow the order of `packages`, which is the order the host loaded them in. Blocks a host registered
+ * itself, with no package, come last. Within a section, blocks are grouped by category only when the section has
+ * more than one, so a small plugin is a plain list.
+ *
+ * @param {Array<object>} entries Catalogue entries, each naming its `package`.
+ * @param {Array<{name: string, title: string, description: string}>} packages The packages that defined them.
+ * @param {string} query What was typed; matched against a block's title, name, keywords and description, and its
+ *   package's title.
+ * @returns {Array<{package: ?string, title: string, description: string, groups: Array<object>}>} Only sections
+ *   with a match.
  */
-export function groupCatalogue(entries, query) {
+export function groupCatalogue(entries, packages, query) {
     const wanted = query.trim().toLowerCase();
-    const groups = new Map();
+    const known = new Map(packages.map((entry) => [entry.name, entry]));
+    const sections = new Map(packages.map((entry) => [entry.name, []]));
+    const loose = [];
 
     for (const entry of entries) {
-        const text = [entry.title, entry.name, entry.description, ...(entry.keywords ?? [])].join(' ').toLowerCase();
+        const owner = known.get(entry.package) ?? null;
+        const text = [entry.title, entry.name, entry.description, ...(entry.keywords ?? []), owner?.title ?? '']
+            .join(' ')
+            .toLowerCase();
 
         if (wanted !== '' && !text.includes(wanted)) {
             continue;
         }
 
-        const category = entry.category ? titleCase(entry.category) : 'Other';
-        groups.set(category, [...(groups.get(category) ?? []), entry]);
+        (owner === null ? loose : sections.get(owner.name)).push(entry);
     }
 
-    return [...groups].map(([category, list]) => ({ category, entries: list }));
+    const grouped = (list) => {
+        const categories = new Map();
+
+        list.forEach((entry) => {
+            const category = entry.category ? titleCase(entry.category) : 'Other';
+            categories.set(category, [...(categories.get(category) ?? []), entry]);
+        });
+
+        return categories.size === 1
+            ? [{ category: '', entries: list }]
+            : [...categories].map(([category, members]) => ({ category, entries: members }));
+    };
+
+    return [
+        ...packages.map((entry) => ({ ...entry, list: sections.get(entry.name) })),
+        { name: null, title: 'Added by the site', description: '', list: loose },
+    ]
+        .filter((section) => section.list.length > 0)
+        .map((section) => ({
+            package: section.name,
+            title: section.title,
+            description: section.description,
+            groups: grouped(section.list),
+        }));
 }
 
 /**

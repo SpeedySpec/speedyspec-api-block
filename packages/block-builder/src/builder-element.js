@@ -262,7 +262,7 @@ export class BlockBuilderElement extends HTMLElement {
         const target = targets[Math.min(this.ui.target, targets.length - 1)];
         this.askAllowed(target.position);
         const allowed = this.ui.allowed;
-        const groups = groupCatalogue(state.catalogue, this.ui.query);
+        const sections = groupCatalogue(state.catalogue, state.packages, this.ui.query);
 
         return [
             el(
@@ -302,9 +302,15 @@ export class BlockBuilderElement extends HTMLElement {
             el(
                 'div',
                 { class: 'bb-drawer-body' },
-                groups.length === 0 ? el('p', { class: 'bb-none', text: 'No block matches that search.' }) : null,
-                groups.flatMap((group) => [
-                    el('h3', { text: group.category }),
+                sections.length === 0 ? el('p', { class: 'bb-none', text: 'No block matches that search.' }) : null,
+                sections.map((section) =>
+                    el(
+                        'section',
+                        { class: 'bb-section', 'aria-label': section.title },
+                        el('h3', { class: 'bb-section-title', text: section.title }),
+                        section.description ? el('p', { class: 'bb-section-text', text: section.description }) : null,
+                        section.groups.flatMap((group) => [
+                    group.category === '' ? null : el('h4', { text: group.category }),
                     el(
                         'div',
                         { class: 'bb-tiles' },
@@ -328,7 +334,9 @@ export class BlockBuilderElement extends HTMLElement {
                             );
                         }),
                     ),
-                ]),
+                        ]),
+                    ),
+                ),
             ),
         ];
     }

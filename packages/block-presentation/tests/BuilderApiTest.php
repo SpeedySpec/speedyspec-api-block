@@ -523,3 +523,17 @@ test('a whole earlier state of a document can be restored, and is checked like a
         ->and($missing)->toBe(400)
         ->and($stored->tree->ids())->toBe(['b', 't']);
 });
+
+test('the catalogue route lists each package that defined a block once, in load order', function () use (
+    $host,
+    $call,
+) {
+    [$api] = $host();
+
+    [, $body] = $call($api, 'GET', '/catalogue');
+
+    expect(array_column($body['packages'], 'name'))->toBe(['core/flow'])
+        ->and($body['packages'][0]['title'])->not->toBe('')
+        ->and(array_key_exists('description', $body['packages'][0]))->toBeTrue()
+        ->and(array_column($body['blocks'], 'packageTitle'))->toBe([$body['packages'][0]['title'], '', '']);
+});

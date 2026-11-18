@@ -57,4 +57,14 @@ interface BlockPackageLoaderInterface
      * @since 0.1.0
      */
     public function packageOf(BlockName $type): ?string;
+
+    /**
+     * Gives a loaded package's title and description, so a builder can head a section with them.
+     *
+     * @return array{title: string, description: string}|null
+     *   Null when no package of that name is loaded.
+     *
+     * @since 0.1.0
+     */
+    public function details(string $packageName): ?array;
 }

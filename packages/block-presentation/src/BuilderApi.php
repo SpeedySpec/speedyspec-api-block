@@ -7,6 +7,7 @@ namespace SpeedySpec\Block\Presentation;
 use InvalidArgumentException;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
 use SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateLibraryRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateRepositoryInterface;
@@ -149,7 +150,25 @@ class BuilderApi
             );
         }
 
-        return new ApiResponse(200, ['blocks' => array_map(static fn ($entry): array => $entry->toArray(), $entries)]);
+        $loader = $this->container->get(BlockPackageLoaderInterface::class);
+        $defining = array_flip(array_filter(array_map(static fn ($entry): ?string => $entry->package, $entries)));
+        $packages = [];
+
+        // In load order, so sections appear the way the host arranged its packages.
+        foreach ($loader->loaded() as $name)
+        {
+            $details = $loader->details($name);
+
+            if (isset($defining[$name]) && $details !== null)
+            {
+                $packages[] = ['name' => $name, ...$details];
+            }
+        }
+
+        return new ApiResponse(200, [
+            'packages' => $packages,
+            'blocks' => array_map(static fn ($entry): array => $entry->toArray(), $entries),
+        ]);
     }
 
     private function vocabulary(): ApiResponse

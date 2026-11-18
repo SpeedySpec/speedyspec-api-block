@@ -55,6 +55,16 @@ class FlowPackage implements BlockPackageInterface
         return 'core/flow';
     }
 
+    public function title(): string
+    {
+        return 'Show by rule and repeat';
+    }
+
+    public function description(): string
+    {
+        return 'Rules for when a block is shown, and a block that repeats its contents for each item of a list.';
+    }
+
     public function register(BlockPackageRegistrarInterface $registrar): void
     {
         $visibility = new Visibility($this->conditions, $this->validator);

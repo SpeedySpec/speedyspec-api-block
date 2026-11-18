@@ -36,6 +36,16 @@ if (!function_exists('badPackage'))
                 return 'acme/bad-blocks';
             }
 
+            public function title(): string
+            {
+                return 'Broken blocks';
+            }
+
+            public function description(): string
+            {
+                return '';
+            }
+
             public function register(BlockPackageRegistrarInterface $registrar): void
             {
                 $leaky = BlockName::fromString('acme/leaky');
@@ -121,6 +131,16 @@ if (!function_exists('sneakyPackage'))
             public function name(): string
             {
                 return 'acme/sneaky-blocks';
+            }
+
+            public function title(): string
+            {
+                return 'Broken blocks';
+            }
+
+            public function description(): string
+            {
+                return '';
             }
 
             public function register(BlockPackageRegistrarInterface $registrar): void

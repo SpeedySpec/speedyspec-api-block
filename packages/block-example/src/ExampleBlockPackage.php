@@ -30,6 +30,16 @@ class ExampleBlockPackage implements BlockPackageInterface
         return 'example/blocks';
     }
 
+    public function title(): string
+    {
+        return 'Example blocks';
+    }
+
+    public function description(): string
+    {
+        return 'A notice and a list, to show how a block package is written.';
+    }
+
     public function register(BlockPackageRegistrarInterface $registrar): void
     {
         $notice = BlockName::fromString('example/notice');

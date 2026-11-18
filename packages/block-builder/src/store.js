@@ -20,6 +20,7 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         document: null,
         issues: [],
         catalogue: [],
+        packages: [],
         vocabulary: null,
         selected: null,
         refusals: [],
@@ -157,7 +158,8 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
                     status: 'ready',
                     document: read.document,
                     issues: read.issues,
-                    catalogue,
+                    catalogue: catalogue.blocks,
+                    packages: catalogue.packages,
                     vocabulary,
                     preview: { output, css },
                 });
@@ -182,7 +184,7 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         /**
          * Asks which block types may be placed at a position.
          */
-        placeable: (position) => client.catalogue({ document: documentId, ...position }),
+        placeable: async (position) => (await client.catalogue({ document: documentId, ...position })).blocks,
 
         insert: (type, position, settings = {}) => edit({ operation: 'insert', type, position, settings }, selectFirst),
 

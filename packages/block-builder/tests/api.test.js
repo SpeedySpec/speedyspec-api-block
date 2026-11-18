@@ -24,7 +24,7 @@ function fakeFetch(...answers) {
 
 test('reads go to the right address and give back the body', async () => {
     const { fetch, calls } = fakeFetch(
-        { status: 200, body: { blocks: [{ name: 'acme/box' }] } },
+        { status: 200, body: { packages: [{ name: 'acme/blocks', title: 'Acme' }], blocks: [{ name: 'acme/box' }] } },
         { status: 200, body: { document: { id: 'a b' }, issues: [] } },
         { status: 200, body: { documents: ['home'] } },
     );
@@ -34,7 +34,7 @@ test('reads go to the right address and give back the body', async () => {
     const read = await client.document('a b');
     const list = await client.documents();
 
-    assert.deepEqual(blocks, [{ name: 'acme/box' }]);
+    assert.deepEqual(blocks, { packages: [{ name: 'acme/blocks', title: 'Acme' }], blocks: [{ name: 'acme/box' }] });
     assert.equal(read.document.id, 'a b');
     assert.deepEqual(list, ['home']);
     assert.deepEqual(calls.map((call) => `${call.method} ${call.url}`), [

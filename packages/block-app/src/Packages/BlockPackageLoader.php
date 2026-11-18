@@ -33,6 +33,11 @@ class BlockPackageLoader implements BlockPackageLoaderInterface
     private array $packages = [];
 
     /**
+     * @var array<string, array{title: string, description: string}>
+     */
+    private array $details = [];
+
+    /**
      * Takes each registry a package may write to, as a contract.
      *
      * @since 0.1.0
@@ -62,6 +67,13 @@ class BlockPackageLoader implements BlockPackageLoaderInterface
             ));
         }
 
+        $title = trim($package->title());
+
+        if ($title === '')
+        {
+            throw new BlockPackageException(sprintf('Package "%s" needs a title.', $name));
+        }
+
         if (isset($this->packages[$name]))
         {
             throw new BlockPackageException(sprintf('Package "%s" is already loaded.', $name));
@@ -85,6 +97,7 @@ class BlockPackageLoader implements BlockPackageLoaderInterface
         $registrar->commit();
 
         $this->packages[$name] = $registrar->types();
+        $this->details[$name] = ['title' => $title, 'description' => trim($package->description())];
     }
 
     public function loaded(): array
@@ -95,6 +108,11 @@ class BlockPackageLoader implements BlockPackageLoaderInterface
     public function typesOf(string $packageName): array
     {
         return $this->packages[$packageName] ?? [];
+    }
+
+    public function details(string $packageName): ?array
+    {
+        return $this->details[$packageName] ?? null;
     }
 
     public function packageOf(BlockName $type): ?string

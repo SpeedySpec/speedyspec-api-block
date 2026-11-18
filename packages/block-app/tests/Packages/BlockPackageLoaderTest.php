@@ -236,3 +236,16 @@ test('a template under another vendor is refused, and a failed load leaves no te
         })))->toThrow(RuntimeException::class)
         ->and($c->get(\SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface::class)->all())->toBe([]);
 });
+
+test('a package must have a title, and the loader keeps its details', function () {
+    [, $c] = renderer();
+    $loader = $c->get(BlockPackageLoaderInterface::class);
+    $register = fn ($r) => $r->type(type('acme/one'));
+
+    $loader->load(package('acme/one', $register, 'Acme blocks', 'Boxes.'));
+
+    expect($loader->details('acme/one'))->toBe(['title' => 'Acme blocks', 'description' => 'Boxes.'])
+        ->and($loader->details('acme/nope'))->toBeNull()
+        ->and(fn () => $loader->load(package('acme/two', fn ($r) => $r->type(type('acme/two')), '  ')))
+        ->toThrow(\SpeedySpec\Block\Domain\Exceptions\BlockPackageException::class);
+});
