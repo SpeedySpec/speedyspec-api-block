@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SpeedySpec\Block\App\Resolving;
 
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ViewStepInterface;
@@ -38,6 +39,7 @@ class ViewStage
         private readonly BlockBehaviourRegistryInterface $behaviours,
         private readonly SchemaValidatorInterface $validator,
         private readonly StepRegistryInterface $steps,
+        private readonly DecoratorRegistryInterface $decorators,
     )
     {
     }
@@ -146,6 +148,37 @@ class ViewStage
                 null,
                 $view->childPasses,
             );
+        }
+
+        foreach ($this->decorators->for($type->name) as $decorator)
+        {
+            $namespace = $decorator->namespace;
+
+            if ($decorator->viewSchema === null || !array_key_exists($namespace, $view->extensions))
+            {
+                continue;
+            }
+
+            $errors = $this->validator->validate($view->extensions[$namespace], $decorator->viewSchema)->errors();
+
+            if ($errors === [])
+            {
+                continue;
+            }
+
+            foreach ($errors as $error)
+            {
+                $issues[] = new Issue(
+                    $blockId,
+                    IssueKind::InvalidView,
+                    $error->message,
+                    $error->path === '' ? '@' . $namespace : '@' . $namespace . ':' . $error->path,
+                );
+            }
+
+            $extensions = $view->extensions;
+            unset($extensions[$namespace]);
+            $view = new BlockView($view->values, $extensions, null, $view->childPasses);
         }
 
         return [$view, $issues, $adminValues];

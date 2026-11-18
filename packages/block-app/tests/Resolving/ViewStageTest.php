@@ -32,7 +32,14 @@ function viewStage(?callable $setup = null): ViewStage
         $setup($behaviours, $steps);
     }
 
-    return new ViewStage($behaviours, new SubsetSchemaValidator(), $steps);
+    $validator = new SubsetSchemaValidator();
+
+    return new ViewStage(
+        $behaviours,
+        $validator,
+        $steps,
+        new \SpeedySpec\Block\App\Registries\DecoratorRegistry($validator),
+    );
 }
 
 /**
@@ -168,4 +175,45 @@ test('a stopped outcome yields no view and keeps its issues', function () {
     $issue = new Issue('a', IssueKind::InvalidSettings, 'bad');
     $outcome = validated([], [$issue])->with(continue: false);
     expect(viewStage()->run($outcome, type('acme/box'), Context::empty(), Mode::Front))->toBe([null, [$issue], []]);
+});
+
+test('a decorator extension that fails its view schema is dropped and reported', function () {
+    [$resolver] = resolver(function ($c) {
+        types($c)->add(type('acme/box'));
+        $c->get(\SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface::class)->add(
+            new \SpeedySpec\Block\Domain\ValueObjects\Decorator(
+                'acme/fx',
+                ['type' => 'object'],
+                null,
+                ['type' => 'object', 'required' => ['class'], 'properties' => ['class' => ['type' => 'string']]],
+            )
+        );
+        steps($c)->add(
+            \SpeedySpec\Block\Domain\Contracts\ViewStepInterface::class,
+            viewStep(['acme/fx' => ['class' => 5], 'acme/other' => ['kept' => true]]),
+        );
+    });
+    $result = $resolver->resolve(doc(block('a', 'acme/box')), Mode::Front);
+
+    expect($result->find('a')->view->extensions)->toBe(['acme/other' => ['kept' => true]])
+        ->and($result->issues[0]->kind)->toBe(IssueKind::InvalidView)
+        ->and($result->issues[0]->path)->toBe('@acme/fx:class');
+});
+
+test('a decorator extension that passes its view schema is kept', function () {
+    [$resolver] = resolver(function ($c) {
+        types($c)->add(type('acme/box'));
+        $c->get(\SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface::class)->add(
+            new \SpeedySpec\Block\Domain\ValueObjects\Decorator(
+                'acme/fx',
+                ['type' => 'object'],
+                null,
+                ['type' => 'object', 'properties' => ['class' => ['type' => 'string']]],
+            )
+        );
+        steps($c)->add(\SpeedySpec\Block\Domain\Contracts\ViewStepInterface::class, viewStep(['acme/fx' => ['class' => 'fade']]));
+    });
+    $result = $resolver->resolve(doc(block('a', 'acme/box')), Mode::Front);
+
+    expect($result->find('a')->view->extensions)->toBe(['acme/fx' => ['class' => 'fade']])->and($result->hasIssues())->toBeFalse();
 });
