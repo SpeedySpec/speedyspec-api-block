@@ -10,7 +10,8 @@
     },
     "require-dev": {
         "pestphp/pest": "^3.0|^4.0",
-        "speedyspec/block-contract-tests": "^0.1"
+        "speedyspec/block-contract-tests": "^0.1",
+        "speedyspec/block-infra-memory": "^0.1"
     },
     "provide": {
         "speedyspec/block-app-implementation": "1.0"

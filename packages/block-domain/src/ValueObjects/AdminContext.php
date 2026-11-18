@@ -16,7 +16,7 @@ class AdminContext
      *
      * @param array<string, mixed> $values
      *   Extra values for the editor to show.
-     * @param list<mixed> $issues
+     * @param list<Issue> $issues
      *   The problems found while resolving the block.
      * @param array<string, array{source: string, used: string}> $bindings
      *   Maps a setting-path string to the data source and which value won:
