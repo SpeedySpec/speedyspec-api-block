@@ -144,3 +144,95 @@ test('the sanitizer is a contract of its own and can be replaced', function () {
     expect($c->get(\SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface::class)->get('html')->richText('<b>x</b>'))
         ->toBe('replaced');
 });
+
+test('a link cannot be used to break out of its href', function (string $in) {
+    $out = (new RichTextSanitizer())->clean($in);
+    $document = new DOMDocument();
+    @$document->loadHTML('<?xml encoding="UTF-8"><body>' . $out . '</body>');
+    $link = $document->getElementsByTagName('a')->item(0);
+
+    // Read as a browser would: one link, carrying only its href.
+    expect($out)->toBe('<a href="https://e.test/&quot; onmouseover=&quot;alert(1)">a</a>')
+        ->and($link->attributes->length)->toBe(1)
+        ->and($link->getAttribute('href'))->toBe('https://e.test/" onmouseover="alert(1)');
+})->with([
+    'single-quoted href with a double quote' => ["<a href='https://e.test/\" onmouseover=\"alert(1)'>a</a>"],
+    'encoded quote in a double-quoted href' => ['<a href="https://e.test/&quot; onmouseover=&quot;alert(1)">a</a>'],
+]);
+
+test('cleaning twice gives the same as cleaning once', function (string $in) {
+    $sanitizer = new RichTextSanitizer();
+
+    expect($sanitizer->clean($sanitizer->clean($in)))->toBe($sanitizer->clean($in));
+})->with([
+    ["<a href='https://e.test/\" onmouseover=\"x'>a</a>"],
+    ['<em>a</em> &copy 2020'],
+    ["<strong>a</strong>\r\nb"],
+    ['<a href="/x?a=1&amp;b=2">x</a>'],
+]);
+
+test('ordinary text keeps its formatting', function (string $in, string $out) {
+    expect((new RichTextSanitizer())->clean($in))->toBe($out);
+})->with([
+    'windows line ending' => ["<em>a</em>\r\nb", "<em>a</em>\nb"],
+    'entity without a semicolon' => ['<em>x</em> &copy 2020', '<em>x</em> © 2020'],
+    'less-than without a semicolon' => ['<em>5 &lt 6</em>', '<em>5 &lt; 6</em>'],
+]);
+
+test('formatted text in decorator settings and in maps is cleaned when stored', function () {
+    $schema = ['type' => 'object', 'properties' => [
+        'notes' => ['type' => 'object', 'additionalProperties' => ['type' => 'string', 'x-control' => 'rich-text']],
+    ]];
+    [$editor] = editor(function ($c) use ($schema) {
+        types($c)->add(type('acme/p', ['settings' => $schema]));
+        $c->get(\SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface::class)->add(
+            new \SpeedySpec\Block\Domain\ValueObjects\Decorator('acme/caption', ['type' => 'object', 'properties' => [
+                'caption' => ['type' => 'string', 'x-control' => 'rich-text'],
+            ]]),
+        );
+    });
+    $dirty = '<em>a</em><script>x</script>';
+
+    $map = $editor->insert(doc(), BlockName::fromString('acme/p'), Position::root(0), ['notes' => ['one' => $dirty]]);
+    $id = $map->affectedIds[0];
+    $extended = $editor->updateExtension($map->document, $id, 'acme/caption', ['caption' => $dirty]);
+    $pasted = $editor->insertBlocks(doc(), [block('p', 'acme/p')->withExtension('acme/caption', ['caption' => $dirty])], Position::root(0));
+
+    expect($map->document->tree->find($id)->settings['notes']['one'])->toBe('<em>a</em>x')
+        ->and($extended->document->tree->find($id)->extensions['acme/caption']['caption'])->toBe('<em>a</em>x')
+        ->and($pasted->document->tree->roots()[0]->extensions['acme/caption']['caption'])->toBe('<em>a</em>x');
+});
+
+test('a bound list or object is turned into text wherever it lands in formatted text', function () {
+    $schema = ['type' => 'object', 'properties' => [
+        'list' => ['type' => 'array', 'default' => [], 'items' => ['type' => 'string', 'x-control' => 'rich-text']],
+    ]];
+    [$resolver] = resolver(function ($c) use ($schema) {
+        types($c)->add(type('acme/p', ['settings' => $schema]));
+        sources($c)->add(new class implements DataSourceInterface {
+            public function name(): string
+            {
+                return 'acme/links';
+            }
+
+            public function argumentsSchema(): array
+            {
+                return ['type' => 'object'];
+            }
+
+            public function valueSchema(): array
+            {
+                return [];
+            }
+
+            public function resolve(array $arguments, Context $context, Mode $mode): DataSourceResult
+            {
+                return DataSourceResult::value(['<a href="https://evil.test">click</a>']);
+            }
+        });
+    });
+    $block = block('p', 'acme/p')->withBinding(SettingPath::fromString('list'), Binding::to('acme/links'));
+
+    expect($resolver->resolve(doc($block), Mode::Front)->find('p')->settings['list'])
+        ->toBe(['&lt;a href="https://evil.test"&gt;click&lt;/a&gt;']);
+});

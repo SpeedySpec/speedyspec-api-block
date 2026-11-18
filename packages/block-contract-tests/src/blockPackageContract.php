@@ -79,6 +79,12 @@ function blockPackageContract(
 
                 expect($own)->toBe([]);
             });
+
+            it('draws every block type it is checked against itself', function () use ($checked, $makePackage) {
+                [$container, $types] = $checked();
+
+                expect(packageDrawnByFindings($container, $types, $makePackage()->name()))->toBe([]);
+            });
         }
 
         it('has block types to check', function () use ($checked) {
@@ -131,6 +137,34 @@ function blockPackageContract(
             expect(adminLeakFindings($container, $types))->toBe([]);
         });
     });
+}
+
+/**
+ * Checks that a package, and not one loaded before it, draws each block type for visitors.
+ *
+ * An outputs package is often tested with the default outputs loaded first, to show it can replace them; without
+ * this check, the defaults would be checked in its place.
+ *
+ * @param list<BlockName> $names
+ *
+ * @return list<string>
+ *
+ * @since 0.1.0
+ */
+function packageDrawnByFindings(BlockServiceContainer $container, array $names, string $packageName): array
+{
+    $loader = $container->get(BlockPackageLoaderInterface::class);
+    $findings = [];
+
+    foreach ($names as $name)
+    {
+        if ($loader->outputOwner($name, Mode::Front) !== $packageName)
+        {
+            $findings[] = sprintf('%s is not drawn by %s.', $name->toString(), $packageName);
+        }
+    }
+
+    return $findings;
 }
 
 /**
