@@ -29,19 +29,17 @@ class WordPressPosts implements WpPostsInterface
 
     public function content(string $id): ?string
     {
-        $post = ctype_digit($id) ? \get_post((int) $id) : null;
-
-        return $post === null ? null : (string) $post->post_content;
+        return $this->post($id)?->post_content;
     }
 
     public function kind(string $id): string
     {
-        return (string) \get_post_type((int) $id);
+        return (string) $this->post($id)?->post_type;
     }
 
     public function save(string $id, string $kind, string $content): void
     {
-        if (!ctype_digit($id) || \get_post((int) $id) === null)
+        if ($this->post($id) === null)
         {
             throw new StorageException(sprintf('There is no post "%s" to save into.', $id));
         }
@@ -57,10 +55,37 @@ class WordPressPosts implements WpPostsInterface
 
     public function delete(string $id): void
     {
-        if (ctype_digit($id))
+        if ($this->post($id) !== null)
         {
             \wp_trash_post((int) $id);
         }
+    }
+
+    /**
+     * Finds the post a document id names, if it is one this store offers.
+     *
+     * An id is the post's number written the one usual way, so `7` and `007` are never two ids for one post, and
+     * only the listed post types that are not in the trash are documents.
+     *
+     * @return \WP_Post|null
+     *
+     * @since 0.1.0
+     */
+    private function post(string $id): ?object
+    {
+        if ((string) (int) $id !== $id || (int) $id < 1)
+        {
+            return null;
+        }
+
+        $post = \get_post((int) $id);
+
+        if ($post === null || !in_array($post->post_type, $this->postTypes, true) || $post->post_status === 'trash')
+        {
+            return null;
+        }
+
+        return $post;
     }
 
     public function ids(): array

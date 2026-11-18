@@ -295,6 +295,12 @@ class WpMarkup
 
             foreach (is_array($metadata['bindings'] ?? null) ? $metadata['bindings'] : [] as $attribute => $binding)
             {
+                // The saved markup is drawn as it is, so it is never taken from a data source.
+                if ((string) $attribute === self::CONTENT)
+                {
+                    continue;
+                }
+
                 if (is_array($binding) && is_string($binding['source'] ?? null) && $binding['source'] !== '')
                 {
                     $bindings[(string) $attribute] = Binding::to(
@@ -416,10 +422,19 @@ class WpMarkup
     {
         $json = (string) json_encode((object) $attributes, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
-        return str_replace(
-            ['--', '<', '>', '&', '\\"'],
-            ['\\u002d\\u002d', '\\u003c', '\\u003e', '\\u0026', '\\u0022'],
+        // Escapes are rewritten pair by pair: a backslash followed by a quote must be told apart from an escaped
+        // backslash that happens to end a string, or the quote that closes the string is rewritten instead.
+        $json = (string) preg_replace_callback(
+            '/\\\\(.)/s',
+            static fn (array $found): string => match ($found[1])
+            {
+                '"' => '\\u0022',
+                '\\' => '\\u005c',
+                default => $found[0],
+            },
             $json,
         );
+
+        return str_replace(['--', '<', '>', '&'], ['\\u002d\\u002d', '\\u003c', '\\u003e', '\\u0026'], $json);
     }
 }

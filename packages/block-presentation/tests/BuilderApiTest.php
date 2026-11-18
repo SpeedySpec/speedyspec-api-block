@@ -421,3 +421,60 @@ test('a server failure is reported without its details', function () use ($host,
 
     expect($status)->toBe(500)->and($json)->not->toContain('secret');
 });
+
+test('an included document is only drawn for someone who may see it', function () use ($host, $call) {
+    [$api, $c] = $host();
+    $c->get(BlockPackageLoaderInterface::class)
+        ->load(\SpeedySpec\Block\App\Documents\DocumentsPackage::from($c));
+    $include = fn (string $id) => $call($api, 'POST', '/documents/home/operations', [], [
+        'operation' => 'insert',
+        'type' => 'core/include',
+        'position' => ['parent' => null, 'index' => 0],
+        'settings' => ['document' => $id],
+    ]);
+
+    [$locked, $lockedBody] = $include('locked');
+    [$missing, $missingBody] = $include('never-stored');
+
+    expect($locked)->toBe(422)
+        ->and($missing)->toBe(422)
+        ->and($lockedBody['refusals'][0]['kind'])->toBe($missingBody['refusals'][0]['kind'])
+        ->and(str_replace('locked', 'X', $lockedBody['refusals'][0]['message']))
+        ->toBe(str_replace('never-stored', 'X', $missingBody['refusals'][0]['message']));
+
+    // Even when the block is already stored, drawing asks again.
+    $documents = $c->get(DocumentRepositoryInterface::class);
+    $home = $documents->find('home');
+    $smuggled = new Block('inc', BlockName::fromString('core/include'), 1, ['document' => 'locked']);
+    $first = \SpeedySpec\Block\Domain\ValueObjects\Position::root(0);
+    $documents->save($home->withTree($home->tree->insert($smuggled, $first)));
+    $documents->save(new Document('locked', 'page', new BlockTree(
+        new Block('x', BlockName::fromString('acme/text'), 1, ['text' => 'LOCKEDTEXT']),
+    )));
+
+    expect($call($api, 'GET', '/documents/home/render')[2])->not->toContain('LOCKEDTEXT')
+        ->and($call($api, 'GET', '/documents/home/render', ['mode' => 'admin'])[2])->not->toContain('LOCKEDTEXT')
+        ->and($call($api, 'POST', '/documents/home/preview', [], ['block' => 'inc'])[2])->not->toContain('LOCKEDTEXT');
+});
+
+test('an update with no settings in it is a mistake, not an instruction to clear them', function () use ($host, $call) {
+    [$api, $c] = $host();
+    $send = fn (array $body) => $call($api, 'POST', '/documents/home/operations', [], $body)[0];
+
+    expect($send(['operation' => 'updateSettings', 'block' => 't']))->toBe(400)
+        ->and($send(['operation' => 'updateSettings', 'block' => 't', 'settings' => null]))->toBe(400)
+        ->and($send(['operation' => 'updateExtension', 'block' => 't', 'namespace' => 'core/style']))->toBe(400)
+        ->and($c->get(DocumentRepositoryInterface::class)->find('home')->tree->find('t')->settings['text'])->toBe('Hi')
+        ->and($send(['operation' => 'updateSettings', 'block' => 't', 'settings' => []]))->toBe(200)
+        ->and($send(['operation' => 'insert', 'type' => 'acme/box', 'position' => ['index' => 0]]))->toBe(200);
+});
+
+test('a template saved from a block does not carry its private settings', function () use ($host, $call) {
+    [$api] = $host();
+
+    $call($api, 'POST', '/templates', [], ['name' => 'acme/t', 'title' => 'T', 'document' => 'home', 'block' => 'b']);
+    [, $list, $json] = $call($api, 'GET', '/templates');
+
+    expect($json)->not->toContain('secret')
+        ->and($list['libraries'][1]['templates'][0]['blocks'][0]['children'][0]['settings'])->toBe(['text' => 'Hi']);
+});

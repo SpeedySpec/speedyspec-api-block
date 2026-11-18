@@ -114,6 +114,9 @@ $container->get(BlockPackageLoaderInterface::class)->load(DocumentsPackage::from
 - The included document is drawn by the ordinary renderer, in the same mode, with the including block's context.
 - A document that includes itself, directly or through others, is drawn once and then stopped. Inclusions nest
   at most 8 deep, and one inclusion leads to at most 500 others.
+- When the host has bound a `BuilderAccessInterface`, it is asked before a document is included (`view` for a
+  visitor, `edit` in admin mode), so including a document is never a way to read it. A refused document is reported
+  exactly as a missing one. A host that binds an access rule must allow visitors to view what public pages include.
 - A block's output is only markup, so what an included document reports is kept by
   `DocumentIncluderInterface`: read `issues()` after drawing a page, then call `clear()`. Its assets reach the
   page's own result.
@@ -182,7 +185,8 @@ forgery protection are also the host's.
 
 ## WordPress
 
-Nothing above depends on WordPress. `block-infra-wp` is the one package that connects the two:
+Nothing above depends on WordPress. `block-infra-wp` is the one package that connects the two. It is
+**experimental**: it reads and writes block markup faithfully, but does not yet draw every post as WordPress does.
 
 - **Posts as documents.** `WpPostDocumentRepository` reads a post's block markup into a block tree and writes it
   back. `WpMarkup` follows WordPress's block comment grammar itself, without calling WordPress. A block's
@@ -203,4 +207,17 @@ add_action('init', fn () => $provider->boot($container), 99);
 Everything it needs from WordPress comes through four ports in `SpeedySpec\Block\Infra\WP\Ports`, so the adapter
 is tested without WordPress. The four classes in `WordPress/` that call WordPress's own functions are thin and
 have **not** been run against a live WordPress.
+
+Known differences from WordPress when drawing:
+
+- Static blocks and classic content are drawn from their saved markup and do not pass through WordPress's render
+  pipeline, so layout classes, per-block styles, shortcodes, embeds and automatic paragraphs are missing.
+- Dynamic blocks are handed to WordPress without their inner blocks or block context, so blocks that draw their
+  own children, or read the current post from context, come out empty.
+- WordPress's binding sources read the post from block context, which is not supplied yet.
+- A block whose stored attributes do not fit its declared types, or that sits where `parent` or `allowed_blocks`
+  forbid, is not drawn; WordPress is more forgiving.
+- A WordPress block type whose name another package has already registered, such as `core/columns` when
+  `block-structure` is loaded, is drawn by that package. `boot()` returns the names it skipped.
+- An empty object nested inside a block's attributes is written back as an empty list.
 

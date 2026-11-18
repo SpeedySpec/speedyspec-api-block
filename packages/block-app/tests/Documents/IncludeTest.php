@@ -219,3 +219,18 @@ test('template libraries give a builder one list of collections to offer', funct
 
     expect(count($libraries->all()))->toBe(2);
 });
+
+test('a document that includes itself is drawn once', function () use ($host, $text, $include, $stored) {
+    [$renderer, , $includer] = $host();
+    $selfie = new Document('selfie', 'page', new BlockTree($text('s', 'SELF'), $include('again', 'selfie')));
+    [$renderer, $c, $includer] = $host(
+        $selfie,
+        $stored('root', $text('r', 'ROOT'), $include('to-mid', 'mid')),
+        $stored('mid', $text('m', 'MID'), $include('to-root', 'root')),
+    );
+    $root = $c->get(DocumentRepositoryInterface::class)->find('root');
+
+    expect($renderer->render($selfie, new RenderRequest())->output)->toBe('<p>SELF</p>')
+        ->and(idsAndKinds($includer->issues()))->toBe([['again', IssueKind::DocumentLoop]])
+        ->and($renderer->render($root, new RenderRequest())->output)->toBe('<p>ROOT</p><p>MID</p>');
+});

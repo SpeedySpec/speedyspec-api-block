@@ -293,12 +293,12 @@ class BuilderApi
             'move' => $editor->move($document, $block(), $this->position($body)),
             'remove' => $editor->remove($document, $block()),
             'duplicate' => $editor->duplicate($document, $block()),
-            'updateSettings' => $editor->updateSettings($document, $block(), $this->map($body, 'settings')),
+            'updateSettings' => $editor->updateSettings($document, $block(), $this->map($body, 'settings', true)),
             'updateExtension' => $editor->updateExtension(
                 $document,
                 $block(),
                 $this->text($body, 'namespace'),
-                $this->map($body, 'settings'),
+                $this->map($body, 'settings', true),
             ),
             'setBinding' => $editor->setBinding($document, $block(), $path(), $this->binding($body)),
             'clearBinding' => $editor->clearBinding($document, $block(), $path()),
@@ -381,10 +381,14 @@ class BuilderApi
             throw new ApiProblem(404, 'The document has no such block.');
         }
 
+        // A template is offered to everyone who may edit anything, so it must not carry the block's private settings.
+        $shared = $this->container->get(ClientExportInterface::class)
+            ->export(new Document('template', 'template', new BlockTree($block)), Mode::Front);
+
         $template = new BlockTemplate(
             $this->text($body, 'name'),
             $this->text($body, 'title'),
-            new BlockTree($block),
+            $shared->tree,
             is_string($body['description'] ?? null) ? $body['description'] : '',
             is_string($body['category'] ?? null) ? $body['category'] : '',
         );
@@ -575,8 +579,14 @@ class BuilderApi
      *
      * @since 0.1.0
      */
-    private function map(array $body, string $key): array
+    private function map(array $body, string $key, bool $required = false): array
     {
+        // A missing map must not be read as an empty one where that would replace what is stored with nothing.
+        if ($required && !is_array($body[$key] ?? null))
+        {
+            throw new ApiProblem(400, sprintf('The request needs "%s" as an object.', $key));
+        }
+
         $value = $body[$key] ?? [];
 
         if (!is_array($value) || ($value !== [] && array_is_list($value)))

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SpeedySpec\Block\App\Documents;
 
 use SpeedySpec\Block\Domain\Contracts\BlockOutputInterface;
+use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
 use SpeedySpec\Block\Domain\Contracts\CollectStepInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentIncluderInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
@@ -12,6 +13,7 @@ use SpeedySpec\Block\Domain\Contracts\ValidateStepInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\ValueObjects\AttributeBag;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
+use SpeedySpec\Block\Domain\ValueObjects\BuilderAbility;
 use SpeedySpec\Block\Domain\ValueObjects\Context;
 use SpeedySpec\Block\Domain\ValueObjects\Issue;
 use SpeedySpec\Block\Domain\ValueObjects\IssueKind;
@@ -38,6 +40,7 @@ class IncludeBlock implements ValidateStepInterface, BlockOutputInterface, Colle
     public function __construct(
         private readonly DocumentRepositoryInterface $documents,
         private readonly DocumentIncluderInterface $includer,
+        private readonly ?BuilderAccessInterface $access = null,
     )
     {
     }
@@ -83,7 +86,16 @@ class IncludeBlock implements ValidateStepInterface, BlockOutputInterface, Colle
     {
         $id = (string) ($settings['document'] ?? '');
 
-        if ($type->name->toString() !== self::NAME || $id === '' || $this->documents->find($id) !== null)
+        if ($type->name->toString() !== self::NAME || $id === '')
+        {
+            return [];
+        }
+
+        $ability = $mode === Mode::Admin ? BuilderAbility::Edit : BuilderAbility::View;
+        $allowed = $this->access === null || $this->access->allows($ability, $id);
+
+        // Refused and missing are reported alike, so the answer does not reveal which documents exist.
+        if ($allowed && $this->documents->find($id) !== null)
         {
             return [];
         }

@@ -40,6 +40,9 @@ class WpBlockTypeBridge
             'default' => [],
             'items' => ['type' => ['string', 'null']],
             'title' => 'Saved markup',
+            // Private, because a private setting cannot be bound: the markup is drawn unescaped, so it must never
+            // come from a data source. WpBlockBehaviour hands it to the block's own output all the same.
+            'x-private' => true,
         ];
         $properties['metadata'] ??= ['type' => 'object'];
         $example = $type['example']['attributes'] ?? null;
@@ -66,6 +69,29 @@ class WpBlockTypeBridge
             'uses' => $strings($type['uses_context'] ?? []),
             'examples' => is_array($example) && !array_is_list($example) ? [$example] : [],
         ]);
+    }
+
+    /**
+     * Tells whether a value is of one of the listed types; no types means any value fits.
+     *
+     * @param list<string> $types
+     *
+     * @since 0.1.0
+     */
+    private function fits(mixed $value, array $types): bool
+    {
+        $actual = match (true)
+        {
+            $value === null => ['null'],
+            is_bool($value) => ['boolean'],
+            is_int($value) => ['integer', 'number'],
+            is_float($value) => ['number'],
+            is_string($value) => ['string'],
+            is_array($value) && ($value === [] || array_is_list($value)) => ['array', 'object'],
+            default => ['object'],
+        };
+
+        return $types === [] || array_intersect($actual, $types) !== [];
     }
 
     /**
@@ -97,7 +123,9 @@ class WpBlockTypeBridge
             $schema['enum'] = array_values($definition['enum']);
         }
 
-        if (array_key_exists('default', $definition))
+        // WordPress does not hold a default to its attribute's type; a schema here does, and one that fails its own
+        // schema would make every block of the type invalid.
+        if (array_key_exists('default', $definition) && $this->fits($definition['default'], $types))
         {
             $schema['default'] = $definition['default'];
         }

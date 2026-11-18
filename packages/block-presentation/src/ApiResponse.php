@@ -27,7 +27,8 @@ class ApiResponse
     }
 
     /**
-     * Encodes the body the way documents are stored, so a number or an empty object survives the trip.
+     * Encodes the body the way documents are stored, so `1.0` stays a decimal and a document's own empty maps stay
+     * objects. An empty object nested inside settings is stored as an empty list, as the serializer documents.
      *
      * @return string
      *   JSON; empty when the answer has no body.

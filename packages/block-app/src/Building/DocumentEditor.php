@@ -287,7 +287,14 @@ class DocumentEditor implements DocumentEditorInterface
             return EditResult::refused($this->unknownBlock($blockId));
         }
 
+        $changed = $block->withBinding($path, $binding);
+        $type = $this->types->get($block->type);
         $refusals = $this->bindingRefusals($block->type, $blockId, $path, $binding);
+
+        if ($refusals === [] && $type !== null)
+        {
+            $refusals = $this->stepRefusals($changed, $type, $blockId);
+        }
 
         if ($refusals !== [])
         {

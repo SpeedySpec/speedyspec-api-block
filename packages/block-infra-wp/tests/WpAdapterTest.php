@@ -321,3 +321,121 @@ test('a WordPress binding source supplies a value, or none', function () use ($p
     expect($source->resolve(['key' => 'sub'], $context, $mode)->get())->toBe('From meta')
         ->and($source->resolve(['key' => 'other'], $context, $mode)->hasValue())->toBeFalse();
 });
+
+test('an attribute that ends in a backslash survives being written and read again', function () {
+    $wp = new WpMarkup();
+    $block = new Block('a', BlockName::fromString('acme/card'), 1, ['path' => 'C:' . chr(92), 'q' => 'say "hi"']);
+
+    $again = $wp->parse($wp->serialize(new BlockTree($block)))->roots()[0];
+
+    expect($again->settings['path'])->toBe('C:' . chr(92))
+        ->and($again->settings['q'])->toBe('say "hi"')
+        ->and($again->id)->toBe('a');
+});
+
+test('the saved markup of a block cannot be bound to a data source', function () use ($posts) {
+    $wp = new WpMarkup();
+    $source = '<!-- wp:paragraph {"metadata":{"bindings":{"wpContent":{"source":"core/post-meta","args":{"key":"x"}},'
+        . '"content":{"source":"core/post-meta","args":{"key":"sub"}}}}} --><p>safe</p><!-- /wp:paragraph -->';
+
+    $block = $wp->parse($source)->roots()[0];
+
+    expect(array_keys($block->bindings))->toBe(['content']);
+
+    $c = new BlockServiceContainer();
+    (new AppServiceProvider())->register($c);
+    $provider = new WpServiceProvider(
+        $posts(),
+        new class implements WpBlockTypesInterface {
+            public function all(): array
+            {
+                return [['name' => 'core/paragraph']];
+            }
+        },
+        new class implements WpRendererInterface {
+            public function render(string $name, array $attributes, string $content): string
+            {
+                return $content;
+            }
+        },
+        new class implements WpBindingsInterface {
+            public function sources(): array
+            {
+                return ['core/post-meta'];
+            }
+
+            public function value(string $source, array $arguments, array $context): mixed
+            {
+                return ['<img src=x onerror=alert(1)>'];
+            }
+        },
+    );
+    $provider->register($c);
+    $provider->boot($c);
+    $path = \SpeedySpec\Block\Domain\ValueObjects\SettingPath::fromString('wpContent');
+    $binding = \SpeedySpec\Block\Domain\ValueObjects\Binding::to('core/post-meta', ['key' => 'x']);
+    $bound = (new Block('p', BlockName::fromString('core/paragraph'), 1, ['wpContent' => ['<p>safe</p>']]))
+        ->withBinding($path, $binding);
+    $plain = new Document('1', 'page', new BlockTree($bound->withoutBinding($path)));
+
+    $drawn = $c->get(DocumentRendererInterface::class)
+        ->render(new Document('1', 'page', new BlockTree($bound)), new RenderRequest());
+    $edit = $c->get(DocumentEditorInterface::class)->setBinding($plain, 'p', $path, $binding);
+
+    expect($drawn->output)->not->toContain('onerror')
+        ->and($edit->isAccepted())->toBeFalse();
+});
+
+test('a default WordPress declares that does not fit its own type does not remove the block', function () {
+    $type = (new WpBlockTypeBridge())->toBlockType(['name' => 'core/latest-posts', 'attributes' => [
+        'featuredImageSizeWidth' => ['type' => 'number', 'default' => null],
+        'columns' => ['type' => 'number', 'default' => '3'],
+        'ok' => ['type' => 'number', 'default' => 2],
+    ]]);
+
+    expect($type->settingsSchema['properties']['featuredImageSizeWidth'])->toBe(['type' => 'number'])
+        ->and($type->settingsSchema['properties']['columns'])->toBe(['type' => 'number'])
+        ->and($type->settingsSchema['properties']['ok'])->toBe(['type' => 'number', 'default' => 2]);
+});
+
+test('a WordPress block type that is already registered is reported, not silently passed over', function () use (
+    $posts,
+) {
+    $c = new BlockServiceContainer();
+    (new AppServiceProvider())->register($c);
+    $c->get(BlockTypeRegistryInterface::class)
+        ->add(\SpeedySpec\Block\Domain\ValueObjects\BlockType::fromArray([
+            'name' => 'core/columns',
+            'title' => 'Mine',
+        ]));
+    $provider = new WpServiceProvider(
+        $posts(),
+        new class implements WpBlockTypesInterface {
+            public function all(): array
+            {
+                return [['name' => 'core/columns'], ['name' => 'core/paragraph']];
+            }
+        },
+        new class implements WpRendererInterface {
+            public function render(string $name, array $attributes, string $content): string
+            {
+                return $content;
+            }
+        },
+        new class implements WpBindingsInterface {
+            public function sources(): array
+            {
+                return [];
+            }
+
+            public function value(string $source, array $arguments, array $context): mixed
+            {
+                return null;
+            }
+        },
+    );
+
+    expect($provider->boot($c))->toBe(['core/columns'])
+        ->and($c->get(BlockTypeRegistryInterface::class)->get(BlockName::fromString('core/columns'))->catalogue->title)
+        ->toBe('Mine');
+});

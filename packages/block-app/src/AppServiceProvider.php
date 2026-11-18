@@ -56,6 +56,7 @@ use SpeedySpec\Block\Domain\Contracts\BlockTemplateRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BreakpointRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
 use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
 use SpeedySpec\Block\Domain\Contracts\CollectionSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ConditionRegistryInterface;
@@ -205,6 +206,7 @@ class AppServiceProvider
         $container->add(DocumentIncluderInterface::class, fn (BlockServiceContainer $c) => new DocumentIncluder(
             $c->get(DocumentRepositoryInterface::class),
             fn (): DocumentRendererInterface => $c->get(DocumentRendererInterface::class),
+            $c->has(BuilderAccessInterface::class) ? $c->get(BuilderAccessInterface::class) : null,
         ));
         $container->add(
             BlockTemplateLibraryRegistryInterface::class,

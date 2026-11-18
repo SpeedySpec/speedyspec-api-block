@@ -33,6 +33,10 @@ interface WpPostsInterface
     /**
      * Writes a post's content, creating the post when the id is new.
      *
+     * The content holds markup that will be drawn unescaped. An implementation must clean it for the person saving
+     * it, as WordPress does for anyone who may not post unfiltered HTML; one that stores it as given lets anyone
+     * who can edit a document write script into the page.
+     *
      * @since 0.1.0
      */
     public function save(string $id, string $kind, string $content): void;
