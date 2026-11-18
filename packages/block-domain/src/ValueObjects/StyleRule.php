@@ -61,7 +61,7 @@ class StyleRule
      * Checks a value is safe to write after a property name in a stylesheet.
      *
      * Only letters, digits, spaces and a few symbols are allowed, and only the listed functions, which rules out
-     * ending the declaration, comments, escapes, quotes and loading a URL.
+     * ending the declaration, comments, escapes, quotes and loading a URL. Brackets must be balanced.
      *
      * @param string $subject
      *   Names what the value is for, in the error message.
@@ -79,6 +79,26 @@ class StyleRule
             && preg_match('/^[A-Za-z0-9 .,%#()+*\/_-]+\z/', $value) === 1
             && !str_contains($value, '/*')
             && !str_contains($value, '*/');
+
+        // An unclosed bracket would swallow every rule written after this one.
+        $depth = 0;
+
+        foreach ($safe ? str_split($value) : [] as $character)
+        {
+            $depth += match ($character)
+            {
+                '(' => 1,
+                ')' => -1,
+                default => 0,
+            };
+
+            if ($depth < 0)
+            {
+                break;
+            }
+        }
+
+        $safe = $safe && $depth === 0;
 
         if ($safe)
         {

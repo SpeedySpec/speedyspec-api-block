@@ -20,9 +20,13 @@ use Throwable;
 /**
  * Shows or hides any block by rules stored on it: groups of conditions, with no expressions.
  *
- * A block is shown when it has no groups, or when every rule of at least one group holds. A rule that cannot be
+ * A block is shown when it has no groups, or when every rule of at least one group holds; a group with no rules
+ * never holds. A rule that cannot be
  * judged (an unknown condition, arguments the condition refuses, a condition that fails) counts as not holding
  * even when negated, so a mistake hides content from visitors rather than exposing it; an editor sees why.
+ *
+ * The rules decide what is resolved and drawn. They are not applied to a client export, which carries a document's
+ * blocks as stored: a host must not send the export of a document whose rules hide something from the visitor.
  *
  * @since 0.1.0
  */
@@ -57,6 +61,7 @@ class Visibility implements GateStepInterface, ValidateStepInterface
                     'description' => 'Shown when every rule of any one group holds. No groups: always shown.',
                     'items' => [
                         'type' => 'array',
+                        'minItems' => 1,
                         'items' => [
                             'type' => 'object',
                             'required' => ['condition'],
@@ -132,6 +137,12 @@ class Visibility implements GateStepInterface, ValidateStepInterface
      */
     private function groupHolds(array $group, Context $context, Mode $mode): bool
     {
+        // A group with no rules restricts nothing; taken as holding, it would make a restricted block public.
+        if ($group === [])
+        {
+            return false;
+        }
+
         foreach ($group as $rule)
         {
             if (!is_array($rule) || $this->problem($rule) !== null)

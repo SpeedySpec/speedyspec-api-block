@@ -48,8 +48,7 @@ test('a block is shown when every condition of any one group holds', function ()
         ->and($front($renderer, $text([$no])))->toBe('')
         ->and($front($renderer, $text([$yes, $no])))->toBe('')
         ->and($front($renderer, $text([$no], [$yes])))->toBe('<p>hi</p>')
-        ->and($front($renderer, $text([$no], [$yes, $no])))->toBe('')
-        ->and($front($renderer, $text([])))->toBe('<p>hi</p>');
+        ->and($front($renderer, $text([$no], [$yes, $no])))->toBe('');
 });
 
 test('a rule can be negated and receives its arguments', function () use ($setup, $rule, $text, $front) {
@@ -138,4 +137,27 @@ test('the condition registry lists what a builder can offer and refuses a bad sc
         ->and($conditions->get('acme/boom'))->toBeNull()
         ->and(fn () => $conditions->add(condition('acme/bad', fn () => true, ['oneOf' => []])))
         ->toThrow(\SpeedySpec\Block\Domain\Exceptions\UnsupportedSchemaException::class);
+});
+
+test('an empty group never makes a restricted block public', function () use ($setup, $rule, $text, $front) {
+    [$renderer, $c] = flow($setup);
+    $editor = $c->get(DocumentEditorInterface::class);
+    $document = doc(block('a', 'acme/text'));
+
+    expect($front($renderer, $text([])))->toBe('')
+        ->and($front($renderer, $text([$rule('acme/no')], [])))->toBe('')
+        ->and(refusals($editor->updateExtension($document, 'a', 'core/visibility', ['groups' => [[]]])))
+        ->toBe([EditRefusalKind::InvalidSettings]);
+});
+
+test('a rule the resolver would report is refused when edited', function () use ($setup, $rule) {
+    [, $c] = flow($setup);
+    $editor = $c->get(DocumentEditorInterface::class);
+    $document = doc(block('a', 'acme/text'));
+    $try = fn (array $one) => $editor->updateExtension($document, 'a', 'core/visibility', ['groups' => [[$one]]]);
+
+    expect(refusals($try($rule('acme/gone'))))->toBe([EditRefusalKind::InvalidSettings])
+        ->and($try($rule('acme/gone'))->refusals[0]->path)->toBe('@core/visibility:groups.0.0')
+        ->and(refusals($try($rule('acme/is', ['value' => 5]))))->toBe([EditRefusalKind::InvalidSettings])
+        ->and($try($rule('acme/is', ['value' => 'go']))->isAccepted())->toBeTrue();
 });

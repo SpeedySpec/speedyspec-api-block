@@ -126,3 +126,39 @@ test('blocks laid out alike share their rules', function () {
     expect(classOf($html, 0))->toBe(classOf($html, 1))
         ->and(substr_count($css, 'grid-template-columns'))->toBe(1);
 });
+
+test('columns still sit side by side when the host has other breakpoints', function () {
+    $draw = function (array $settings, array $breakpoints): string {
+        $container = new \SpeedySpec\Block\Domain\BlockServiceContainer();
+        (new \SpeedySpec\Block\Infra\Memory\MemoryServiceProvider())->register($container);
+        (new \SpeedySpec\Block\App\AppServiceProvider())->register($container);
+        $registry = $container->get(\SpeedySpec\Block\Domain\Contracts\BreakpointRegistryInterface::class);
+        $registry->remove('tablet');
+        $registry->remove('desktop');
+
+        foreach ($breakpoints as $name => $width)
+        {
+            $registry->add(new \SpeedySpec\Block\Domain\ValueObjects\Breakpoint($name, $width));
+        }
+
+        $container->get(\SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface::class)
+            ->load(\SpeedySpec\Block\Structure\StructurePackage::from($container));
+        $container->get(\SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface::class)->render(
+            new \SpeedySpec\Block\Domain\Entities\Document(
+                'd',
+                'page',
+                new \SpeedySpec\Block\Domain\Entities\BlockTree(block('c', 'core/columns', $settings)),
+            ),
+            new \SpeedySpec\Block\Domain\ValueObjects\RenderRequest(),
+        );
+
+        return $container->get(\SpeedySpec\Block\Domain\Contracts\StyleCollectorInterface::class)->css();
+    };
+
+    expect($draw([], ['md' => 800, 'lg' => 1200]))
+        ->toContain('@media (min-width:800px)')
+        ->toContain('flex-direction:row')
+        ->and($draw(['stackBelow' => 'nope'], ['md' => 800]))->toContain('@media (min-width:800px)')
+        ->and($draw(['stackBelow' => 'lg'], ['md' => 800, 'lg' => 1200]))->toContain('@media (min-width:1200px)')
+        ->and($draw([], []))->toContain('display:flex;flex-direction:row')->not->toContain('@media');
+});

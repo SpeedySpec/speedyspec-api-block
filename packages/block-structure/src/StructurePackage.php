@@ -7,9 +7,11 @@ namespace SpeedySpec\Block\Structure;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageRegistrarInterface;
+use SpeedySpec\Block\Domain\Contracts\BreakpointRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StyleCollectorInterface;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
+use SpeedySpec\Block\Domain\ValueObjects\Breakpoint;
 
 /**
  * The blocks pages are laid out with: section, columns, column, grid and element.
@@ -31,10 +33,15 @@ class StructurePackage implements BlockPackageInterface
     /**
      * @param StyleCollectorInterface $styles
      *   Receives the layout rules of the columns and grid blocks.
+     * @param BreakpointRegistryInterface $breakpoints
+     *   Tells the columns block which breakpoints the host has.
      *
      * @since 0.1.0
      */
-    public function __construct(private readonly StyleCollectorInterface $styles)
+    public function __construct(
+        private readonly StyleCollectorInterface $styles,
+        private readonly BreakpointRegistryInterface $breakpoints,
+    )
     {
     }
 
@@ -45,7 +52,10 @@ class StructurePackage implements BlockPackageInterface
      */
     public static function from(BlockServiceContainer $container): self
     {
-        return new self($container->get(StyleCollectorInterface::class));
+        return new self(
+            $container->get(StyleCollectorInterface::class),
+            $container->get(BreakpointRegistryInterface::class),
+        );
     }
 
     public function name(): string
@@ -131,7 +141,10 @@ class StructurePackage implements BlockPackageInterface
         ]));
         $registrar->output(
             BlockName::fromString('core/columns'),
-            new LayoutOutput($this->styles, Layout::columns(...)),
+            new LayoutOutput($this->styles, fn (array $values): array => Layout::columns($values, array_map(
+                static fn (Breakpoint $breakpoint): string => $breakpoint->name,
+                $this->breakpoints->all(),
+            ))),
         );
 
         $registrar->type(BlockType::fromArray([

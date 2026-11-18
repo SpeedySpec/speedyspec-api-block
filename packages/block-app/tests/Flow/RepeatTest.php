@@ -200,3 +200,51 @@ test('the collection registry lists, removes and refuses an unsupported schema',
         ->and(fn () => $sources->add(collection('acme/bad', fn () => [], ['oneOf' => []])))
         ->toThrow(\SpeedySpec\Block\Domain\Exceptions\UnsupportedSchemaException::class);
 });
+
+test('a repeat the resolver would report is refused when edited or inserted', function () use ($setup, $repeat) {
+    [, $c] = flow($setup);
+    $editor = $c->get(\SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface::class);
+    $document = doc($repeat('r', []));
+    $kind = \SpeedySpec\Block\Domain\ValueObjects\EditRefusalKind::InvalidSettings;
+    $name = \SpeedySpec\Block\Domain\ValueObjects\BlockName::fromString('core/repeat');
+    $root = \SpeedySpec\Block\Domain\ValueObjects\Position::root(0);
+
+    expect(refusals($editor->updateSettings($document, 'r', ['source' => 'acme/gone'])))->toBe([$kind])
+        ->and($editor->updateSettings($document, 'r', ['source' => 'acme/gone'])->refusals[0]->path)->toBe('source')
+        ->and(refusals($editor->updateSettings($document, 'r', [
+            'source' => 'acme/numbers',
+            'arguments' => ['count' => 'x'],
+        ])))->toBe([$kind])
+        ->and(refusals($editor->insert($document, $name, $root, ['source' => 'acme/gone'])))->toBe([$kind])
+        ->and(refusals($editor->insertBlocks($document, [$repeat('p', ['source' => 'acme/gone'])], $root)))
+        ->toBe([$kind])
+        ->and($editor->updateSettings($document, 'r', ['source' => 'acme/people'])->isAccepted())->toBeTrue();
+});
+
+test('the repeat leaves other block types with a setting called source alone', function () use ($setup, $front) {
+    $warnings = 0;
+    [$renderer] = flow(function ($c) use ($setup) {
+        $setup($c);
+        types($c)->add(type('acme/image', ['settings' => [
+            'type' => 'object',
+            'properties' => ['source' => ['type' => 'object']],
+        ]]));
+        outputs($c)->set(\SpeedySpec\Block\Domain\ValueObjects\BlockName::fromString('acme/image'), fixedOutput('img'));
+    });
+    set_error_handler(function () use (&$warnings): bool {
+        $warnings++;
+
+        return true;
+    });
+
+    try
+    {
+        $result = $front($renderer, block('i', 'acme/image', ['source' => ['url' => '/a.png']]));
+    }
+    finally
+    {
+        restore_error_handler();
+    }
+
+    expect($result->output)->toBe('img')->and($result->issues)->toBe([])->and($warnings)->toBe(0);
+});

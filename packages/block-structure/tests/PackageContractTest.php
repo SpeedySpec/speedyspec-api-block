@@ -11,7 +11,10 @@ use function SpeedySpec\Block\ContractTests\blockPackageContract;
 
 describe('StructurePackage', function () {
     blockPackageContract(
-        fn () => new StructurePackage(new StyleCollector(new BreakpointRegistry(), new DesignTokenRegistry())),
+        fn () => new StructurePackage(
+            new StyleCollector(new BreakpointRegistry(), new DesignTokenRegistry()),
+            new BreakpointRegistry(),
+        ),
         __DIR__ . '/../composer.json',
     );
 });

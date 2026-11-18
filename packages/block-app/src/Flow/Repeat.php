@@ -55,7 +55,8 @@ class Repeat implements BlockBehaviourInterface, ValidateStepInterface, BlockOut
         return BlockType::fromArray([
             'name' => self::NAME,
             'title' => 'Repeat',
-            'description' => 'Repeats the blocks inside it for each item of a collection.',
+            'description' => 'Repeats the blocks inside it for each item of a collection. A page resolves a limited '
+                . 'number of blocks, so a repeat inside a repeat can use them up and cut the page short.',
             'category' => 'layout',
             'keywords' => ['loop', 'list', 'query', 'collection'],
             'settings' => [
@@ -129,9 +130,15 @@ class Repeat implements BlockBehaviourInterface, ValidateStepInterface, BlockOut
      */
     public function validate(Block $block, BlockType $type, array $settings, Context $context, Mode $mode): array
     {
-        $name = (string) ($settings['source'] ?? '');
+        // Other block types may have a setting of the same name that means something else entirely.
+        if ($type->name->toString() !== self::NAME)
+        {
+            return [];
+        }
 
-        if ($type->name->toString() !== self::NAME || $name === '')
+        $name = is_string($settings['source'] ?? null) ? $settings['source'] : '';
+
+        if ($name === '')
         {
             return [];
         }

@@ -241,6 +241,7 @@ class AppServiceProvider
             $c->get(BlockIdGeneratorInterface::class),
             $c->get(BlockDuplicatorInterface::class),
             $c->get(SettingsMigrationRegistryInterface::class),
+            $c->get(StepRegistryInterface::class),
         ));
     }
 }

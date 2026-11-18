@@ -63,6 +63,10 @@ test('a style rule refuses anything that could break out of its declaration', fu
 ) {
     expect(fn () => new StyleRule([$property => $value]))->toThrow(InvalidStyleException::class);
 })->with([
+    'unclosed function' => ['width', 'calc(1px'],
+    'unclosed nested function' => ['width', 'var(--x, calc('],
+    'stray closing bracket' => ['width', '1px)'],
+    'brackets out of order' => ['width', ')('],
     'semicolon' => ['color', 'red; background: url(x)'],
     'closing brace' => ['color', 'red} body{display:none'],
     'url' => ['background', 'url(https://evil.example/x.png)'],

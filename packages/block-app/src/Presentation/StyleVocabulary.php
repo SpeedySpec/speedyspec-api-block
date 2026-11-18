@@ -77,6 +77,46 @@ class StyleVocabulary
     }
 
     /**
+     * Removes whatever in stored style settings is not in the vocabulary or does not fit its format.
+     *
+     * Run before a block is checked, so a cosmetic value that was stored without going through the editor costs
+     * the block that one style, not its place on the page.
+     *
+     * @param array<array-key, mixed> $settings
+     *
+     * @return array<string, mixed>
+     *
+     * @since 0.1.0
+     */
+    public static function clean(array $settings): array
+    {
+        $clean = [];
+
+        foreach (self::WORDS as $name => [, $format])
+        {
+            $stored = $settings[$name] ?? null;
+            $fits = static fn (mixed $value): bool => is_string($value)
+                && preg_match('/^' . $format . '\z/', $value) === 1;
+
+            if ($fits($stored))
+            {
+                $clean[$name] = $stored;
+            }
+            elseif (is_array($stored) && !array_is_list($stored))
+            {
+                $kept = array_filter($stored, $fits);
+
+                if ($kept !== [])
+                {
+                    $clean[$name] = $kept;
+                }
+            }
+        }
+
+        return $clean;
+    }
+
+    /**
      * Turns stored style settings into rules: one for every width, and one per breakpoint that has overrides.
      *
      * Declarations follow the vocabulary's order, not the stored order, so blocks styled alike produce equal

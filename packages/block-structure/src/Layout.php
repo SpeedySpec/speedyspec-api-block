@@ -24,17 +24,25 @@ class Layout
      * Columns: stacked below a breakpoint and in a row from it upward, or always in a row.
      *
      * @param array<string, mixed> $values
+     * @param list<string> $breakpoints
+     *   The names of the registered breakpoints, narrowest first. A block that names one the host does not have
+     *   uses the narrowest, so replacing the default breakpoints never leaves columns stacked at every width.
      *
      * @return list<StyleRule>
      *
      * @since 0.1.0
      */
-    public static function columns(array $values): array
+    public static function columns(array $values, array $breakpoints): array
     {
         $align = in_array($values['align'] ?? null, self::ALIGNMENTS, true) ? $values['align'] : 'stretch';
         $align = in_array($align, ['start', 'end'], true) ? 'flex-' . $align : $align;
         $from = is_string($values['stackBelow'] ?? null) ? $values['stackBelow'] : 'tablet';
         $row = ['flex-direction' => 'row', 'align-items' => $align];
+
+        if ($from !== '' && !in_array($from, $breakpoints, true))
+        {
+            $from = $breakpoints[0] ?? '';
+        }
 
         if (!Breakpoint::isName($from))
         {

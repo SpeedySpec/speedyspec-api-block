@@ -14,6 +14,8 @@ use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
 use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\ValidateStepInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\BlockTree;
 use SpeedySpec\Block\Domain\Entities\Document;
@@ -22,9 +24,11 @@ use SpeedySpec\Block\Domain\ValueObjects\Binding;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
+use SpeedySpec\Block\Domain\ValueObjects\Context;
 use SpeedySpec\Block\Domain\ValueObjects\EditRefusal;
 use SpeedySpec\Block\Domain\ValueObjects\EditRefusalKind;
 use SpeedySpec\Block\Domain\ValueObjects\EditResult;
+use SpeedySpec\Block\Domain\ValueObjects\Mode;
 use SpeedySpec\Block\Domain\ValueObjects\Position;
 use SpeedySpec\Block\Domain\ValueObjects\SettingPath;
 use Throwable;
@@ -55,6 +59,7 @@ class DocumentEditor implements DocumentEditorInterface
         private readonly BlockIdGeneratorInterface $ids,
         private readonly BlockDuplicatorInterface $duplicator,
         private readonly SettingsMigrationRegistryInterface $migrations,
+        private readonly StepRegistryInterface $steps,
     )
     {
     }
@@ -81,12 +86,13 @@ class DocumentEditor implements DocumentEditorInterface
             ...$this->settingsRefusals($settings, $blockType->settingsSchema, null),
         ];
 
+        $block = new Block($this->freshId($document->tree), $type, $blockType->version, $settings);
+        $refusals = $refusals !== [] ? $refusals : $this->stepRefusals($block, $blockType, null);
+
         if ($refusals !== [])
         {
             return EditResult::refused(...$refusals);
         }
-
-        $block = new Block($this->freshId($document->tree), $type, $blockType->version, $settings);
 
         return EditResult::accepted($document->withTree($document->tree->insert($block, $position)), [$block->id]);
     }
@@ -229,14 +235,16 @@ class DocumentEditor implements DocumentEditorInterface
             return EditResult::refused($this->unknownType($block->type, $blockId));
         }
 
+        $changed = $block->withSettings($settings)->withTypeVersion($type->version);
         $refusals = $this->settingsRefusals($settings, $type->settingsSchema, $blockId);
+        $refusals = $refusals !== [] ? $refusals : $this->stepRefusals($changed, $type, $blockId);
 
         if ($refusals !== [])
         {
             return EditResult::refused(...$refusals);
         }
 
-        return $this->replaced($document, $block->withSettings($settings)->withTypeVersion($type->version));
+        return $this->replaced($document, $changed);
     }
 
     public function updateExtension(
@@ -253,14 +261,21 @@ class DocumentEditor implements DocumentEditorInterface
             return EditResult::refused($this->unknownBlock($blockId));
         }
 
+        $changed = $block->withExtension($namespace, $settings);
+        $type = $this->types->get($block->type);
         $refusals = $this->extensionRefusals($block->type, $blockId, $namespace, $settings);
+
+        if ($refusals === [] && $type !== null)
+        {
+            $refusals = $this->stepRefusals($changed, $type, $blockId);
+        }
 
         if ($refusals !== [])
         {
             return EditResult::refused(...$refusals);
         }
 
-        return $this->replaced($document, $block->withExtension($namespace, $settings));
+        return $this->replaced($document, $changed);
     }
 
     public function setBinding(Document $document, string $blockId, SettingPath $path, Binding $binding): EditResult
@@ -341,6 +356,7 @@ class DocumentEditor implements DocumentEditorInterface
     private function vetted(Block $block, ?BlockName $parent, array &$refusals): Block
     {
         $type = $this->types->get($block->type);
+        $before = count($refusals);
 
         if ($type === null)
         {
@@ -369,6 +385,11 @@ class DocumentEditor implements DocumentEditorInterface
             {
                 $refusals = [...$refusals, ...$this->storedBindingRefusals($block, (string) $path, $binding)];
             }
+
+            if (count($refusals) === $before)
+            {
+                $refusals = [...$refusals, ...$this->stepRefusals($block, $type, $block->id)];
+            }
         }
 
         $children = [];
@@ -379,6 +400,52 @@ class DocumentEditor implements DocumentEditorInterface
         }
 
         return $block->withChildren(...$children);
+    }
+
+    /**
+     * Asks the steps that check blocks while resolving whether they would report this one.
+     *
+     * Packages add checks the schema cannot express, such as "this collection exists". Running them here keeps
+     * the promise that a document the editor accepts resolves cleanly. A step that fails is passed over: it will
+     * be reported when the document is resolved, and must not make every edit impossible.
+     *
+     * @param Block $block
+     *   The block as it would be stored.
+     * @param string|null $blockId
+     *   The id refusals name; null for a block that does not exist yet.
+     *
+     * @return list<EditRefusal>
+     *
+     * @since 0.1.0
+     */
+    private function stepRefusals(Block $block, BlockType $type, ?string $blockId): array
+    {
+        $settings = $this->validator->withDefaults($block->settings, $type->settingsSchema);
+        $refusals = [];
+
+        foreach ($this->steps->for(ValidateStepInterface::class) as $step)
+        {
+            try
+            {
+                $issues = $step->validate($block, $type, $settings, Context::empty(), Mode::Admin);
+            }
+            catch (Throwable)
+            {
+                continue;
+            }
+
+            foreach ($issues as $issue)
+            {
+                $refusals[] = new EditRefusal(
+                    EditRefusalKind::InvalidSettings,
+                    $issue->message,
+                    $blockId,
+                    $issue->path,
+                );
+            }
+        }
+
+        return $refusals;
     }
 
     /**

@@ -192,9 +192,15 @@ test('stored style values that slipped past editing are dropped, not written to 
     [$renderer, , $styles] = $host();
     $block = $styled('a', ['color' => 'red;} body{display:none', 'margin' => '1rem']);
 
-    $result = $renderer->render(doc($block), new RenderRequest(Mode::Admin));
+    $box = $styled('b', ['color' => 'rgb(0,0,0)', 'position' => 'fixed', 'padding' => ['tablet' => 'x} y{']])
+        ->withChildren(block('inner', 'acme/box'));
 
-    expect($styles->css())->not->toContain('display:none')->not->toContain('body');
+    $result = $renderer->render(doc($block, $box), new RenderRequest(Mode::Admin));
+    preg_match('/class="(b-[0-9a-f]{10})"/', $result->output, $found);
+
+    expect($styles->css())->toBe(".{$found[1]}{margin:1rem}")
+        ->and($result->output)->toBe("<div class=\"{$found[1]}\"></div><div><div></div></div>")
+        ->and($result->issues)->toBe([]);
 });
 
 test('styles are only collected for the html target', function () use ($host, $styled) {
