@@ -287,3 +287,64 @@ function emptyOf(schema) {
 
     return types.includes('array') ? [] : types.includes('object') ? {} : null;
 }
+
+/**
+ * Copies a list of text with an item put in at a position, such as a new feature of a plan.
+ *
+ * @param {Array<string>} [list]
+ * @param {number} at
+ * @param {string} [text]
+ */
+export function withListItem(list, at, text = '') {
+    const items = Array.isArray(list) ? [...list] : [];
+    items.splice(Math.max(0, Math.min(at, items.length)), 0, text);
+
+    return items;
+}
+
+/**
+ * Copies a list of text without the item at a position; the last item may go, leaving an empty list.
+ *
+ * @param {Array<string>} [list]
+ * @param {number} at
+ */
+export function withoutListItem(list, at) {
+    return Array.isArray(list) ? list.filter((item, index) => index !== at) : [];
+}
+
+/**
+ * Copies a list of text with an item moved to another position; a move past either end changes nothing.
+ *
+ * @param {Array<string>} [list]
+ * @param {number} from
+ * @param {number} to
+ */
+export function movedListItem(list, from, to) {
+    const items = Array.isArray(list) ? [...list] : [];
+
+    if (from < 0 || from >= items.length || to < 0 || to >= items.length) {
+        return items;
+    }
+
+    const [item] = items.splice(from, 1);
+    items.splice(to, 0, item);
+
+    return items;
+}
+
+/**
+ * Copies a list of text with one item's text replaced; a position past the end changes nothing.
+ *
+ * @param {Array<string>} [list]
+ * @param {number} at
+ * @param {string} text
+ */
+export function withListText(list, at, text) {
+    const items = Array.isArray(list) ? [...list] : [];
+
+    if (at >= 0 && at < items.length) {
+        items[at] = text;
+    }
+
+    return items;
+}

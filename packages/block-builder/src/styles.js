@@ -158,6 +158,8 @@ block-builder textarea.bb-code { font-family: ui-monospace, SFMono-Regular, Menl
 block-builder .bb-input[aria-invalid="true"] { border-color: var(--bb-bad); }
 block-builder .bb-check { display: flex; align-items: center; gap: .5rem; }
 block-builder .bb-check input { width: 1rem; height: 1rem; accent-color: var(--bb-pick); }
+block-builder .bb-list ol { display: grid; gap: .5rem; margin: 0 0 .5rem; padding: 0; list-style: none; }
+block-builder .bb-list li { display: grid; gap: .3rem; }
 block-builder .bb-media { display: grid; gap: .4rem; }
 block-builder .bb-media-buttons { display: flex; flex-wrap: wrap; gap: .35rem; }
 block-builder .bb-media-buttons button, block-builder .bb-media-add, block-builder .bb-upload {

@@ -1,6 +1,7 @@
 import { createClient } from './api.js';
 import {
-    FieldError, fields, parseField, tableShape, withColumn, withoutColumn, withoutRow, withRow, withTyped, withValue,
+    FieldError, fields, movedListItem, parseField, tableShape, withColumn, withListItem, withListText, withoutColumn,
+    withoutListItem, withoutRow, withRow, withTyped, withValue,
 } from './forms.js';
 import { createBuilder } from './store.js';
 import { accepts, addedMedia, mediaQuery, movedMedia, withoutMediaAt } from './media.js';
@@ -1222,6 +1223,10 @@ export class BlockBuilderElement extends HTMLElement {
             return this.mediaControl(state, field, typeof shown === 'string' ? shown : '', commit);
         }
 
+        if (field.hint === 'list') {
+            return this.listControl(state, field, Array.isArray(shown) ? shown : []);
+        }
+
         if (field.hint === 'media-list') {
             return this.mediaListControl(state, field, Array.isArray(shown) ? shown : [], commit);
         }
@@ -1272,6 +1277,74 @@ export class BlockBuilderElement extends HTMLElement {
             placeholder: kind === 'number' || field.hint !== 'responsive' ? null : 'For example 1rem',
             onchange: (event) => commit(event.target.value),
         });
+    }
+
+    /**
+     * A list of short texts, such as a plan's features: one box per item, with buttons to move or remove it and to
+     * add another.
+     *
+     * Each change is worked out against the settings as they are when it is sent, starting from the setting's
+     * default when nothing is stored, so quick changes in a row all stay.
+     */
+    listControl(state, field, items) {
+        const block = state.selected;
+        const fallback = field.isDefault && Array.isArray(field.value) ? field.value : [];
+        const change = (edit) => this.builder.changeSettings(block, (settings) => {
+            const current = Array.isArray(settings?.[field.name]) ? settings[field.name] : fallback;
+
+            return withValue(settings, field.name, edit(current));
+        });
+        const label = field.title === field.name ? words(field.name) : field.title;
+
+        return el(
+            'div',
+            { class: 'bb-list' },
+            el(
+                'ol',
+                {},
+                items.map((item, index) =>
+                    el(
+                        'li',
+                        {},
+                        el('input', {
+                            class: 'bb-input',
+                            type: 'text',
+                            value: typeof item === 'string' ? item : '',
+                            'aria-label': `${label} ${index + 1}`,
+                            'data-key': `settings:${field.name}:${index}`,
+                            onchange: (event) => change((current) => withListText(current, index, event.target.value)),
+                        }),
+                        el(
+                            'div',
+                            { class: 'bb-media-buttons' },
+                            el('button', {
+                                type: 'button',
+                                text: 'Earlier',
+                                disabled: index === 0,
+                                onclick: () => change((current) => movedListItem(current, index, index - 1)),
+                            }),
+                            el('button', {
+                                type: 'button',
+                                text: 'Later',
+                                disabled: index === items.length - 1,
+                                onclick: () => change((current) => movedListItem(current, index, index + 1)),
+                            }),
+                            el('button', {
+                                type: 'button',
+                                text: 'Remove',
+                                onclick: () => change((current) => withoutListItem(current, index)),
+                            }),
+                        ),
+                    ),
+                ),
+            ),
+            el('button', {
+                type: 'button',
+                class: 'bb-media-add',
+                text: 'Add item',
+                onclick: () => change((current) => withListItem(current, current.length)),
+            }),
+        );
     }
 
     // ---- Media ---------------------------------------------------------------------------------------------
