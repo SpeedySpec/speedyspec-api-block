@@ -23,7 +23,8 @@
             "src/schemaValidatorContract.php",
             "src/documentRepositoryContract.php",
             "src/dataSourceContract.php",
-            "src/documentSerializerContract.php"
+            "src/documentSerializerContract.php",
+            "src/outputEscaperContract.php"
         ]
     },
     "archive": {
