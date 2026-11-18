@@ -12,6 +12,8 @@ namespace SpeedySpec\Block\Domain\ValueObjects;
 class CurrentItem
 {
     /**
+     * Records the item in scope.
+     *
      * @param mixed $item
      *   The item itself.
      * @param int $index

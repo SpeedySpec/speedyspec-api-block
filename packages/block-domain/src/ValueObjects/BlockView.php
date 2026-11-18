@@ -12,6 +12,8 @@ namespace SpeedySpec\Block\Domain\ValueObjects;
 class BlockView
 {
     /**
+     * Builds a view from its parts.
+     *
      * @param array<string, mixed> $values
      *   The block's own view values.
      * @param array<string, array<string, mixed>> $extensions
@@ -40,12 +42,10 @@ class BlockView
      */
     public function withExtension(string $namespace, array $values): self
     {
-        return new self(
-            $this->values,
-            [...$this->extensions, $namespace => $values],
-            $this->admin,
-            $this->childPasses,
-        );
+        $extensions = $this->extensions;
+        $extensions[$namespace] = $values;
+
+        return new self($this->values, $extensions, $this->admin, $this->childPasses);
     }
 
     /**

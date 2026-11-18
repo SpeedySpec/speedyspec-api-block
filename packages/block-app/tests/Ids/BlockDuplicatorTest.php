@@ -51,3 +51,41 @@ test('a generator that repeats an id is retried until the copy is unique', funct
     $copy = (new BlockDuplicator($ids))->duplicate(block('a', 'acme/box', [], block('b'), block('c')));
     expect($copy->id)->toBe('x')->and($copy->children[0]->id)->toBe('y')->and($copy->children[1]->id)->toBe('z');
 });
+
+test('an id from the original is never reused in the copy', function () {
+    $ids = new class implements BlockIdGeneratorInterface {
+        private array $queue = ['b', 'a', 'x', 'y'];
+
+        public function generate(): string
+        {
+            return array_shift($this->queue);
+        }
+    };
+    $original = block('a', 'acme/box', [], block('b'));
+    $copy = (new BlockDuplicator($ids))->duplicate($original);
+    expect($copy->id)->toBe('x')->and($copy->children[0]->id)->toBe('y');
+});
+
+test('a generator that never varies throws instead of hanging', function () {
+    $ids = new class implements BlockIdGeneratorInterface {
+        public function generate(): string
+        {
+            return 'same';
+        }
+    };
+    expect(fn () => (new BlockDuplicator($ids))->duplicate(block('a', 'acme/box', [], block('b'))))
+        ->toThrow(RuntimeException::class, 'failed to produce an unused id');
+});
+
+test('reserved ids are avoided', function () {
+    $ids = new class implements BlockIdGeneratorInterface {
+        private array $queue = ['r1', 'r2', 'ok'];
+
+        public function generate(): string
+        {
+            return array_shift($this->queue);
+        }
+    };
+    $copy = (new BlockDuplicator($ids))->duplicate(block('a'), ['r1', 'r2']);
+    expect($copy->id)->toBe('ok');
+});

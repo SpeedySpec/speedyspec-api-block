@@ -23,6 +23,12 @@ class BlockTypeRegistry implements BlockTypeRegistryInterface
      */
     private array $types = [];
 
+    /**
+     * Creates an empty registry.
+     *
+     * @param SchemaValidatorInterface $validator
+     *   Checks schemas at registration.
+     */
     public function __construct(private readonly SchemaValidatorInterface $validator)
     {
     }
@@ -50,13 +56,13 @@ class BlockTypeRegistry implements BlockTypeRegistryInterface
 
             if (!$result->isValid())
             {
-                $first = $result->errors()[0];
+                $errors = $result->errors();
 
                 throw new InvalidBlockTypeException(sprintf(
                     'Block type "%s" example %d does not match its settings schema: %s',
                     $type->name->toString(),
                     $index,
-                    $first->message,
+                    $errors === [] ? 'it is invalid.' : $errors[0]->message,
                 ));
             }
         }

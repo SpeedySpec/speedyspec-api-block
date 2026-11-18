@@ -23,7 +23,7 @@ test('registering a type with an unsupported view schema throws', function () {
 test('registering a type whose example fails its own schema throws', function () {
     $registry = new BlockTypeRegistry(new SubsetSchemaValidator());
     $type = type('acme/x', ['settings' => ['type' => 'object', 'required' => ['label'], 'properties' => ['label' => ['type' => 'string']]], 'examples' => [['label' => 'ok'], []]]);
-    expect(fn () => $registry->add($type))->toThrow(InvalidBlockTypeException::class, '1')
+    expect(fn () => $registry->add($type))->toThrow(InvalidBlockTypeException::class, 'acme/x" example 1')
         ->and($registry->has(BlockName::fromString('acme/x')))->toBeFalse();
 });
 

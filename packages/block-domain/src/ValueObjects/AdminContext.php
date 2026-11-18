@@ -12,6 +12,8 @@ namespace SpeedySpec\Block\Domain\ValueObjects;
 class AdminContext
 {
     /**
+     * Builds the editor information for one block.
+     *
      * @param array<string, mixed> $values
      *   Extra values for the editor to show.
      * @param list<mixed> $issues

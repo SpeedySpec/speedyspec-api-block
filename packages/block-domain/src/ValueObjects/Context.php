@@ -14,6 +14,8 @@ namespace SpeedySpec\Block\Domain\ValueObjects;
 class Context
 {
     /**
+     * Holds the values and current item; use {@link Context::empty()} to start one.
+     *
      * @param array<string, mixed> $values
      *   Maps a namespaced key to its value.
      */
@@ -41,7 +43,10 @@ class Context
      */
     public function with(string $key, mixed $value): self
     {
-        return new self([...$this->values, $key => $value], $this->currentItem);
+        $values = $this->values;
+        $values[$key] = $value;
+
+        return new self($values, $this->currentItem);
     }
 
     /**

@@ -45,3 +45,8 @@ test('block view copies return new instances and leave the original alone', func
         ->and($view->extensions)->toBe([])->and($view->admin)->toBeNull()
         ->and($extended->withAdmin(null)->admin)->toBeNull();
 });
+
+test('context keeps integer-like keys', function () {
+    $ctx = Context::empty()->with('1', 'a')->with('2', 'b');
+    expect($ctx->get('1'))->toBe('a')->and($ctx->get('2'))->toBe('b');
+});

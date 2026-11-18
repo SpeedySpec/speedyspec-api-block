@@ -20,6 +20,12 @@ class DataSourceRegistry implements DataSourceRegistryInterface
      */
     private array $sources = [];
 
+    /**
+     * Creates an empty registry.
+     *
+     * @param SchemaValidatorInterface $validator
+     *   Checks schemas at registration.
+     */
     public function __construct(private readonly SchemaValidatorInterface $validator)
     {
     }

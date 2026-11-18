@@ -11,6 +11,9 @@ namespace SpeedySpec\Block\Domain\ValueObjects;
  */
 class DataSourceResult
 {
+    /**
+     * Holds the outcome; use {@link DataSourceResult::value()} or {@link DataSourceResult::none()}.
+     */
     private function __construct(
         private readonly bool $hasValue,
         private readonly mixed $value,

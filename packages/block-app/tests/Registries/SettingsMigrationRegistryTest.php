@@ -33,3 +33,18 @@ test('adding a migration for a version already registered replaces it', function
     $registry->add($name, $second);
     expect($registry->chain($name, 1, 2))->toBe([$second]);
 });
+
+test('a gap in the middle of a chain gives null', function () {
+    $registry = new SettingsMigrationRegistry();
+    $name = BlockName::fromString('acme/x');
+    $registry->add($name, migration(from: 1));
+    $registry->add($name, migration(from: 3));
+    expect($registry->chain($name, 1, 4))->toBeNull();
+});
+
+test('a range starting above the registered migrations gives null', function () {
+    $registry = new SettingsMigrationRegistry();
+    $name = BlockName::fromString('acme/x');
+    $registry->add($name, migration(from: 1));
+    expect($registry->chain($name, 5, 6))->toBeNull();
+});
