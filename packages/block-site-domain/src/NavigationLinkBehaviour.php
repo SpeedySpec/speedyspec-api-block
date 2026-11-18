@@ -16,7 +16,8 @@ use SpeedySpec\Block\Domain\ValueObjects\Mode;
 /**
  * Says whether a menu link points at the page being drawn, and how deep in the menu it sits.
  *
- * A link is current when it names the same path as the page, whatever its trailing slash, query or fragment. Menus
+ * A link is current when it names the same page: the same path, whatever its trailing slash, on the same site, with
+ * the same query when the page's address has one. A link to a part of the page is not current. Menus
  * go two submenu levels deep at most, which the parent and child rules cannot count, so a link counts for itself.
  *
  * @since 0.1.0
@@ -69,13 +70,36 @@ class NavigationLinkBehaviour implements BlockBehaviourInterface
             return false;
         }
 
-        if (isset($one['host'], $two['host']) && strtolower($one['host']) !== strtolower($two['host']))
+        // A link to a part of the page goes somewhere on it, not to it; a link naming a site is current only on that
+        // site, and only when the page's address names it too.
+        if (isset($one['fragment']))
+        {
+            return false;
+        }
+
+        if (isset($one['host']) && (!isset($two['host']) || strtolower($one['host']) !== strtolower($two['host'])))
         {
             return false;
         }
 
         $path = static fn (string $value): string => rtrim($value, '/') === '' ? '/' : rtrim($value, '/');
 
-        return $path($one['path']) === $path($two['path']);
+        if ($path($one['path']) !== $path($two['path']))
+        {
+            return false;
+        }
+
+        // Where pages are named by their query, as WordPress's plain addresses are, the query decides.
+        if (!isset($two['query']))
+        {
+            return true;
+        }
+
+        parse_str($one['query'] ?? '', $linkQuery);
+        parse_str($two['query'], $pageQuery);
+        ksort($linkQuery);
+        ksort($pageQuery);
+
+        return $linkQuery === $pageQuery;
     }
 }

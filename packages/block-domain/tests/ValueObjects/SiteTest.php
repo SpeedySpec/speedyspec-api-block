@@ -35,3 +35,7 @@ test('a crumb and a search target carry what they were given', function () {
         ->and($search->url)->toBe('/search')
         ->and($search->parameter)->toBe('q');
 });
+
+test('anchors already used elsewhere on the page are skipped too', function () {
+    expect(HeadingAnchor::unique(['intro', 'menu'], ['intro', 'intro-2']))->toBe(['intro-3', 'menu']);
+});

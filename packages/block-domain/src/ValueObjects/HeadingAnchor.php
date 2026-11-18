@@ -44,14 +44,16 @@ class HeadingAnchor
      * from 2, skipping numbers another heading wants for itself.
      *
      * @param list<string> $wanted
+     * @param list<string> $used
+     *   Ids already used elsewhere on the page, such as by the page around an included document.
      * @return list<string>
      *
      * @since 0.1.0
      */
-    public static function unique(array $wanted): array
+    public static function unique(array $wanted, array $used = []): array
     {
         $reserved = array_fill_keys($wanted, true);
-        $taken = [];
+        $taken = array_fill_keys($used, true);
         $ids = [];
 
         foreach ($wanted as $id)

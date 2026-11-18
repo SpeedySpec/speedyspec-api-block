@@ -28,7 +28,8 @@ test('the link to the page being drawn is current, whatever its slash, query or 
     'a path on the same site' => ['/about', true],
     'a trailing slash' => ['/about/', true],
     'a query' => ['/about?x=1', true],
-    'a fragment' => ['/about#team', true],
+    'a part of the page' => ['/about#team', false],
+    'another site with the same path' => ['https://other.test/about', false],
     'another page' => ['/aboutus', false],
     'the home page' => ['/', false],
     'no address' => ['', false],
@@ -115,4 +116,21 @@ test('with no site map, search and breadcrumbs are not set up and raise no issue
     expect($resolved->find('s')?->view?->values['url'])->toBe('')
         ->and($resolved->find('b')?->view?->values['crumbs'])->toBe([])
         ->and($resolved->issues)->toBe([]);
+});
+
+test('under addresses that name pages by their query, only the link with the same query is current', function () {
+    $map = new InMemorySiteMap(['d' => 'https://e.test/?page_id=5']);
+    $current = fn (string $url): bool => siteContainer($map)
+        ->get(\SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface::class)
+        ->resolve(
+            new \SpeedySpec\Block\Domain\Entities\Document('d', 'page', new \SpeedySpec\Block\Domain\Entities\BlockTree(
+                menu(navLink('l', $url)),
+            )),
+            \SpeedySpec\Block\Domain\ValueObjects\Mode::Front,
+        )->find('l')?->view?->values['current'];
+
+    expect($current('https://e.test/?page_id=5'))->toBeTrue()
+        ->and($current('/?page_id=5'))->toBeTrue()
+        ->and($current('https://e.test/?page_id=6'))->toBeFalse()
+        ->and($current('https://e.test/'))->toBeFalse();
 });
