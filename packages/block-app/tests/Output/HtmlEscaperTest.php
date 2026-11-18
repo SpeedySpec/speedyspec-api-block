@@ -79,3 +79,14 @@ test('the escaper registry replaces by target and throws for an unknown target',
         ->and($registry->has('pdf'))->toBeFalse()
         ->and(fn () => $registry->get('pdf'))->toThrow(UnsupportedTargetException::class);
 });
+
+test('a link-bearing attribute with an unsafe url is left out, and other attributes stay', function () {
+    $bag = AttributeBag::empty()->withAttribute('href', 'javascript:alert(1)')->withAttribute('data-x', 'javascript:kept-as-text')
+        ->withAttribute('formaction', ' JaVaScRiPt:alert(1)')->withAttribute('src', '/safe.png');
+
+    expect((new HtmlEscaper())->attributes($bag))->toBe(' data-x="javascript:kept-as-text" src="/safe.png"');
+});
+
+test('an empty link-bearing attribute is kept', function () {
+    expect((new HtmlEscaper())->attributes(AttributeBag::empty()->withAttribute('href', '')))->toBe(' href=""');
+});

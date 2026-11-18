@@ -82,7 +82,7 @@ class AttributeBag
      *   The raw value; it is escaped when the element is drawn.
      *
      * @throws InvalidAttributeException
-     *   When the name is malformed, is managed by the bag itself, or is an event handler.
+     *   When the name is malformed, is managed by the bag itself, is an event handler, or embeds a document.
      *
      * @since 0.1.0
      */
@@ -92,7 +92,7 @@ class AttributeBag
 
         if (
             preg_match('/^[a-zA-Z_][a-zA-Z0-9_.:-]*\z/', $name) !== 1
-            || in_array($lower, ['class', 'id', 'style'], true)
+            || in_array($lower, ['class', 'id', 'style', 'srcdoc'], true)
             || str_starts_with($lower, 'on')
         )
         {

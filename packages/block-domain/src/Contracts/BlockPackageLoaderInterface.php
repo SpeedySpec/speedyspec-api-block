@@ -15,7 +15,11 @@ use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 interface BlockPackageLoaderInterface
 {
     /**
-     * Loads one package.
+     * Loads one package, all or nothing.
+     *
+     * A package that throws while registering, or that claims a block type it may not, must leave the host as it
+     * was: none of its block types, outputs, steps or other registrations may remain. Any other exception a
+     * package or a registry raises is passed on unchanged.
      *
      * @throws BlockPackageException
      *   When the package's name is invalid or already loaded, or it claims a block type it may not.

@@ -19,8 +19,8 @@ use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 /**
  * Loads block packages into the host's registries.
  *
- * A package that fails part-way is not listed as loaded, but what it registered before failing stays in the
- * registries; a host that must not keep partial registrations should load into a fresh container.
+ * Loading is all or nothing: a package that fails while registering, or whose block types, decorators or data
+ * sources a registry refuses, adds nothing and is not listed as loaded.
  *
  * @since 0.1.0
  */
@@ -79,6 +79,7 @@ class BlockPackageLoader implements BlockPackageLoaderInterface
         );
 
         $package->register($registrar);
+        $registrar->commit();
 
         $this->packages[$name] = $registrar->types();
     }

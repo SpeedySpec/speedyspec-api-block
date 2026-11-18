@@ -21,6 +21,14 @@ class HtmlEscaper implements OutputEscaperInterface
 
     private const SCHEMES = ['http', 'https', 'mailto', 'tel'];
 
+    /**
+     * Attributes a browser treats as a link, whose value must pass the same check as any other url.
+     */
+    private const URL_ATTRIBUTES = [
+        'href', 'src', 'action', 'formaction', 'xlink:href', 'poster', 'data', 'ping', 'background', 'cite',
+        'manifest',
+    ];
+
     public function target(): string
     {
         return 'html';
@@ -92,7 +100,20 @@ class HtmlEscaper implements OutputEscaperInterface
 
         foreach ($bag->attributes() as $name => $value)
         {
-            $parts[] = sprintf('%s="%s"', $name, $this->attribute($value));
+            if (!in_array(strtolower($name), self::URL_ATTRIBUTES, true))
+            {
+                $parts[] = sprintf('%s="%s"', $name, $this->attribute($value));
+
+                continue;
+            }
+
+            $url = $this->url($value);
+
+            // A link the url check refused is left out entirely; an attribute bag may hold stored content.
+            if ($url !== '' || trim($value) === '')
+            {
+                $parts[] = sprintf('%s="%s"', $name, $url);
+            }
         }
 
         return $parts === [] ? '' : ' ' . implode(' ', $parts);

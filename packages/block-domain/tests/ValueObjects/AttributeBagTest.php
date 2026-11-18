@@ -71,3 +71,7 @@ test('rejects unsafe classes and ids', function () {
         ->and(fn () => AttributeBag::empty()->withId('a b'))->toThrow(InvalidAttributeException::class)
         ->and(fn () => AttributeBag::empty()->withId(''))->toThrow(InvalidAttributeException::class);
 });
+
+test('rejects an attribute that embeds a document', function (string $name) {
+    expect(fn () => AttributeBag::empty()->withAttribute($name, '<p>x</p>'))->toThrow(InvalidAttributeException::class);
+})->with(['srcdoc', 'SrcDoc']);

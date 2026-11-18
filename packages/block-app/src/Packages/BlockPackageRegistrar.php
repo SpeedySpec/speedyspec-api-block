@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SpeedySpec\Block\App\Packages;
 
+use InvalidArgumentException;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputInterface;
@@ -21,9 +22,13 @@ use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\Decorator;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
+use Throwable;
 
 /**
- * Passes one package's registrations on to the host's registries and remembers the block types it added.
+ * Collects one package's registrations and writes them to the host's registries only once the package is done.
+ *
+ * Nothing reaches a registry while the package is still registering, so a package that fails part-way leaves no
+ * half of itself behind.
  *
  * @since 0.1.0
  */
@@ -33,6 +38,26 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
      * @var list<BlockName>
      */
     private array $types = [];
+
+    /**
+     * @var list<BlockType>
+     */
+    private array $pendingTypes = [];
+
+    /**
+     * @var list<Decorator>
+     */
+    private array $pendingDecorators = [];
+
+    /**
+     * @var list<DataSourceInterface>
+     */
+    private array $pendingSources = [];
+
+    /**
+     * @var list<callable(): void>
+     */
+    private array $pendingOther = [];
 
     /**
      * Binds the registrar to one package so it can enforce what that package may claim.
@@ -82,7 +107,7 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
             ));
         }
 
-        $this->typeRegistry->add($type);
+        $this->pendingTypes[] = $type;
 
         foreach ($this->types as $added)
         {
@@ -97,7 +122,7 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
 
     public function behaviour(BlockName $type, BlockBehaviourInterface $behaviour): void
     {
-        $this->behaviours->set($type, $behaviour);
+        $this->pendingOther[] = fn () => $this->behaviours->set($type, $behaviour);
     }
 
     public function output(
@@ -107,27 +132,96 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
         string $target = 'html',
     ): void
     {
-        $this->outputs->set($type, $output, $mode, $target);
+        $this->pendingOther[] = fn () => $this->outputs->set($type, $output, $mode, $target);
     }
 
     public function decorator(Decorator $decorator): void
     {
-        $this->decorators->add($decorator);
+        $this->pendingDecorators[] = $decorator;
     }
 
     public function migration(BlockName $type, SettingsMigrationInterface $migration): void
     {
-        $this->migrations->add($type, $migration);
+        $this->pendingOther[] = fn () => $this->migrations->add($type, $migration);
     }
 
     public function dataSource(DataSourceInterface $source): void
     {
-        $this->sources->add($source);
+        $this->pendingSources[] = $source;
     }
 
     public function step(string $stepInterface, object $step, int $priority = 10): void
     {
-        $this->steps->add($stepInterface, $step, $priority);
+        if (!$step instanceof $stepInterface)
+        {
+            throw new InvalidArgumentException(sprintf(
+                'Package "%s" registered a step that is not a %s.',
+                $this->packageName,
+                $stepInterface,
+            ));
+        }
+
+        $this->pendingOther[] = fn () => $this->steps->add($stepInterface, $step, $priority);
+    }
+
+    /**
+     * Writes everything the package registered to the host's registries, once the package finished without error.
+     *
+     * Types, decorators and data sources go first because a registry can refuse them; if one is refused, those
+     * already written by this call are removed again, so a refused package leaves nothing behind.
+     *
+     * @since 0.1.0
+     */
+    public function commit(): void
+    {
+        $types = [];
+        $decorators = [];
+        $sources = [];
+
+        try
+        {
+            foreach ($this->pendingTypes as $type)
+            {
+                $this->typeRegistry->add($type);
+                $types[] = $type->name;
+            }
+
+            foreach ($this->pendingDecorators as $decorator)
+            {
+                $this->decorators->add($decorator);
+                $decorators[] = $decorator->namespace;
+            }
+
+            foreach ($this->pendingSources as $source)
+            {
+                $this->sources->add($source);
+                $sources[] = $source->name();
+            }
+        }
+        catch (Throwable $e)
+        {
+            foreach ($types as $name)
+            {
+                $this->typeRegistry->remove($name);
+            }
+
+            foreach ($decorators as $namespace)
+            {
+                $this->decorators->remove($namespace);
+            }
+
+            foreach ($sources as $name)
+            {
+                $this->sources->remove($name);
+            }
+
+            throw $e;
+        }
+
+        foreach ($this->pendingOther as $write)
+        {
+            $write();
+        }
     }
 
     /**

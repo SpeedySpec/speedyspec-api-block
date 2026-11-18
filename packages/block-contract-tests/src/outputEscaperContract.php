@@ -39,6 +39,30 @@ function outputEscaperContract(Closure $make): void
             expect($make()->attributes(AttributeBag::empty()))->toBe('');
         });
 
+        it('drops a script url placed in a link-bearing attribute of a bag', function () use ($make) {
+            foreach (['href', 'src', 'action', 'formaction', 'xlink:href', 'poster', 'HREF'] as $name)
+            {
+                $bag = AttributeBag::empty()->withAttribute($name, 'javascript:alert(1)');
+
+                expect(strtolower($make()->attributes($bag)))->not->toContain('javascript:');
+            }
+        });
+
+        it('keeps a safe url placed in a link-bearing attribute of a bag', function () use ($make) {
+            $bag = AttributeBag::empty()->withAttribute('href', 'https://example.test/a');
+
+            expect($make()->attributes($bag))->toContain('https://example.test/a');
+        });
+
+        it('leaves no raw single quote in an escaped attribute value', function () use ($make) {
+            expect($make()->attribute("it's"))->not->toContain("'");
+        });
+
+        it('drops data urls and urls led by a control character', function () use ($make) {
+            expect($make()->url('data:text/html,x'))->toBe('')
+                ->and($make()->url("\x01javascript:alert(1)"))->toBe('');
+        });
+
         it('escapes attribute values taken from a bag', function () use ($make) {
             $bag = AttributeBag::empty()->withAttribute('data-x', '"><script>');
 

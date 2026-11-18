@@ -144,3 +144,78 @@ test('a package that fails to load is not listed as loaded', function () {
 
     expect($loader->loaded())->toBe([]);
 });
+
+test('a package that fails part-way registers nothing at all', function () use ($text) {
+    [$renderer, $c] = renderer();
+    $loader = $c->get(BlockPackageLoaderInterface::class);
+    $failing = package('acme/one', function (BlockPackageRegistrarInterface $r) use ($text) {
+        $r->type(type('acme/note', ['settings' => $text]));
+        $r->output(BlockName::fromString('acme/note'), tag('p'));
+        $r->step(RenderStepInterface::class, renderStep(fn (AttributeBag $bag) => $bag->withClass('leftover')));
+        $r->decorator(new Decorator('acme/fx', ['type' => 'object']));
+
+        throw new RuntimeException('half way');
+    });
+
+    expect(fn () => $loader->load($failing))->toThrow(RuntimeException::class);
+    expect($loader->loaded())->toBe([])
+        ->and(types($c)->has(BlockName::fromString('acme/note')))->toBeFalse()
+        ->and(outputs($c)->has(BlockName::fromString('acme/note'), Mode::Front))->toBeFalse()
+        ->and(steps($c)->for(RenderStepInterface::class))->toBe([])
+        ->and($c->get(DecoratorRegistryInterface::class)->get('acme/fx'))->toBeNull();
+
+    $loader->load(package('acme/one', function (BlockPackageRegistrarInterface $r) use ($text) {
+        $r->type(type('acme/note', ['settings' => $text]));
+        $r->output(BlockName::fromString('acme/note'), tag('p'));
+    }));
+
+    expect($renderer->render(doc(block('a', 'acme/note', ['text' => 'hi'])), new RenderRequest())->output)->toBe('<p>hi</p>');
+});
+
+test('a package that claims a forbidden type registers nothing before the refusal either', function () {
+    [, $c] = renderer();
+    $loader = $c->get(BlockPackageLoaderInterface::class);
+
+    try
+    {
+        $loader->load(package('acme/basic', function (BlockPackageRegistrarInterface $r) {
+            $r->type(type('acme/ok'));
+            $r->type(type('other/note'));
+        }));
+    }
+    catch (BlockPackageException)
+    {
+    }
+
+    expect(types($c)->has(BlockName::fromString('acme/ok')))->toBeFalse();
+});
+
+test('a package with one refused block type leaves none of its types, decorators or sources behind', function () {
+    [, $c] = renderer();
+    $loader = $c->get(BlockPackageLoaderInterface::class);
+    $bad = type('acme/bad', ['settings' => ['type' => 'object', 'properties' => ['a' => ['format' => 'email']]]]);
+
+    expect(fn () => $loader->load(package('acme/mixed', function (BlockPackageRegistrarInterface $r) use ($bad) {
+        $r->decorator(new Decorator('acme/fx', ['type' => 'object']));
+        $r->dataSource(new ArrayDataSource('acme/values'));
+        $r->type(type('acme/good'));
+        $r->type($bad);
+    })))->toThrow(UnsupportedSchemaException::class);
+
+    expect(types($c)->has(BlockName::fromString('acme/good')))->toBeFalse()
+        ->and($c->get(DecoratorRegistryInterface::class)->get('acme/fx'))->toBeNull()
+        ->and($c->get(DataSourceRegistryInterface::class)->get('acme/values'))->toBeNull()
+        ->and($loader->loaded())->toBe([]);
+});
+
+test('a step of the wrong kind is refused while the package is still registering', function () {
+    [, $c] = renderer();
+    $loader = $c->get(BlockPackageLoaderInterface::class);
+
+    expect(fn () => $loader->load(package('acme/steps', function (BlockPackageRegistrarInterface $r) {
+        $r->type(type('acme/note'));
+        $r->step(RenderStepInterface::class, new stdClass());
+    })))->toThrow(InvalidArgumentException::class);
+
+    expect(types($c)->has(BlockName::fromString('acme/note')))->toBeFalse();
+});
