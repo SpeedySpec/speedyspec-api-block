@@ -4,10 +4,11 @@ import {
 } from './forms.js';
 import { createBuilder } from './store.js';
 import { accepts, addedMedia, mediaQuery, movedMedia, withoutMediaAt } from './media.js';
-import { CANVAS_STYLE, STYLE } from './styles.js';
+import { STYLE } from './styles.js';
 import { find, positionOf, walk } from './tree.js';
 import {
     breadcrumb,
+    canvasDocument,
     devices,
     fieldRefusal,
     groupCatalogue,
@@ -479,8 +480,7 @@ export class BlockBuilderElement extends HTMLElement {
             );
         }
 
-        const source = `<!doctype html><meta charset="utf-8"><style>${CANVAS_STYLE}</style>`
-            + `<style>${state.preview.css.replaceAll('</', '<\\/')}</style>${state.preview.output}`;
+        const source = canvasDocument(state.preview);
 
         // Redrawing under the cursor would throw away what is being typed; the page is redrawn once typing stops.
         if (this.typing !== null) {

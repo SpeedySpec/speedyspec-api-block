@@ -459,3 +459,16 @@ test('a settings change is worked out when its turn comes, so it builds on the c
 
     assert.deepEqual(builder.state().document.blocks[1].settings, { a: 1, b: 2 });
 });
+
+test('the preview keeps the page\'s stylesheets, and has none when the server sends none', async () => {
+    const client = fakeClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    assert.deepEqual(builder.state().preview.styles, []);
+
+    client.render = async () => ({ output: '<p>x</p>', css: '', styles: [{ name: 'a', href: '/a.css' }], issues: [], assets: [] });
+    await builder.updateSettings('b', { text: 'x' });
+
+    assert.deepEqual(builder.state().preview.styles, [{ name: 'a', href: '/a.css' }]);
+});

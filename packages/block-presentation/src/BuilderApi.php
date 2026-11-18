@@ -6,6 +6,8 @@ namespace SpeedySpec\Block\Presentation;
 
 use InvalidArgumentException;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
+use SpeedySpec\Block\Domain\Contracts\AssetLocatorInterface;
+use SpeedySpec\Block\Domain\Contracts\AssetRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface;
@@ -35,6 +37,7 @@ use SpeedySpec\Block\Domain\Exceptions\DuplicateBlockIdException;
 use SpeedySpec\Block\Domain\Exceptions\InvalidBlockNameException;
 use SpeedySpec\Block\Domain\Exceptions\InvalidSettingPathException;
 use SpeedySpec\Block\Domain\Exceptions\MediaUploadRefusedException;
+use SpeedySpec\Block\Domain\ValueObjects\AssetKind;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
@@ -359,6 +362,7 @@ class BuilderApi
             'output' => $preview->output,
             'issues' => $this->issues([...$preview->issues, ...$this->includer()->issues()]),
             'assets' => $preview->assets,
+            'styles' => $this->styles($preview->assets),
             'css' => $this->container->get(StyleCollectorInterface::class)->css(),
         ]);
     }
@@ -375,6 +379,7 @@ class BuilderApi
             'output' => $result->output,
             'issues' => $this->issues([...$result->issues, ...$this->includer()->issues()]),
             'assets' => $result->assets,
+            'styles' => $this->styles($result->assets),
             'css' => $this->container->get(StyleCollectorInterface::class)->css(),
         ]);
     }
@@ -384,6 +389,47 @@ class BuilderApi
      *
      * @since 0.1.0
      */
+    /**
+     * Gives the stylesheets among a drawing's assets, in dependency order, so a builder's canvas looks like the page.
+     *
+     * Scripts are never given: a canvas shows the page, it does not run it. A package file the host cannot place
+     * is left out rather than linked from an empty address.
+     *
+     * @param list<string> $names
+     * @return list<array{name: string, href?: string, content?: string}>
+     *
+     * @since 0.1.0
+     */
+    private function styles(array $names): array
+    {
+        $locator = $this->container->has(AssetLocatorInterface::class)
+            ? $this->container->get(AssetLocatorInterface::class)
+            : null;
+        $styles = [];
+
+        foreach ($this->container->get(AssetRegistryInterface::class)->resolve($names) as $asset)
+        {
+            if ($asset->kind !== AssetKind::Style)
+            {
+                continue;
+            }
+
+            $style = match ($asset->source)
+            {
+                'inline' => ['name' => $asset->name, 'content' => $asset->content],
+                'url' => ['name' => $asset->name, 'href' => $asset->url],
+                default => ['name' => $asset->name, 'href' => $locator?->url($asset->package, $asset->path) ?? ''],
+            };
+
+            if (($style['href'] ?? null) !== '')
+            {
+                $styles[] = $style;
+            }
+        }
+
+        return $styles;
+    }
+
     private function renderRequest(Mode $mode): RenderRequest
     {
         return new RenderRequest($mode, 'html', $this->container->has(EditorInterface::class));

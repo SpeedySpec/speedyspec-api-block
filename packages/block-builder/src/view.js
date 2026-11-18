@@ -1,6 +1,7 @@
 /**
  * What the interface shows, worked out from the document and the catalogue, with no interface of its own.
  */
+import { CANVAS_STYLE } from './styles.js';
 import { find, positionOf, walk } from './tree.js';
 
 const titleCase = (text) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -245,4 +246,41 @@ export function fieldRefusal(refusals, blockId, group, name) {
 
     // The server's wording for a format check describes the schema, not what to do about it.
     return match.message.includes('required pattern') ? 'That is not a value this setting accepts.' : match.message;
+}
+
+/**
+ * Builds the document the canvas shows: the editor's own canvas rules, the page's stylesheets, its collected rules
+ * and its markup.
+ *
+ * Linked stylesheets come first and the collected rules last, so a block's own settings win. A stylesheet address
+ * must be http, https or a path on this site; inline styles cannot close their element.
+ *
+ * @param {{output: string, css: string, styles?: Array<{name: string, href?: string, content?: string}>}} preview
+ * @param {string} [base] The editor's own canvas rules.
+ */
+export function canvasDocument(preview, base = CANVAS_STYLE) {
+    const styles = preview.styles ?? [];
+    const contain = (css) => String(css).replaceAll('</', '<\\/');
+    const attribute = (text) => text.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    const links = styles
+        .map((style) => style.href)
+        .filter((href) => typeof href === 'string' && stylesheetAddress(href))
+        .map((href) => `<link rel="stylesheet" href="${attribute(href)}">`);
+    const inline = styles
+        .filter((style) => typeof style.content === 'string')
+        .map((style) => `<style>${contain(style.content)}</style>`);
+
+    return `<!doctype html><meta charset="utf-8"><style>${contain(base)}</style>${links.join('')}${inline.join('')}`
+        + `<style>${contain(preview.css)}</style>${preview.output}`;
+}
+
+/**
+ * Tells whether a stylesheet may be loaded from an address: the web, or this site, never another scheme.
+ */
+function stylesheetAddress(href) {
+    if (/^https?:\/\/[^\s"'<>]+$/i.test(href)) {
+        return true;
+    }
+
+    return href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/\\') && !/[\s"'<>]/.test(href);
 }
