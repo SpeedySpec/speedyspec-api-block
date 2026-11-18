@@ -39,6 +39,8 @@ use SpeedySpec\Block\Presentation\BuilderApi;
 use SpeedySpec\Block\Presentation\PresentationServiceProvider;
 use SpeedySpec\Block\Structure\Domain\StructureTypesPackage;
 use SpeedySpec\Block\Structure\StructurePackage;
+use SpeedySpec\Block\Text\Domain\TextTypesPackage;
+use SpeedySpec\Block\Text\TextPackage;
 
 require __DIR__ . '/vendor/autoload.php';
 
@@ -99,6 +101,8 @@ $loader->load(PresentationPackage::from($container));
 $loader->load(DocumentsPackage::from($container));
 $loader->load(new StructureTypesPackage());
 $loader->load(StructurePackage::from($container));
+$loader->load(new TextTypesPackage());
+$loader->load(TextPackage::from($container));
 $container->get(DesignTokenRegistryInterface::class)->set('color.primary', '#2456d6');
 $container->get(DesignTokenRegistryInterface::class)->set('space.md', '1.5rem');
 
@@ -122,12 +126,34 @@ if ($documents->find('home') === null)
         array_values($children),
     );
 
+    $text = fn (string $id, string $type, array $settings, Block ...$children) => new Block(
+        $id,
+        BlockName::fromString($type),
+        1,
+        $settings,
+        [],
+        [],
+        array_values($children),
+    );
+
     $documents->save(new Document('home', 'page', new BlockTree(
-        $element('title', 'h1', 'A page made of blocks'),
+        $text('title', 'core/heading', ['level' => 1, 'text' => 'A page made of blocks']),
+        $text('intro', 'core/paragraph', ['text' => 'Click any text and type. Select words to make them <strong>bold</strong>, <em>italic</em> or a link.']),
+        $text('enter', 'core/paragraph', ['text' => 'Press Enter at the end of a paragraph for a new one; Backspace in an empty one removes it.']),
         new Block('columns', BlockName::fromString('core/columns'), 1, [], [], [], [
-            $column('left', $element('left-text', 'p', 'Select a block on the left to change it.')),
-            $column('right', $element('right-text', 'p', 'Add, move and remove blocks; the page redraws.')),
+            $column('left', $text('left-text', 'core/paragraph', ['text' => 'Drag blocks to move them.'])),
+            $column('right', $text('right-text', 'core/paragraph', ['text' => 'Undo with Ctrl or Cmd and Z.'])),
         ]),
+        $text('list', 'core/list', [], $text('one', 'core/list-item', ['text' => 'A list item']), $text(
+            'two',
+            'core/list-item',
+            ['text' => 'An item with a list inside'],
+            $text('inner', 'core/list', ['ordered' => true], $text('three', 'core/list-item', ['text' => 'A numbered item'])),
+        )),
+        $text('quote', 'core/quote', ['text' => 'Less, but better.', 'citation' => 'Dieter Rams']),
+        $text('code', 'core/code', ['code' => "echo 'Hello';", 'language' => 'php']),
+        $text('table', 'core/table', ['rows' => [['Tea', 'Price'], ['Green', '3'], ['Black', '2']], 'caption' => 'Prices']),
+        $text('rule', 'core/separator', []),
     )));
 }
 

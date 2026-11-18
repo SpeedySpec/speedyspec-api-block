@@ -1,5 +1,5 @@
 import { Refused } from './api.js';
-import { find, indentPosition, movePosition, outdentPosition } from './tree.js';
+import { find, indentPosition, movePosition, outdentPosition, positionOf } from './tree.js';
 
 /**
  * Builds the state of one builder session: a document being edited through the API.
@@ -190,6 +190,21 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
 
         insertTemplate: (template, position) => edit({ operation: 'insertTemplate', template, position }, selectFirst),
 
+        /**
+         * Adds a block of a type directly after another, and selects it: what Enter does while typing.
+         */
+        insertAfter(id, type) {
+            const here = positionOf(state.document, id);
+
+            if (here === null) {
+                return Promise.resolve();
+            }
+
+            const position = { parent: here.parent, index: here.index + 1 };
+
+            return edit({ operation: 'insert', type, position, settings: {} }, selectFirst);
+        },
+
         remove: (id) => edit({ operation: 'remove', block: id }),
 
         duplicate: (id) => edit({ operation: 'duplicate', block: id }, selectFirst),
@@ -203,6 +218,19 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         outdent: (id) => moveTo(id, outdentPosition(state.document, id)),
 
         updateSettings: (id, settings) => edit({ operation: 'updateSettings', block: id, settings }),
+
+        /**
+         * Changes a block's settings from what they are when the change's turn comes, so a change sent while an
+         * earlier one is still under way builds on it instead of putting back what it replaced.
+         *
+         * @param {string} id
+         * @param {(settings: object) => object} change
+         */
+        changeSettings: (id, change) => edit(() => {
+            const block = find(state.document, id);
+
+            return block === null ? null : { operation: 'updateSettings', block: id, settings: change(block.settings ?? {}) };
+        }),
 
         updateExtension: (id, namespace, settings) =>
             edit({ operation: 'updateExtension', block: id, namespace, settings }),

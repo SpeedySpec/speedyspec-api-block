@@ -410,3 +410,52 @@ test('loading keeps the packages that head the add-block panel sections', async 
     assert.deepEqual(builder.state().packages, [{ name: 'acme/blocks', title: 'Acme', description: '' }]);
 });
 
+test('a block of the same type can be added right after another and selected', async () => {
+    const client = fakeClient((operation, document) => ({
+        document: { ...document, blocks: [document.blocks[0], document.blocks[1], block('new')] },
+        affected: ['new'],
+        issues: [],
+    }));
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.insertAfter('b', 'acme/box');
+
+    assert.deepEqual(client.calls.find((call) => call[0] === 'operate')[1], {
+        operation: 'insert',
+        type: 'acme/box',
+        position: { parent: null, index: 2 },
+        settings: {},
+    });
+    assert.equal(builder.state().selected, 'new');
+});
+
+test('adding after a block that is not there sends nothing', async () => {
+    const client = fakeClient();
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    await builder.insertAfter('gone', 'acme/box');
+
+    assert.equal(client.calls.filter((call) => call[0] === 'operate').length, 0);
+});
+
+
+test('a settings change is worked out when its turn comes, so it builds on the change sent before it', async () => {
+    const client = fakeClient((operation, document) => ({
+        document: {
+            ...document,
+            blocks: document.blocks.map((entry) => (entry.id === operation.block ? { ...entry, settings: operation.settings } : entry)),
+        },
+        affected: [operation.block],
+        issues: [],
+    }));
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    const first = builder.changeSettings('b', (settings) => ({ ...settings, a: 1 }));
+    const second = builder.changeSettings('b', (settings) => ({ ...settings, b: 2 }));
+    await Promise.all([first, second]);
+
+    assert.deepEqual(builder.state().document.blocks[1].settings, { a: 1, b: 2 });
+});

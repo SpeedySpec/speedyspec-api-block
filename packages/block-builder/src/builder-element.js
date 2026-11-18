@@ -1,5 +1,7 @@
 import { createClient } from './api.js';
-import { FieldError, fields, parseField, withValue } from './forms.js';
+import {
+    FieldError, fields, parseField, tableShape, withColumn, withoutColumn, withoutRow, withRow, withTyped, withValue,
+} from './forms.js';
 import { createBuilder } from './store.js';
 import { CANVAS_STYLE, STYLE } from './styles.js';
 import { find, positionOf, walk } from './tree.js';
@@ -18,6 +20,7 @@ import {
     writeResponsive,
 } from './view.js';
 import { dropPosition, dropZone } from './drag.js';
+import { keyAction, removableWhenEmpty, safeLink, settingSchema, startsNewBlock, tidyTyped } from './inline.js';
 
 const STYLE_NS = 'core/style';
 const RULES_NS = 'core/visibility';
@@ -100,6 +103,9 @@ export class BlockBuilderElement extends HTMLElement {
             errors: {},
             rules: null,
         };
+        this.typing = null;
+        this.keepTyping = false;
+        this.focusAfter = null;
         this.builder = createBuilder({
             client: this.client ?? createClient({ baseUrl: this.getAttribute('api') ?? '/api', headers: this.headers() }),
             documentId: this.getAttribute('document') ?? '',
@@ -108,7 +114,8 @@ export class BlockBuilderElement extends HTMLElement {
         this.frame = el('iframe', { sandbox: 'allow-same-origin', title: 'The page being edited' });
         this.frame.addEventListener('load', () => this.wireCanvas());
         this.bar = el('div', { class: 'bb-bar', hidden: true });
-        this.page = el('div', { class: 'bb-page' }, this.frame, this.bar);
+        this.format = this.formatBar();
+        this.page = el('div', { class: 'bb-page' }, this.frame, this.bar, this.format);
         this.toast = el('div', { class: 'bb-toast', role: 'alert', hidden: true });
         this.blank = el('div', {
             class: 'bb-blank',
@@ -461,6 +468,11 @@ export class BlockBuilderElement extends HTMLElement {
         const source = `<!doctype html><meta charset="utf-8"><style>${CANVAS_STYLE}</style>`
             + `<style>${state.preview.css.replaceAll('</', '<\\/')}</style>${state.preview.output}`;
 
+        // Redrawing under the cursor would throw away what is being typed; the page is redrawn once typing stops.
+        if (this.typing !== null) {
+            return;
+        }
+
         if (this.frame.srcdoc !== source) {
             this.frame.srcdoc = source;
         } else {
@@ -482,11 +494,29 @@ export class BlockBuilderElement extends HTMLElement {
         const named = (event) => event.target.closest?.(`[${NAMED}]`) ?? null;
 
         page.addEventListener('click', (event) => {
+            const editable = event.target.closest?.('[data-block-setting]') ?? null;
+
+            // A click inside the element being typed into moves the cursor, as it would anywhere else.
+            if (this.typing !== null && editable === this.typing.node) {
+                return;
+            }
+
             event.preventDefault();
             const block = named(event);
 
             if (block !== null) {
                 this.select(block.getAttribute(NAMED));
+            }
+
+            if (editable !== null && block !== null) {
+                this.startTyping(editable, block.getAttribute(NAMED));
+            }
+        });
+        page.addEventListener('keydown', (event) => this.typingKey(event));
+        page.addEventListener('selectionchange', () => this.placeFormatBar());
+        page.addEventListener('focusout', (event) => {
+            if (this.typing !== null && event.target === this.typing.node && !this.keepTyping) {
+                this.stopTyping(true);
             }
         });
         page.addEventListener('mouseover', (event) => {
@@ -527,6 +557,215 @@ export class BlockBuilderElement extends HTMLElement {
 
         this.frame.style.height = `${Math.max(page.documentElement.scrollHeight, 288)}px`;
         this.markPicked();
+
+        // After Enter added a block, the cursor goes into it once the page shows it.
+        if (this.focusAfter !== null) {
+            const id = this.focusAfter;
+            this.focusAfter = null;
+            const block = page.querySelector(`[${NAMED}="${CSS.escape(id)}"]`);
+            const editable = block?.matches('[data-block-setting]') ? block : block?.querySelector('[data-block-setting]');
+
+            if (editable) {
+                this.startTyping(editable, id);
+            }
+        }
+    }
+
+    // ---- Typing on the page --------------------------------------------------------------------------------
+
+    /**
+     * Lets a person type into one marked element of the page.
+     *
+     * The frame still runs no script: the builder makes the element editable from outside, and reads it back when the
+     * person is done. Formatted text is edited as markup; anything else as plain text.
+     */
+    startTyping(node, blockId) {
+        if (this.typing !== null && this.typing.node !== node) {
+            this.stopTyping(true);
+        }
+
+        const state = this.builder.state();
+        const block = find(state.document, blockId);
+        const entry = state.catalogue.find((candidate) => candidate.name === block?.type);
+        const path = node.getAttribute('data-block-setting');
+        const rich = settingSchema(entry?.settings, path)?.['x-control'] === 'rich-text';
+        const page = this.frame.contentDocument;
+
+        // Dragging would take over a click meant to place the cursor or select words.
+        page.querySelectorAll('[draggable]').forEach((element) => element.setAttribute('draggable', 'false'));
+        node.setAttribute('contenteditable', rich ? 'true' : 'plaintext-only');
+        node.setAttribute('data-bb-typing', '');
+        this.typing = { node, blockId, path, rich, schema: entry?.settings, type: block?.type, before: rich ? tidyTyped(node.innerHTML) : node.innerText };
+        node.focus();
+    }
+
+    /**
+     * Stops typing, and sends what was typed when it changed and `save` is set.
+     */
+    stopTyping(save) {
+        const typing = this.typing;
+
+        if (typing === null) {
+            return Promise.resolve();
+        }
+
+        this.typing = null;
+        this.format.hidden = true;
+        typing.node.removeAttribute('contenteditable');
+        typing.node.removeAttribute('data-bb-typing');
+        const value = typing.rich ? tidyTyped(typing.node.innerHTML) : typing.node.innerText.replace(/\n$/, '');
+        const block = find(this.builder.state().document, typing.blockId);
+
+        if (!save || block === null || value === typing.before) {
+            // Nothing is sent, so the page is redrawn from what the server last gave, putting back anything undone.
+            this.frame.srcdoc = '';
+            this.canvas(this.builder.state());
+
+            return Promise.resolve();
+        }
+
+        // Worked out when its turn comes, so a cell typed while the last one is still saving does not undo it.
+        return this.builder.changeSettings(typing.blockId, (settings) => withTyped(settings, typing.schema, typing.path, value));
+    }
+
+    typingKey(event) {
+        const typing = this.typing;
+
+        if (typing === null || event.target !== typing.node) {
+            return;
+        }
+
+        const selection = this.frame.contentDocument.getSelection();
+        const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+        const atStart = range !== null && range.collapsed && this.offsetIn(typing.node, range) === 0;
+        const action = keyAction({
+            key: event.key,
+            shiftKey: event.shiftKey,
+            metaKey: event.metaKey,
+            ctrlKey: event.ctrlKey,
+            // Only a block's main text adds or removes whole blocks; a cell, caption or citation is part of one.
+            empty: typing.node.textContent === ''
+                && removableWhenEmpty(find(this.builder.state().document, typing.blockId), typing.schema, typing.path),
+            atStart,
+            plain: !typing.rich,
+            split: startsNewBlock(typing.path),
+        });
+
+        if (action === null) {
+            return;
+        }
+
+        event.preventDefault();
+
+        if (action === 'line-break') {
+            this.frame.contentDocument.execCommand(typing.rich ? 'insertLineBreak' : 'insertText', false, typing.rich ? null : '\n');
+        } else if (action === 'stop') {
+            // Escape leaves the text, keeping what was typed, as leaving it any other way does.
+            this.stopTyping(true);
+        } else if (action === 'remove') {
+            const before = this.previousBlock(typing.blockId);
+            this.typing = null;
+            this.builder.remove(typing.blockId).then(() => this.select(before));
+        } else if (typing.type !== undefined) {
+            // Enter: keep what was typed, then start a new block of the same type below it.
+            this.stopTyping(true)
+                .then(() => this.builder.insertAfter(typing.blockId, typing.type))
+                .then(() => {
+                    const added = this.builder.state().selected;
+
+                    if (added !== typing.blockId) {
+                        this.focusAfter = added;
+                    }
+                });
+        }
+    }
+
+    /**
+     * Counts the characters of an element before the start of a range, to tell whether the cursor is at the start.
+     */
+    offsetIn(node, range) {
+        const before = range.cloneRange();
+        before.selectNodeContents(node);
+        before.setEnd(range.startContainer, range.startOffset);
+
+        return before.toString().length;
+    }
+
+    previousBlock(id) {
+        const order = walk(this.builder.state().document).map((entry) => entry.block.id);
+        const index = order.indexOf(id);
+
+        return index > 0 ? order[index - 1] : null;
+    }
+
+    /**
+     * Builds the small bar of formatting buttons that floats over a selection in formatted text.
+     */
+    formatBar() {
+        const command = (label, glyph, run) =>
+            el(
+                'button',
+                {
+                    type: 'button',
+                    title: label,
+                    'aria-label': label,
+                    // Pressing a button must not take the selection away from the text it applies to.
+                    onmousedown: (event) => event.preventDefault(),
+                    onclick: run,
+                },
+                el('span', { text: glyph }),
+            );
+        const run = (name, value = null) => this.frame.contentDocument?.execCommand(name, false, value);
+
+        return el(
+            'div',
+            { class: 'bb-format', hidden: true, role: 'toolbar', 'aria-label': 'Format text' },
+            command('Bold', 'B', () => run('bold')),
+            command('Italic', 'I', () => run('italic')),
+            command('Code', '</>', () => {
+                const page = this.frame.contentDocument;
+                const text = page.getSelection().toString();
+                const safe = text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+                run('insertHTML', `<code>${safe}</code>`);
+            }),
+            command('Link', 'Link', () => {
+                // The prompt takes focus away from the page in some browsers; that must not end the typing.
+                this.keepTyping = true;
+                let asked;
+
+                try {
+                    asked = window.prompt('Link to (a web address, an email or a page on this site)');
+                } finally {
+                    this.keepTyping = false;
+                }
+
+                this.typing?.node.focus();
+                const link = safeLink(asked ?? '');
+
+                if (link === null) {
+                    return;
+                }
+
+                run('createLink', link);
+            }),
+        );
+    }
+
+    placeFormatBar() {
+        const typing = this.typing;
+        const selection = this.frame.contentDocument?.getSelection();
+
+        if (typing === null || !typing.rich || selection === undefined || selection.rangeCount === 0 || selection.isCollapsed
+            || !typing.node.contains(selection.anchorNode)) {
+            this.format.hidden = true;
+
+            return;
+        }
+
+        const box = selection.getRangeAt(0).getBoundingClientRect();
+        this.format.hidden = false;
+        this.format.style.top = `${Math.max(4, box.top - 40)}px`;
+        this.format.style.left = `${Math.max(4, box.left)}px`;
     }
 
     /**
@@ -956,6 +1195,21 @@ export class BlockBuilderElement extends HTMLElement {
             );
         }
 
+        if (field.hint === 'table') {
+            return this.tableControl(Array.isArray(shown) ? shown : [], commit);
+        }
+
+        if (field.hint === 'code') {
+            return el('textarea', {
+                class: 'bb-input bb-code',
+                ...common,
+                rows: 8,
+                spellcheck: 'false',
+                text,
+                onchange: (event) => commit(event.target.value),
+            });
+        }
+
         if (kind === 'checkbox') {
             return el('input', { type: 'checkbox', ...common, checked: shown === true, onchange: (event) => commit(event.target.checked) });
         }
@@ -991,6 +1245,31 @@ export class BlockBuilderElement extends HTMLElement {
             placeholder: kind === 'number' || field.hint !== 'responsive' ? null : 'For example 1rem',
             onchange: (event) => commit(event.target.value),
         });
+    }
+
+    /**
+     * A table's size, with buttons that add or take away a row or column at the end; the cells themselves are
+     * typed into on the page, so their text is kept whatever the size becomes.
+     */
+    tableControl(rows, commit) {
+        const shape = tableShape(rows);
+        const send = (next) => commit(JSON.stringify(next));
+        const count = (number, noun) => `${number} ${noun}${number === 1 ? '' : 's'}`;
+        const button = (text, disabled, onclick) => el('button', { type: 'button', text, disabled, onclick });
+
+        return el(
+            'div',
+            { class: 'bb-table-size' },
+            el('span', { text: `${count(shape.rows, 'row')}, ${count(shape.columns, 'column')}` }),
+            el(
+                'div',
+                { class: 'bb-table-buttons' },
+                button('Add row', false, () => send(withRow(rows, shape.rows))),
+                button('Remove row', shape.rows <= 1, () => send(withoutRow(rows, shape.rows - 1))),
+                button('Add column', false, () => send(withColumn(rows, shape.columns))),
+                button('Remove column', shape.columns <= 1, () => send(withoutColumn(rows, shape.columns - 1))),
+            ),
+        );
     }
 
     /**

@@ -119,15 +119,169 @@ export function parseField(field, raw) {
 
 /**
  * Copies settings with one value set, or removed when the value is undefined.
+ *
+ * @param {object} settings
+ * @param {string} path A setting's name, or a dotted path into it such as `rows.1.2`; only what lies along the path
+ *   is copied, so the rest is kept exactly.
+ * @param {*} value
  */
-export function withValue(settings, name, value) {
-    const next = { ...settings };
+export function withValue(settings, path, value) {
+    const [name, ...rest] = String(path).split('.');
+    const next = Array.isArray(settings) ? [...settings] : { ...(settings ?? {}) };
 
-    if (value === undefined) {
+    // A list never gets holes: positions before a new one are filled, so it stays a list when sent as JSON.
+    if (Array.isArray(next) && /^\d+$/.test(name)) {
+        for (let index = next.length; index < Number(name); index++) {
+            next[index] = undefined;
+        }
+    }
+
+    if (rest.length > 0) {
+        const inner = next[name];
+        const container = inner !== null && typeof inner === 'object' ? inner : /^\d+$/.test(rest[0]) ? [] : {};
+        next[name] = withValue(container, rest.join('.'), value);
+
+        return next;
+    }
+
+    if (value === undefined && !Array.isArray(next)) {
         delete next[name];
     } else {
         next[name] = value;
     }
 
     return next;
+}
+
+/**
+ * Measures a table's stored rows, so the inspector can say how big it is.
+ *
+ * @param {Array<Array<string>>} [rows]
+ * @returns {{rows: number, columns: number}} The number of rows, and the cells in the widest one.
+ */
+export function tableShape(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+
+    return {
+        rows: list.length,
+        columns: list.reduce((widest, row) => Math.max(widest, Array.isArray(row) ? row.length : 0), 0),
+    };
+}
+
+/**
+ * Copies a table's rows with an empty row put in at a position, as wide as the widest row.
+ *
+ * @param {Array<Array<string>>} rows
+ * @param {number} at
+ */
+export function withRow(rows, at) {
+    const list = Array.isArray(rows) ? rows.map((row) => [...row]) : [];
+    list.splice(at, 0, Array(Math.max(1, tableShape(list).columns)).fill(''));
+
+    return list;
+}
+
+/**
+ * Copies a table's rows without the row at a position; a table keeps at least one row.
+ *
+ * @param {Array<Array<string>>} rows
+ * @param {number} at
+ */
+export function withoutRow(rows, at) {
+    const list = rows.map((row) => [...row]);
+
+    if (list.length > 1) {
+        list.splice(at, 1);
+    }
+
+    return list;
+}
+
+/**
+ * Copies a table's rows with an empty cell put in at a position in every row; short rows are padded first so the
+ * new column lines up.
+ *
+ * @param {Array<Array<string>>} rows
+ * @param {number} at
+ */
+export function withColumn(rows, at) {
+    const list = Array.isArray(rows) && rows.length > 0 ? rows : [[]];
+    const width = tableShape(list).columns;
+
+    return list.map((row) => {
+        const padded = [...row, ...Array(width - row.length).fill('')];
+        padded.splice(at, 0, '');
+
+        return padded;
+    });
+}
+
+/**
+ * Copies a table's rows without the cell at a position in each row; a table keeps at least one column.
+ *
+ * @param {Array<Array<string>>} rows
+ * @param {number} at
+ */
+export function withoutColumn(rows, at) {
+    if (tableShape(rows).columns <= 1) {
+        return rows.map((row) => [...row]);
+    }
+
+    return rows.map((row) => row.filter((cell, index) => index !== at));
+}
+
+/**
+ * Copies settings with what a person typed into one setting, or into one place inside it such as `rows.1.2`.
+ *
+ * A block added a moment ago stores no settings, yet the page shows the defaults, so typing into a place inside a
+ * setting that is not stored starts from its default; otherwise one cell typed into a new table would replace the
+ * whole table. Places skipped over in a list are filled with the empty value the schema expects there, so the result
+ * is still valid.
+ *
+ * @param {object} settings The stored settings.
+ * @param {object} [schema] The block type's settings schema.
+ * @param {string} path
+ * @param {*} value
+ */
+export function withTyped(settings, schema, path, value) {
+    const [name, ...rest] = String(path).split('.');
+
+    if (rest.length === 0) {
+        return withValue(settings, name, value);
+    }
+
+    const property = schema?.properties?.[name] ?? {};
+    const stored = settings?.[name];
+    const start = stored === undefined && property.default !== undefined ? structuredClone(property.default) : stored;
+
+    return withValue(settings, name, typedInto(start, property, rest, value));
+}
+
+function typedInto(container, schema, segments, value) {
+    const [segment, ...rest] = segments;
+    const inList = /^\d+$/.test(segment);
+    const inner = inList ? schema?.items : (schema?.properties?.[segment] ?? schema?.additionalProperties);
+    const next = inList
+        ? (Array.isArray(container) ? [...container] : [])
+        : (container !== null && typeof container === 'object' && !Array.isArray(container) ? { ...container } : {});
+
+    if (inList) {
+        for (let index = next.length; index < Number(segment); index++) {
+            next[index] = emptyOf(inner);
+        }
+    }
+
+    next[segment] = rest.length === 0 ? value : typedInto(next[segment], inner, rest, value);
+
+    return next;
+}
+
+function emptyOf(schema) {
+    const types = [].concat(schema?.type ?? []);
+
+    if (types.includes('string')) {
+        return '';
+    }
+
+    return types.includes('array') ? [] : types.includes('object') ? {} : null;
 }
