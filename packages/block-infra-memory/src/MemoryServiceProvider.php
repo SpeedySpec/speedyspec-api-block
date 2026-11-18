@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SpeedySpec\Block\Infra\Memory;
 
 use SpeedySpec\Block\Domain\BlockServiceContainer;
+use SpeedySpec\Block\Domain\Contracts\BlockTemplateRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 
 /**
@@ -15,7 +16,8 @@ use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 class MemoryServiceProvider
 {
     /**
-     * Binds the document repository; a host replaces it by adding its own binding before first use.
+     * Binds the document and template repositories; a host replaces either by adding its own binding before first
+     * use.
      *
      * @param BlockServiceContainer $container
      *   The container to bind into.
@@ -25,5 +27,6 @@ class MemoryServiceProvider
     public function register(BlockServiceContainer $container): void
     {
         $container->add(DocumentRepositoryInterface::class, fn () => new InMemoryDocumentRepository());
+        $container->add(BlockTemplateRepositoryInterface::class, fn () => new InMemoryBlockTemplateRepository());
     }
 }

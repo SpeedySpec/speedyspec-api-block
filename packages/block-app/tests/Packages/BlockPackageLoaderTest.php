@@ -205,3 +205,34 @@ test('the loader knows which package added a block type', function () {
         ->and($loader->packageOf(BlockName::fromString('host/plain')))->toBeNull()
         ->and($loader->packageOf(BlockName::fromString('gone/away')))->toBeNull();
 });
+
+test('a package can add templates under its own vendor', function () {
+    [, $c] = renderer();
+    $c->get(BlockPackageLoaderInterface::class)->load(package('acme/basic', function ($r) {
+        $r->type(type('acme/note'));
+        $r->template(new \SpeedySpec\Block\Domain\ValueObjects\BlockTemplate(
+            'acme/two-notes',
+            'Two notes',
+            new \SpeedySpec\Block\Domain\Entities\BlockTree(block('a', 'acme/note'), block('b', 'acme/note')),
+        ));
+    }));
+    $templates = $c->get(\SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface::class);
+
+    expect($templates->find('acme/two-notes')->title)->toBe('Two notes');
+});
+
+test('a template under another vendor is refused, and a failed load leaves no template', function () {
+    [, $c] = renderer();
+    $loader = $c->get(BlockPackageLoaderInterface::class);
+    $tree = new \SpeedySpec\Block\Domain\Entities\BlockTree(block('a', 'acme/note'));
+    $template = fn (string $name) => new \SpeedySpec\Block\Domain\ValueObjects\BlockTemplate($name, 'T', $tree);
+
+    expect(fn () => $loader->load(package('acme/basic', fn ($r) => $r->template($template('other/x')))))
+        ->toThrow(BlockPackageException::class)
+        ->and(fn () => $loader->load(package('acme/later', function ($r) use ($template) {
+            $r->template($template('acme/kept'));
+
+            throw new RuntimeException('half way');
+        })))->toThrow(RuntimeException::class)
+        ->and($c->get(\SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface::class)->all())->toBe([]);
+});

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SpeedySpec\Block\App;
 
 use SpeedySpec\Block\App\Building\BlockCatalogue;
+use SpeedySpec\Block\App\Building\BlockTemplateRegistry;
 use SpeedySpec\Block\App\Building\PlacementRules;
 use SpeedySpec\Block\App\Ids\BlockDuplicator;
 use SpeedySpec\Block\App\Ids\RandomBlockIdGenerator;
@@ -35,6 +36,7 @@ use SpeedySpec\Block\Domain\Contracts\BlockDuplicatorInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockIdGeneratorInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
@@ -158,6 +160,8 @@ class AppServiceProvider
             $c->get(SettingsMigrationRegistryInterface::class),
             $c->get(DataSourceRegistryInterface::class),
             $c->get(StepRegistryInterface::class),
+            $c->get(BlockTemplateRegistryInterface::class),
         ));
+        $container->add(BlockTemplateRegistryInterface::class, fn () => new BlockTemplateRegistry());
     }
 }

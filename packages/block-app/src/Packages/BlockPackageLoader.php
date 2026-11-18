@@ -8,6 +8,7 @@ use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
@@ -44,6 +45,7 @@ class BlockPackageLoader implements BlockPackageLoaderInterface
         private readonly SettingsMigrationRegistryInterface $migrations,
         private readonly DataSourceRegistryInterface $sources,
         private readonly StepRegistryInterface $steps,
+        private readonly BlockTemplateRegistryInterface $templates,
     )
     {
     }
@@ -76,6 +78,7 @@ class BlockPackageLoader implements BlockPackageLoaderInterface
             $this->migrations,
             $this->sources,
             $this->steps,
+            $this->templates,
         );
 
         $package->register($registrar);

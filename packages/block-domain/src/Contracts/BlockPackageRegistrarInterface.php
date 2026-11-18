@@ -6,6 +6,7 @@ namespace SpeedySpec\Block\Domain\Contracts;
 
 use SpeedySpec\Block\Domain\Exceptions\BlockPackageException;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
+use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\Decorator;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
@@ -76,4 +77,14 @@ interface BlockPackageRegistrarInterface
      * @since 0.1.0
      */
     public function step(string $stepInterface, object $step, int $priority = 10): void;
+
+    /**
+     * Adds a ready-made arrangement of blocks a builder can offer.
+     *
+     * @throws BlockPackageException
+     *   When the template's vendor differs from the package's.
+     *
+     * @since 0.1.0
+     */
+    public function template(BlockTemplate $template): void;
 }
