@@ -88,3 +88,20 @@ test('ordinary settings are accepted', function (string $name, array $settings) 
     ['core/table', ['rows' => [['a', 'b'], ['c']], 'header' => false, 'caption' => 'x']],
     ['core/separator', []],
 ]);
+
+test('a heading takes its id from the page when the page gives one, and makes its own otherwise', function () {
+    $heading = textContainer()->get(\SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface::class)
+        ->get(\SpeedySpec\Block\Domain\ValueObjects\BlockName::fromString('core/heading'));
+    $behaviour = new \SpeedySpec\Block\Text\Domain\HeadingBehaviour();
+    $block = block('h', 'core/heading', ['text' => 'Intro']);
+    $given = \SpeedySpec\Block\Domain\ValueObjects\Context::empty()->with('core/heading-ids', ['h' => 'intro-2']);
+    $front = \SpeedySpec\Block\Domain\ValueObjects\Mode::Front;
+    $view = fn (\SpeedySpec\Block\Domain\ValueObjects\Context $context): string => $behaviour
+        ->view($block, $heading, ['text' => 'Intro', 'anchor' => ''], $context, $front)
+        ->values['id'];
+
+    expect($heading->uses)->toBe(['core/heading-ids'])
+        ->and($view($given))->toBe('intro-2')
+        ->and($view(\SpeedySpec\Block\Domain\ValueObjects\Context::empty()))->toBe('intro')
+        ->and(\SpeedySpec\Block\Text\Domain\HeadingBehaviour::idFor('Intro'))->toBe('intro');
+});

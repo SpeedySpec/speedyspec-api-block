@@ -9,6 +9,7 @@ use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\BlockView;
 use SpeedySpec\Block\Domain\ValueObjects\Context;
+use SpeedySpec\Block\Domain\ValueObjects\HeadingAnchor;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
 
 /**
@@ -20,8 +21,6 @@ use SpeedySpec\Block\Domain\ValueObjects\Mode;
  */
 class HeadingBehaviour implements BlockBehaviourInterface
 {
-    private const int MAX_LENGTH = 64;
-
     public function view(Block $block, BlockType $type, array $settings, Context $context, Mode $mode): BlockView
     {
         $anchor = is_string($settings['anchor'] ?? null) ? $settings['anchor'] : '';
@@ -30,29 +29,37 @@ class HeadingBehaviour implements BlockBehaviourInterface
             'level' => is_int($settings['level'] ?? null) ? $settings['level'] : 2,
             'text' => is_string($settings['text'] ?? null) ? $settings['text'] : '',
             'anchor' => $anchor,
-            'id' => $anchor !== '' ? $anchor : self::idFor((string) ($settings['text'] ?? '')),
+            'id' => $this->id($block, $anchor, (string) ($settings['text'] ?? ''), $context),
         ]);
+    }
+
+    /**
+     * Takes the id the page gave this heading, when a package that sees the whole page made ids unique, and otherwise
+     * its anchor or one made from its text.
+     */
+    private function id(Block $block, string $anchor, string $text, Context $context): string
+    {
+        $ids = $context->has('core/heading-ids') ? $context->get('core/heading-ids') : null;
+        $given = is_array($ids) ? ($ids[$block->id] ?? null) : null;
+
+        if (is_string($given) && $given !== '')
+        {
+            return $given;
+        }
+
+        return $anchor !== '' ? $anchor : HeadingAnchor::fromText($text);
     }
 
     /**
      * Derives an id from a heading's text: the words, lower-cased and joined by hyphens.
      *
-     * Only `a-z` and digits survive, so the id is safe in any attribute and the same in every output.
+     * Kept for callers of part 2; the rules are {@link HeadingAnchor::fromText()}'s, shared with anything that
+     * links to headings.
      *
      * @since 0.1.0
      */
     public static function idFor(string $text): string
     {
-        $plain = strtolower(html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-        $id = trim((string) preg_replace('/[^a-z0-9]+/', '-', $plain), '-');
-
-        if ($id !== '' && ctype_digit($id[0]))
-        {
-            $id = 'h-' . $id;
-        }
-
-        $id = rtrim(substr($id, 0, self::MAX_LENGTH), '-');
-
-        return $id === '' ? 'heading' : $id;
+        return HeadingAnchor::fromText($text);
     }
 }
