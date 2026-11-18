@@ -9,6 +9,7 @@ use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ViewStepInterface;
+use SpeedySpec\Block\Domain\Exceptions\UnavailableBlockException;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\BlockView;
 use SpeedySpec\Block\Domain\ValueObjects\Context;
@@ -80,6 +81,12 @@ class ViewStage
             try
             {
                 $view = $behaviour->view($block, $type, $validated->settings, $context->only($type->uses), $mode);
+            }
+            catch (UnavailableBlockException $e)
+            {
+                $issues[] = new Issue($blockId, $e->kind, $e->getMessage(), $e->path);
+
+                return [null, $issues, []];
             }
             catch (Throwable $e)
             {
