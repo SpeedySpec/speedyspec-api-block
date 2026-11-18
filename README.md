@@ -25,6 +25,8 @@ its directory and run `composer install && vendor/bin/pest --colors=never`.
 | `block-actions` | The standard way to draw the actions blocks, with one stylesheet. |
 | `block-interactive-domain` | The interactive blocks' definitions: accordion, tabs, slider, countdown, progress, counter, modal. |
 | `block-interactive` | The standard way to draw the interactive blocks, with a stylesheet and a small script. |
+| `block-site-domain` | The site blocks' definitions: menu, table of contents, breadcrumbs, search, and the post list template. |
+| `block-site` | The standard way to draw the site blocks, with one stylesheet and no script. |
 | `block-presentation` | The builder contracts as a framework-free JSON API, behind an access rule the host supplies. |
 | `block-infra-wp` | The WordPress adapter: posts as documents, WordPress's block types and binding sources. |
 | `block-builder` | A reference builder in plain JavaScript, written against the builder API. See its README. |
@@ -255,6 +257,31 @@ $loader->load(new InteractivePackage());
 - **Countdown times.** A countdown counts to one moment in UTC:
   - a local time skipped when summer time starts becomes the next valid moment;
   - a time repeated when it ends counts to the first of the two.
+
+## Site
+
+`block-site-domain` defines the Site section of the block list, and `block-site` draws it:
+
+| Block | What it is |
+|---|---|
+| `core/navigation`, `core/navigation-link` | A menu of links, with submenus up to two levels deep; the link to the current page is marked. |
+| `core/table-of-contents` | Links to the page's headings between two levels. |
+| `core/breadcrumbs` | The path from the top of the site to this page, the page itself last and not linked. |
+| `core/search` | A search form sent where the host's search lives. |
+
+```php
+$loader->load(SiteTypesPackage::from($container));   // uses the site map when one is bound
+$loader->load(new SitePackage());
+```
+
+- **The site map.** Where a page sits in the host's site is the host's to say, through `SiteMapInterface`. It gives a page's address, its trail and where search goes. `InMemorySiteMap` (in `block-infra-memory`) takes lists, and `WpSiteMap` (in `block-infra-wp`) uses a post's permalink, its parent pages and WordPress's own search. Without a site map, breadcrumbs and search show nothing to visitors and no menu link is marked current.
+- **The page step.** The site package sees the whole page before any block is drawn, and adds to the context:
+  - `core/headings` and `core/heading-ids`: every heading, with an id unique on the page (`intro`, `intro-2`). The text package's heading uses that id, so a table of contents always links to the right heading.
+  - `core/page-url`, `core/breadcrumbs` and `core/search`, from the site map.
+
+  Headings inside a repeating block, and headings in included documents, are not listed.
+- **The post list** is a template, `core/post-list`, not a block type. It is a `core/repeat` over the `core/recent-posts` collection the host registers. Inside it, a heading, a paragraph and a button are bound to each post's `title`, `excerpt` and `url`, and every part stays editable. `ArrayCollectionSource` (in `block-infra-memory`) is a simple collection to register.
+- **No script.** Submenus open on hover and when a keyboard user moves into them. A closed submenu is moved out of view rather than removed, so Tab still reaches its links.
 
 ## For builders
 

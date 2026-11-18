@@ -19,7 +19,10 @@
         "speedyspec/block-actions-domain": "^0.1",
         "speedyspec/block-actions": "^0.1",
         "speedyspec/block-interactive-domain": "^0.1",
-        "speedyspec/block-interactive": "^0.1"
+        "speedyspec/block-interactive": "^0.1",
+        "speedyspec/block-site-domain": "^0.1",
+        "speedyspec/block-site": "^0.1",
+        "speedyspec/block-infra-memory": "^0.1"
     },
     "repositories": [
         {

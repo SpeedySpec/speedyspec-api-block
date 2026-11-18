@@ -7,6 +7,8 @@ namespace SpeedySpec\Block\Site;
 /**
  * The look of the site blocks, with no script: submenus open on hover and when a keyboard user moves into them.
  *
+ * A closed submenu is moved out of view rather than removed, so Tab still reaches its links and opens it.
+ *
  * On narrow screens, and in vertical menus, submenus sit in place under their link rather than floating. It loads
  * nothing else.
  *
@@ -22,14 +24,15 @@ class SiteStylesheet
         .b-nav-item > a, .b-nav-text { display: inline-block; padding: .4rem .2rem; color: inherit; }
         .b-nav-item > a[aria-current="page"] { font-weight: 700; text-decoration-thickness: 2px; }
         .b-nav-item > a:focus-visible { outline: 3px solid var(--color-focus, #f5a623); outline-offset: 2px; }
-        .b-nav-sub { display: none; position: absolute; top: 100%; left: 0; z-index: 10; min-width: 12rem;
+        .b-nav-sub { position: absolute; top: 100%; left: -9999px; z-index: 10; min-width: 12rem;
             padding: .4rem .6rem; border: 1px solid #d5d9e0; border-radius: .5rem; background: #fff; }
-        .b-nav-sub .b-nav-sub { top: 0; left: 100%; }
-        .b-nav-item:hover > .b-nav-sub, .b-nav-item:focus-within > .b-nav-sub { display: block; }
-        .b-nav--vertical .b-nav-sub { position: static; display: block; border: 0; padding: 0 0 0 1rem; }
+        .b-nav-item:hover > .b-nav-sub, .b-nav-item:focus-within > .b-nav-sub { left: 0; }
+        .b-nav-sub .b-nav-item:hover > .b-nav-sub, .b-nav-sub .b-nav-item:focus-within > .b-nav-sub {
+            top: 0; left: 100%; }
+        .b-nav--vertical .b-nav-sub { position: static; border: 0; padding: 0 0 0 1rem; }
         @media (max-width: 40em) {
             .b-nav > ul { flex-direction: column; }
-            .b-nav-sub, .b-nav-sub .b-nav-sub { position: static; display: block; border: 0; padding: 0 0 0 1rem; }
+            .b-nav-sub, .b-nav-sub .b-nav-sub { position: static; border: 0; padding: 0 0 0 1rem; }
         }
         .b-toc { padding: 1rem; border-left: 3px solid var(--color-primary, #2456d6); }
         .b-toc > h2 { margin: 0 0 .5rem; font-size: 1rem; }

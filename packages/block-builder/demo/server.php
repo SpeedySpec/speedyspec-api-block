@@ -25,12 +25,14 @@ use SpeedySpec\Block\Domain\Contracts\AssetLocatorInterface;
 use SpeedySpec\Block\Domain\Contracts\AssetRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BuilderAccessInterface;
+use SpeedySpec\Block\Domain\Contracts\CollectionSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\EditorInterface;
 use SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface;
 use SpeedySpec\Block\Domain\Contracts\MediaUploadPolicyInterface;
+use SpeedySpec\Block\Domain\Contracts\SiteMapInterface;
 use SpeedySpec\Block\Domain\Contracts\StyleCollectorInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\BlockTree;
@@ -38,20 +40,27 @@ use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\ValueObjects\AssetKind;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BuilderAbility;
+use SpeedySpec\Block\Domain\ValueObjects\Crumb;
 use SpeedySpec\Block\Domain\ValueObjects\EditorRequest;
 use SpeedySpec\Block\Domain\ValueObjects\MediaKind;
 use SpeedySpec\Block\Domain\ValueObjects\MediaQuery;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
 use SpeedySpec\Block\Domain\ValueObjects\RenderRequest;
+use SpeedySpec\Block\Domain\ValueObjects\SearchTarget;
 use SpeedySpec\Block\Infra\Filesystem\FilesystemMediaLibrary;
+use SpeedySpec\Block\Infra\Filesystem\FilesystemServiceProvider;
+use SpeedySpec\Block\Infra\Memory\ArrayCollectionSource;
+use SpeedySpec\Block\Infra\Memory\InMemorySiteMap;
 use SpeedySpec\Block\Interactive\Domain\InteractiveTypesPackage;
 use SpeedySpec\Block\Interactive\InteractivePackage;
-use SpeedySpec\Block\Infra\Filesystem\FilesystemServiceProvider;
 use SpeedySpec\Block\Media\Domain\MediaTypesPackage;
 use SpeedySpec\Block\Media\MediaPackage;
 use SpeedySpec\Block\Presentation\ApiRequest;
 use SpeedySpec\Block\Presentation\BuilderApi;
 use SpeedySpec\Block\Presentation\PresentationServiceProvider;
+use SpeedySpec\Block\Site\Domain\PostListTemplate;
+use SpeedySpec\Block\Site\Domain\SiteTypesPackage;
+use SpeedySpec\Block\Site\SitePackage;
 use SpeedySpec\Block\Structure\Domain\StructureTypesPackage;
 use SpeedySpec\Block\Structure\StructurePackage;
 use SpeedySpec\Block\Text\Domain\TextTypesPackage;
@@ -162,6 +171,21 @@ $loader->load(ActionsTypesPackage::from($container));
 $loader->load(ActionsPackage::from($container));
 $loader->load(new InteractiveTypesPackage());
 $loader->load(new InteractivePackage());
+
+// Where the demo's one page sits, so menus, breadcrumbs and search have something to show, and three sample posts
+// for the post list to repeat over.
+$container->add(SiteMapInterface::class, fn () => new InMemorySiteMap(
+    ['home' => '/view'],
+    ['home' => [new Crumb('Demo', '/'), new Crumb('Pages', '/view#pages'), new Crumb('Home')]],
+    new SearchTarget('/view', 'q'),
+));
+$container->get(CollectionSourceRegistryInterface::class)->add(new ArrayCollectionSource(PostListTemplate::COLLECTION, [
+    ['title' => 'Blocks that open', 'excerpt' => 'Accordions, tabs and modals, with no script needed.', 'url' => '/view#faq'],
+    ['title' => 'Pictures and video', 'excerpt' => 'Media are stored by id, so moving files breaks nothing.', 'url' => '/view#photo'],
+    ['title' => 'Find your way', 'excerpt' => 'Menus, breadcrumbs and a table of contents.', 'url' => '/view#contents'],
+]));
+$loader->load(SiteTypesPackage::from($container));
+$loader->load(new SitePackage());
 $container->get(DesignTokenRegistryInterface::class)->set('color.primary', '#2456d6');
 $container->get(DesignTokenRegistryInterface::class)->set('space.md', '1.5rem');
 
@@ -236,8 +260,36 @@ if ($documents->find('home') === null)
         array_values($children),
     );
 
+    $link = fn (string $id, string $label, string $url, array $extra = [], Block ...$children) => $text(
+        $id,
+        'core/navigation-link',
+        ['label' => $label, 'url' => $url, ...$extra],
+        ...$children,
+    );
+    $postList = PostListTemplate::template()->tree->roots()[0];
+
     $documents->save(new Document('home', 'page', new BlockTree(
+        $text(
+            'menu',
+            'core/navigation',
+            ['label' => 'Main'],
+            $link('menu-home', 'Home', '/view'),
+            $link(
+                'menu-blocks',
+                'Blocks',
+                '',
+                [],
+                $link('menu-text', 'Text', '/view#a-page-made-of-blocks'),
+                $link('menu-media', 'Media', '/view#photo'),
+                $link('menu-actions', 'Actions', '/view#pricing'),
+            ),
+            $link('menu-docs', 'Docs', 'https://example.com/docs', ['newTab' => true]),
+        ),
+        $text('trail', 'core/breadcrumbs', []),
+        $text('find', 'core/search', ['placeholder' => 'Search the demo']),
+        $text('contents', 'core/table-of-contents', ['from' => 1, 'to' => 3]),
         $text('title', 'core/heading', ['level' => 1, 'text' => 'A page made of blocks']),
+        $text('again', 'core/heading', ['level' => 2, 'text' => 'A page made of blocks']),
         $text('intro', 'core/paragraph', ['text' => 'Click any text and type. Select words to make them <strong>bold</strong>, <em>italic</em> or a link.']),
         $text('enter', 'core/paragraph', ['text' => 'Press Enter at the end of a paragraph for a new one; Backspace in an empty one removes it.']),
         new Block('columns', BlockName::fromString('core/columns'), 1, [], [], [], [
@@ -390,6 +442,8 @@ if ($documents->find('home') === null)
             $text('social-github', 'core/social-link', ['service' => 'github', 'url' => 'https://github.com/example']),
             $text('social-mastodon', 'core/social-link', ['service' => 'mastodon', 'url' => 'https://mastodon.social/@example']),
         ),
+        $text('posts-title', 'core/heading', ['level' => 2, 'text' => 'Recent posts']),
+        $postList,
         ...array_values(array_filter([
             $pictures === [] ? null : $text('photo', 'core/image', ['media' => $pictures[0], 'caption' => 'Choose another image in the inspector.']),
             $pictures === [] ? null : $text('gallery', 'core/gallery', ['media' => $pictures, 'columns' => ['base' => 1, 'tablet' => 3]]),

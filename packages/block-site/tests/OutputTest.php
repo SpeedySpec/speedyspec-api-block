@@ -138,3 +138,11 @@ test('the stylesheet opens submenus on focus and loads nothing else', function (
         ->and(SiteStylesheet::CSS)->not->toContain('@import')
         ->and(SiteStylesheet::CSS)->not->toContain('url(');
 });
+
+test('a closed submenu is moved out of view, not removed, so its links can still take keyboard focus', function () {
+    preg_match('/\.b-nav-sub \{([^}]*)\}/', SiteStylesheet::CSS, $rule);
+
+    expect($rule[1] ?? '')->not->toContain('display: none')
+        ->and($rule[1] ?? '')->toContain('left: -9999px')
+        ->and(SiteStylesheet::CSS)->toMatch('/\.b-nav-item:focus-within > \.b-nav-sub \{[^}]*left: 0/');
+});
