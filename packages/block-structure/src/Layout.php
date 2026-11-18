@@ -7,6 +7,7 @@ namespace SpeedySpec\Block\Structure;
 use SpeedySpec\Block\Domain\ValueObjects\Breakpoint;
 use SpeedySpec\Block\Domain\ValueObjects\ResponsiveValue;
 use SpeedySpec\Block\Domain\ValueObjects\StyleRule;
+use SpeedySpec\Block\Structure\Domain\StructureTypesPackage;
 
 /**
  * Turns the settings of the layout blocks into style rules.
@@ -18,8 +19,6 @@ use SpeedySpec\Block\Domain\ValueObjects\StyleRule;
  */
 class Layout
 {
-    public const array ALIGNMENTS = ['stretch', 'start', 'center', 'end'];
-
     /**
      * Columns: stacked below a breakpoint and in a row from it upward, or always in a row.
      *
@@ -34,7 +33,9 @@ class Layout
      */
     public static function columns(array $values, array $breakpoints): array
     {
-        $align = in_array($values['align'] ?? null, self::ALIGNMENTS, true) ? $values['align'] : 'stretch';
+        $align = in_array($values['align'] ?? null, StructureTypesPackage::ALIGNMENTS, true)
+            ? $values['align']
+            : 'stretch';
         $align = in_array($align, ['start', 'end'], true) ? 'flex-' . $align : $align;
         $from = is_string($values['stackBelow'] ?? null) ? $values['stackBelow'] : 'tablet';
         $row = ['flex-direction' => 'row', 'align-items' => $align];

@@ -6,7 +6,8 @@
     "license": "GPL-2.0-or-later",
     "require": {
         "php": ">=8.4",
-        "speedyspec/block-domain": "^0.1"
+        "speedyspec/block-domain": "^0.1",
+        "speedyspec/block-structure-domain": "^0.1"
     },
     "require-dev": {
         "pestphp/pest": "^3.0|^4.0",

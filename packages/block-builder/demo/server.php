@@ -37,6 +37,7 @@ use SpeedySpec\Block\Infra\Filesystem\FilesystemServiceProvider;
 use SpeedySpec\Block\Presentation\ApiRequest;
 use SpeedySpec\Block\Presentation\BuilderApi;
 use SpeedySpec\Block\Presentation\PresentationServiceProvider;
+use SpeedySpec\Block\Structure\Domain\StructureTypesPackage;
 use SpeedySpec\Block\Structure\StructurePackage;
 
 require __DIR__ . '/vendor/autoload.php';
@@ -96,6 +97,7 @@ $loader = $container->get(BlockPackageLoaderInterface::class);
 $loader->load(FlowPackage::from($container));
 $loader->load(PresentationPackage::from($container));
 $loader->load(DocumentsPackage::from($container));
+$loader->load(new StructureTypesPackage());
 $loader->load(StructurePackage::from($container));
 $container->get(DesignTokenRegistryInterface::class)->set('color.primary', '#2456d6');
 $container->get(DesignTokenRegistryInterface::class)->set('space.md', '1.5rem');

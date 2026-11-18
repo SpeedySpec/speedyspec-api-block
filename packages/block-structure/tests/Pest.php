@@ -14,6 +14,7 @@ use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
 use SpeedySpec\Block\Domain\ValueObjects\RenderRequest;
 use SpeedySpec\Block\Infra\Memory\MemoryServiceProvider;
+use SpeedySpec\Block\Structure\Domain\StructureTypesPackage;
 use SpeedySpec\Block\Structure\StructurePackage;
 
 if (!function_exists('block'))
@@ -40,7 +41,9 @@ if (!function_exists('page'))
         $container = new BlockServiceContainer();
         (new MemoryServiceProvider())->register($container);
         (new AppServiceProvider())->register($container);
-        $container->get(BlockPackageLoaderInterface::class)->load(StructurePackage::from($container));
+        $loader = $container->get(BlockPackageLoaderInterface::class);
+        $loader->load(new StructureTypesPackage());
+        $loader->load(StructurePackage::from($container));
 
         $result = $container->get(DocumentRendererInterface::class)
             ->render(new Document('d', 'page', new BlockTree(...$roots)), new RenderRequest(Mode::Front));

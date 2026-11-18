@@ -15,7 +15,8 @@ its directory and run `composer install && vendor/bin/pest --colors=never`.
 | `block-infra-filesystem` | A record store that keeps documents and saved templates as files. |
 | `block-infra-pdo` | A record store that keeps them in one database table (SQLite, MySQL, MariaDB, PostgreSQL). |
 | `block-contract-tests` | Shared Pest suites that any replacement implementation or block package runs. |
-| `block-structure` | The layout blocks: section, columns, column, grid and element. |
+| `block-structure-domain` | The layout blocks' definitions: section, columns, column, grid and element. |
+| `block-structure` | The standard way to draw the layout blocks. |
 | `block-presentation` | The builder contracts as a framework-free JSON API, behind an access rule the host supplies. |
 | `block-infra-wp` | The WordPress adapter: posts as documents, WordPress's block types and binding sources. |
 | `block-builder` | A reference builder in plain JavaScript, written against the builder API. See its README. |
@@ -96,7 +97,9 @@ share them instead of each shipping its own container:
 | `core/element` | One element from a fixed list (headings, paragraph, lists and so on) with text. |
 
 ```php
-$container->get(BlockPackageLoaderInterface::class)->load(StructurePackage::from($container));
+$loader = $container->get(BlockPackageLoaderInterface::class);
+$loader->load(new StructureTypesPackage());           // what the blocks are
+$loader->load(StructurePackage::from($container));   // how they are drawn; a plugin may load its own instead
 ```
 
 Their layout is written through the style collector, and they take the shared `core/style` settings when
