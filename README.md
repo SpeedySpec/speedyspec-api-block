@@ -17,6 +17,7 @@ its directory and run `composer install && vendor/bin/pest --colors=never`.
 | `block-contract-tests` | Shared Pest suites that any replacement implementation or block package runs. |
 | `block-structure` | The layout blocks: section, columns, column, grid and element. |
 | `block-presentation` | The builder contracts as a framework-free JSON API, behind an access rule the host supplies. |
+| `block-infra-wp` | The WordPress adapter: posts as documents, WordPress's block types and binding sources. |
 | `block-example` | A small block package; the model for writing one. See its README. |
 
 ## Storage
@@ -178,4 +179,28 @@ echo $response->json();
 `BuilderAccessInterface` is the only permission check, and it is the host's to implement: the block system knows
 nothing about users. Until a host binds one, every request is refused. Signing people in, sessions and request
 forgery protection are also the host's.
+
+## WordPress
+
+Nothing above depends on WordPress. `block-infra-wp` is the one package that connects the two:
+
+- **Posts as documents.** `WpPostDocumentRepository` reads a post's block markup into a block tree and writes it
+  back. `WpMarkup` follows WordPress's block comment grammar itself, without calling WordPress. A block's
+  attributes are its settings; the markup it saved is kept in a `wpContent` setting.
+- **Block identity.** WordPress blocks have none. A block is identified by where it sits (`wp-1-0`) and that id is
+  written into the block's `metadata` when the post is saved, so it survives the block being moved.
+- **Block types.** `WpBlockTypeBridge` describes each registered WordPress block type as a block type here, and
+  `WpBlockOutput` draws it: static blocks from their saved markup, dynamic ones through WordPress.
+- **Bindings.** Each WordPress block bindings source is offered as a data source under the same name, and
+  bindings in a block's `metadata` are read and written.
+
+```php
+$provider = new WpServiceProvider();
+$provider->register($container);
+add_action('init', fn () => $provider->boot($container), 99);
+```
+
+Everything it needs from WordPress comes through four ports in `SpeedySpec\Block\Infra\WP\Ports`, so the adapter
+is tested without WordPress. The four classes in `WordPress/` that call WordPress's own functions are thin and
+have **not** been run against a live WordPress.
 
