@@ -110,3 +110,12 @@ test('replacing the unresolved-block output changes what the renderer draws for 
     expect($renderer->render(doc(block('a', 'gone/away')), new RenderRequest(Mode::Admin))->output)
         ->toBe('[missing a]');
 });
+
+test('the upload policy is bound with the default limit, and no media library is', function () {
+    $container = new BlockServiceContainer();
+    (new AppServiceProvider())->register($container);
+
+    expect($container->get(\SpeedySpec\Block\Domain\Contracts\MediaUploadPolicyInterface::class))
+        ->toBeInstanceOf(\SpeedySpec\Block\App\Media\MediaUploadPolicy::class)
+        ->and($container->has(\SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface::class))->toBeFalse();
+});

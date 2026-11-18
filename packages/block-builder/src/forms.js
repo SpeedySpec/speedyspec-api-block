@@ -62,6 +62,8 @@ export function fields(schema, values) {
             // What the schema suggests for the control, and the kind of value once "object" is set aside: a
             // responsive setting is "a string, or a map of strings", and its control edits the strings.
             hint: typeof definition['x-control'] === 'string' ? definition['x-control'] : '',
+            // For a media setting, which kind of media the picker offers.
+            mediaKind: typeof definition['x-media-kind'] === 'string' ? definition['x-media-kind'] : '',
             kind: [].concat(definition.type ?? []).find((type) => type !== 'object') ?? '',
             allowsText: Array.isArray(definition.type) && definition.type.includes('string'),
             required: required.includes(name),

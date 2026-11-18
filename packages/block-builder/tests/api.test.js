@@ -145,3 +145,49 @@ test('the remaining routes are reachable', async () => {
     ]);
     assert.deepEqual(JSON.parse(calls[3].body), { block: 't', mode: 'admin' });
 });
+
+test('media are listed with only the filters given', async () => {
+    const { fetch, calls } = fakeFetch(
+        { status: 200, body: { items: [{ id: '1' }], total: 1, page: 1, perPage: 24 } },
+        { status: 200, body: { items: [], total: 0, page: 2, perPage: 20 } },
+        { status: 200, body: { item: { id: 'a/b' } } },
+    );
+    const client = createClient({ baseUrl: '/api', fetch });
+
+    const first = await client.media({ search: 'cat & dog', kind: 'image', page: 1, perPage: 24 });
+    await client.media({ page: 2 });
+    const item = await client.mediaItem('a/b');
+
+    assert.deepEqual(first.items, [{ id: '1' }]);
+    assert.equal(item.id, 'a/b');
+    assert.deepEqual(calls.map((call) => call.url), [
+        '/api/media?search=cat+%26+dog&kind=image&page=1&perPage=24',
+        '/api/media?page=2',
+        '/api/media/a%2Fb',
+    ]);
+});
+
+test('an upload sends the file itself, named in the query, with its own type', async () => {
+    const { fetch, calls } = fakeFetch({ status: 201, body: { item: { id: 'm1', title: 'a b.png' } } });
+    const client = createClient({ baseUrl: '/api', fetch, headers: { 'X-Token': 't' } });
+    const file = new File(['png bytes'], 'a b.png', { type: 'image/png' });
+
+    const item = await client.upload(file);
+
+    assert.equal(item.id, 'm1');
+    assert.equal(calls[0].method, 'POST');
+    assert.equal(calls[0].url, '/api/media?name=a+b.png');
+    assert.equal(calls[0].body, file);
+    assert.equal(calls[0].headers['Content-Type'], 'image/png');
+    assert.equal(calls[0].headers['X-Token'], 't');
+});
+
+test('a refused upload comes back with the server\'s reason', async () => {
+    const { fetch } = fakeFetch({ status: 415, body: { error: 'Only images, video, audio and PDF files can be uploaded.' } });
+    const client = createClient({ baseUrl: '/api', fetch });
+
+    await assert.rejects(
+        client.upload(new File(['<p>'], 'x.jpg', { type: 'image/jpeg' })),
+        (error) => error instanceof ApiError && error.status === 415 && error.message.startsWith('Only images'),
+    );
+});

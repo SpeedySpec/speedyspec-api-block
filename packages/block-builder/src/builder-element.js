@@ -3,6 +3,7 @@ import {
     FieldError, fields, parseField, tableShape, withColumn, withoutColumn, withoutRow, withRow, withTyped, withValue,
 } from './forms.js';
 import { createBuilder } from './store.js';
+import { accepts, addedMedia, mediaQuery, movedMedia, withoutMediaAt } from './media.js';
 import { CANVAS_STYLE, STYLE } from './styles.js';
 import { find, positionOf, walk } from './tree.js';
 import {
@@ -102,12 +103,17 @@ export class BlockBuilderElement extends HTMLElement {
             width: '',
             errors: {},
             rules: null,
+            // The media picker, while one is open: which setting it fills, and the page of the library it shows.
+            picker: null,
         };
+        // Media items already looked up, by id, so a chosen file shows its picture and name; null while loading.
+        this.media = new Map();
         this.typing = null;
         this.keepTyping = false;
         this.focusAfter = null;
+        this.api = this.client ?? createClient({ baseUrl: this.getAttribute('api') ?? '/api', headers: this.headers() });
         this.builder = createBuilder({
-            client: this.client ?? createClient({ baseUrl: this.getAttribute('api') ?? '/api', headers: this.headers() }),
+            client: this.api,
             documentId: this.getAttribute('document') ?? '',
         });
 
@@ -166,7 +172,10 @@ export class BlockBuilderElement extends HTMLElement {
      */
     render() {
         const state = this.builder.state();
-        const focused = this.contains(document.activeElement) ? document.activeElement.dataset.key : undefined;
+        const active = this.contains(document.activeElement) ? document.activeElement : null;
+        const focused = active?.dataset.key;
+        // Where the cursor was in a text field, so typing carries on where it left off.
+        const caret = typeof active?.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
         const scroll = [...this.querySelectorAll('.bb-drawer, .bb-side-body')].map((node) => [node.className, node.scrollTop]);
 
         this.regions.top.replaceChildren(...this.top(state));
@@ -186,7 +195,12 @@ export class BlockBuilderElement extends HTMLElement {
         });
 
         if (focused !== undefined) {
-            this.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus();
+            const field = this.querySelector(`[data-key="${CSS.escape(focused)}"]`);
+            field?.focus();
+
+            if (caret !== null && typeof field?.setSelectionRange === 'function') {
+                field.setSelectionRange(...caret);
+            }
         }
     }
 
@@ -987,6 +1001,11 @@ export class BlockBuilderElement extends HTMLElement {
         ].filter(([, , shown]) => shown);
         const tab = tabs.some(([name]) => name === this.ui.tab) ? this.ui.tab : 'block';
         const issues = state.issues.filter((issue) => issue.block === block.id);
+
+        if (this.ui.picker !== null && this.ui.picker.block === block.id) {
+            return this.picker(block);
+        }
+
         const body = tab === 'style'
             ? this.styleTab(state, block, style)
             : tab === 'visibility'
@@ -1199,6 +1218,14 @@ export class BlockBuilderElement extends HTMLElement {
             return this.tableControl(Array.isArray(shown) ? shown : [], commit);
         }
 
+        if (field.hint === 'media') {
+            return this.mediaControl(state, field, typeof shown === 'string' ? shown : '', commit);
+        }
+
+        if (field.hint === 'media-list') {
+            return this.mediaListControl(state, field, Array.isArray(shown) ? shown : [], commit);
+        }
+
         if (field.hint === 'code') {
             return el('textarea', {
                 class: 'bb-input bb-code',
@@ -1245,6 +1272,293 @@ export class BlockBuilderElement extends HTMLElement {
             placeholder: kind === 'number' || field.hint !== 'responsive' ? null : 'For example 1rem',
             onchange: (event) => commit(event.target.value),
         });
+    }
+
+    // ---- Media ---------------------------------------------------------------------------------------------
+
+    /**
+     * Looks up a chosen media item once, so its picture and name can be shown; the inspector is drawn again when
+     * the answer comes.
+     *
+     * @returns {?object} The item, `{missing: true}` when the library no longer has it, or null while loading.
+     */
+    mediaItem(id) {
+        if (!this.media.has(id)) {
+            this.media.set(id, null);
+            this.api.mediaItem(id)
+                .then((item) => this.media.set(id, item))
+                .catch(() => this.media.set(id, { missing: true }))
+                .finally(() => this.render());
+        }
+
+        return this.media.get(id);
+    }
+
+    /**
+     * A small picture of an image, or the name of any other file.
+     */
+    mediaThumb(id) {
+        const item = this.mediaItem(id);
+
+        if (item === null) {
+            return el('span', { class: 'bb-thumb', text: 'Loading…' });
+        }
+
+        if (item.missing) {
+            return el('span', { class: 'bb-thumb bb-thumb-missing', text: 'No longer in the library' });
+        }
+
+        if (item.kind === 'image') {
+            const small = [...(item.sizes ?? [])].sort((a, b) => a.width - b.width).find((size) => size.width >= 120);
+
+            return el('img', { class: 'bb-thumb', src: small?.url ?? item.url, alt: item.alt || item.title });
+        }
+
+        return el('span', { class: 'bb-thumb', text: item.title });
+    }
+
+    /**
+     * One media setting: what is chosen, with buttons to choose another or clear it.
+     */
+    mediaControl(state, field, id, commit) {
+        const noun = { image: 'image', video: 'video', audio: 'audio file' }[field.mediaKind] ?? 'file';
+
+        return el(
+            'div',
+            { class: 'bb-media' },
+            id === '' ? null : this.mediaThumb(id),
+            el(
+                'div',
+                { class: 'bb-media-buttons' },
+                el('button', {
+                    type: 'button',
+                    text: id === '' ? `Choose ${noun}` : 'Replace',
+                    // Sent against the settings as they are then, not as they were when the picker opened.
+                    onclick: () => this.openPicker(state, field, false, (chosen, block) =>
+                        this.builder.changeSettings(block, (settings) => withValue(settings, field.name, chosen))),
+                }),
+                id === '' ? null : el('button', { type: 'button', text: 'Remove', onclick: () => commit('') }),
+            ),
+        );
+    }
+
+    /**
+     * A list of media, such as a gallery's images, in order, each with buttons to move or remove it.
+     */
+    mediaListControl(state, field, ids, commit) {
+        const send = (next) => commit(JSON.stringify(next));
+
+        return el(
+            'div',
+            { class: 'bb-media-list' },
+            el(
+                'ol',
+                {},
+                ids.map((id, index) =>
+                    el(
+                        'li',
+                        {},
+                        this.mediaThumb(id),
+                        el(
+                            'div',
+                            { class: 'bb-media-buttons' },
+                            el('button', {
+                                type: 'button',
+                                text: 'Earlier',
+                                disabled: index === 0,
+                                onclick: () => send(movedMedia(ids, index, index - 1)),
+                            }),
+                            el('button', {
+                                type: 'button',
+                                text: 'Later',
+                                disabled: index === ids.length - 1,
+                                onclick: () => send(movedMedia(ids, index, index + 1)),
+                            }),
+                            el('button', { type: 'button', text: 'Remove', onclick: () => send(withoutMediaAt(ids, index)) }),
+                        ),
+                    ),
+                ),
+            ),
+            el('button', {
+                type: 'button',
+                class: 'bb-media-add',
+                text: ids.length === 0 ? 'Choose images' : 'Add images',
+                // Each pick is worked out when its turn comes, so several picks in a row all stay.
+                onclick: () => this.openPicker(state, field, true, (chosen, block) =>
+                    this.builder.changeSettings(block, (settings) => addedMedia(settings, field.name, chosen))),
+            }),
+        );
+    }
+
+    /**
+     * Opens the picker for one setting, in place of the inspector's tabs.
+     *
+     * @param {boolean} multiple Whether it stays open after a choice, for adding several.
+     * @param {(id: string, block: string) => void} choose Given the chosen id and the block the picker is for.
+     */
+    openPicker(state, field, multiple, choose) {
+        this.ui.picker = {
+            block: state.selected,
+            title: field.title === field.name ? words(field.name) : field.title,
+            kind: field.mediaKind,
+            multiple,
+            choose,
+            search: '',
+            page: 1,
+            items: [],
+            total: 0,
+            busy: false,
+            error: null,
+        };
+        this.loadPicker(1);
+    }
+
+    /**
+     * Loads a page of the library into the picker; page 1 starts over, later pages are added below.
+     */
+    loadPicker(page) {
+        const picker = this.ui.picker;
+
+        if (picker === null) {
+            return;
+        }
+
+        picker.busy = true;
+        picker.error = null;
+        this.render();
+        this.api.media(mediaQuery(picker.kind, picker.search, page))
+            .then((answer) => {
+                if (this.ui.picker !== picker) {
+                    return;
+                }
+
+                picker.items = page === 1 ? answer.items : [...picker.items, ...answer.items];
+                picker.total = answer.total;
+                picker.page = page;
+                answer.items.forEach((item) => this.media.set(item.id, item));
+            })
+            .catch((error) => {
+                picker.error = error.message;
+            })
+            .finally(() => {
+                picker.busy = false;
+                this.render();
+            });
+    }
+
+    /**
+     * Uploads a file from the person's computer and chooses it; a refusal is shown with the server's reason.
+     */
+    uploadToPicker(file) {
+        const picker = this.ui.picker;
+
+        if (picker === null || file === undefined) {
+            return;
+        }
+
+        picker.busy = true;
+        picker.error = null;
+        this.render();
+        this.api.upload(file)
+            .then((item) => {
+                this.media.set(item.id, item);
+                this.choose(item.id);
+                this.loadPicker(1);
+            })
+            .catch((error) => {
+                picker.error = error.message;
+                picker.busy = false;
+                this.render();
+            });
+    }
+
+    choose(id) {
+        const picker = this.ui.picker;
+
+        if (picker === null) {
+            return;
+        }
+
+        picker.choose(id, picker.block);
+
+        if (!picker.multiple) {
+            this.ui.picker = null;
+        }
+
+        this.render();
+    }
+
+    /**
+     * The picker: a search, an upload button and a grid of the library's items of the setting's kind.
+     */
+    picker(block) {
+        const picker = this.ui.picker;
+        const close = () => {
+            this.ui.picker = null;
+            this.render();
+        };
+        let timer = null;
+
+        return [
+            el(
+                'div',
+                { class: 'bb-side-head bb-picker-head' },
+                el('h2', { text: picker.title }),
+                el('button', { type: 'button', class: 'bb-link', text: picker.multiple ? 'Done' : 'Cancel', onclick: close }),
+            ),
+            el(
+                'div',
+                { class: 'bb-side-body bb-picker' },
+                el('input', {
+                    class: 'bb-input',
+                    type: 'search',
+                    // Lets the inspector put the cursor back here when it is drawn again while the person types.
+                    'data-key': 'picker-search',
+                    placeholder: 'Search by name',
+                    'aria-label': 'Search the media library',
+                    value: picker.search,
+                    oninput: (event) => {
+                        picker.search = event.target.value;
+                        clearTimeout(timer);
+                        timer = setTimeout(() => this.loadPicker(1), 250);
+                    },
+                }),
+                el(
+                    'label',
+                    { class: 'bb-upload' },
+                    el('span', { text: picker.busy ? 'Working…' : 'Upload from your computer' }),
+                    el('input', {
+                        type: 'file',
+                        accept: accepts(picker.kind),
+                        disabled: picker.busy,
+                        onchange: (event) => this.uploadToPicker(event.target.files?.[0]),
+                    }),
+                ),
+                picker.error === null ? null : el('p', { class: 'bb-wrong', role: 'alert', text: picker.error }),
+                picker.items.length === 0 && !picker.busy
+                    ? el('p', { class: 'bb-none', text: picker.search === '' ? 'The library has nothing of this kind yet.' : 'Nothing matches.' })
+                    : null,
+                el(
+                    'div',
+                    { class: 'bb-picker-grid' },
+                    picker.items.map((item) =>
+                        el(
+                            'button',
+                            {
+                                type: 'button',
+                                title: item.title,
+                                'aria-label': `Choose ${item.title}`,
+                                onclick: () => this.choose(item.id),
+                            },
+                            this.mediaThumb(item.id),
+                        ),
+                    ),
+                ),
+                picker.items.length < picker.total
+                    ? el('button', { type: 'button', class: 'bb-media-add', text: 'More', disabled: picker.busy, onclick: () => this.loadPicker(picker.page + 1) })
+                    : null,
+            ),
+        ];
     }
 
     /**

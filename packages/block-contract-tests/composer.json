@@ -29,7 +29,8 @@
             "src/outputEscaperContract.php",
             "src/blockPackageContract.php",
             "src/blockTemplateRepositoryContract.php",
-            "src/recordStoreContract.php"
+            "src/recordStoreContract.php",
+            "src/mediaLibraryContract.php"
         ]
     },
     "archive": {

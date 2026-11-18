@@ -41,15 +41,20 @@ export function createClient({ baseUrl, fetch = globalThis.fetch, headers = {} }
 
     /**
      * Sends one request and gives back the decoded body.
+     *
+     * @param {*} [body] Sent as JSON, unless `raw` is set.
+     * @param {?string} [raw] The body's own type: the body is sent as it is, such as a file being uploaded.
      */
-    async function send(method, path, body) {
+    async function send(method, path, body, raw = null) {
         let response;
 
         try {
             response = await fetch(base + path, {
                 method,
-                headers: body === undefined ? { ...headers } : { ...headers, 'Content-Type': 'application/json' },
-                body: body === undefined ? undefined : JSON.stringify(body),
+                headers: body === undefined
+                    ? { ...headers }
+                    : { ...headers, 'Content-Type': raw ?? 'application/json' },
+                body: body === undefined || raw !== null ? body : JSON.stringify(body),
             });
         } catch {
             throw new ApiError(0, 'The server could not be reached.');
@@ -128,5 +133,40 @@ export function createClient({ baseUrl, fetch = globalThis.fetch, headers = {} }
 
         // A template name is `vendor/name`, and the route takes the two parts as two segments.
         removeTemplate: (name) => send('DELETE', `/templates/${name.split('/').map(segment).join('/')}`),
+
+        /**
+         * Lists one page of the media library, newest first.
+         *
+         * @param {{search?: string, kind?: string, page?: number, perPage?: number}} [filters]
+         * @returns {Promise<{items: Array<object>, total: number, page: number, perPage: number}>}
+         */
+        media(filters = {}) {
+            const query = new URLSearchParams();
+
+            for (const key of ['search', 'kind', 'page', 'perPage']) {
+                if (filters[key] !== undefined && filters[key] !== '') {
+                    query.set(key, String(filters[key]));
+                }
+            }
+
+            return send('GET', `/media${query.size === 0 ? '' : `?${query}`}`);
+        },
+
+        /**
+         * Describes one media item.
+         */
+        mediaItem: async (id) => (await send('GET', `/media/${segment(id)}`)).item,
+
+        /**
+         * Uploads a file to the media library; the server decides what it is from its content.
+         *
+         * @param {File} file
+         */
+        upload: async (file) => (await send(
+            'POST',
+            `/media?${new URLSearchParams({ name: file.name })}`,
+            file,
+            file.type || 'application/octet-stream',
+        )).item,
     };
 }

@@ -78,3 +78,34 @@ test('the memory provider only fills gaps, so real storage wins in any registrat
     [['app', 'real', 'memory', 'storage']],
     [['memory', 'app', 'real', 'storage']],
 ]);
+
+describe('InMemoryMediaLibrary', function () {
+    \SpeedySpec\Block\ContractTests\mediaLibraryContract(
+        fn () => new \SpeedySpec\Block\Infra\Memory\InMemoryMediaLibrary()
+    );
+});
+
+test('the memory library numbers its items and can be seeded', function () {
+    $library = new \SpeedySpec\Block\Infra\Memory\InMemoryMediaLibrary('memory://media/');
+    $item = $library->upload(new \SpeedySpec\Block\Domain\ValueObjects\MediaUpload('a.png', 'image/png', 'x'));
+    $seeded = new \SpeedySpec\Block\Domain\ValueObjects\MediaItem(
+        'photo',
+        'https://e.test/photo.jpg',
+        \SpeedySpec\Block\Domain\ValueObjects\MediaKind::Image,
+        'image/jpeg',
+        'Photo',
+    );
+    $library->add($seeded);
+
+    expect($item->id)->toBe('m1')
+        ->and($item->url)->toBe('memory://media/m1')
+        ->and($library->find('photo'))->toBe($seeded);
+});
+
+test('the memory provider binds a media library when none is bound', function () {
+    $container = new \SpeedySpec\Block\Domain\BlockServiceContainer();
+    (new \SpeedySpec\Block\Infra\Memory\MemoryServiceProvider())->register($container);
+
+    expect($container->get(\SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface::class))
+        ->toBeInstanceOf(\SpeedySpec\Block\Infra\Memory\InMemoryMediaLibrary::class);
+});

@@ -25,4 +25,9 @@ enum BuilderAbility: string
      * Save and remove the templates everyone shares.
      */
     case ManageTemplates = 'manage-templates';
+
+    /**
+     * Add files to the media library.
+     */
+    case UploadMedia = 'upload-media';
 }

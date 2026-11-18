@@ -30,4 +30,5 @@ enum IssueKind: string
     case InvalidCollection = 'invalid-collection';
     case UnknownDocument = 'unknown-document';
     case DocumentLoop = 'document-loop';
+    case UnavailableMedia = 'unavailable-media';
 }

@@ -10,11 +10,14 @@ use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
+use SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
+use SpeedySpec\Block\Infra\WP\Ports\WpAttachmentsInterface;
 use SpeedySpec\Block\Infra\WP\Ports\WpBindingsInterface;
 use SpeedySpec\Block\Infra\WP\Ports\WpBlockTypesInterface;
 use SpeedySpec\Block\Infra\WP\Ports\WpPostsInterface;
 use SpeedySpec\Block\Infra\WP\Ports\WpRendererInterface;
+use SpeedySpec\Block\Infra\WP\WordPress\WordPressAttachments;
 use SpeedySpec\Block\Infra\WP\WordPress\WordPressBindings;
 use SpeedySpec\Block\Infra\WP\WordPress\WordPressBlockTypes;
 use SpeedySpec\Block\Infra\WP\WordPress\WordPressPosts;
@@ -42,6 +45,8 @@ class WpServiceProvider
 
     private readonly WpBindingsInterface $bindings;
 
+    private readonly WpAttachmentsInterface $attachments;
+
     /**
      * @since 0.1.0
      */
@@ -50,12 +55,14 @@ class WpServiceProvider
         ?WpBlockTypesInterface $types = null,
         ?WpRendererInterface $renderer = null,
         ?WpBindingsInterface $bindings = null,
+        ?WpAttachmentsInterface $attachments = null,
     )
     {
         $this->posts = $posts ?? new WordPressPosts();
         $this->types = $types ?? new WordPressBlockTypes();
         $this->renderer = $renderer ?? new WordPressRenderer();
         $this->bindings = $bindings ?? new WordPressBindings();
+        $this->attachments = $attachments ?? new WordPressAttachments();
     }
 
     /**
@@ -69,6 +76,7 @@ class WpServiceProvider
             DocumentRepositoryInterface::class,
             fn () => new WpPostDocumentRepository($this->posts, new WpMarkup()),
         );
+        $container->add(MediaLibraryInterface::class, fn () => new WpMediaLibrary($this->attachments));
     }
 
     /**

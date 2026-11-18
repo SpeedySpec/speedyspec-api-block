@@ -7,6 +7,7 @@ namespace SpeedySpec\Block\Infra\Memory;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
 use SpeedySpec\Block\Domain\Contracts\BlockTemplateRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
+use SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface;
 use SpeedySpec\Block\Domain\Contracts\RecordStoreInterface;
 
 /**
@@ -33,6 +34,7 @@ class MemoryServiceProvider
             DocumentRepositoryInterface::class => fn () => new InMemoryDocumentRepository(),
             BlockTemplateRepositoryInterface::class => fn () => new InMemoryBlockTemplateRepository(),
             RecordStoreInterface::class => fn () => new InMemoryRecordStore(),
+            MediaLibraryInterface::class => fn () => new InMemoryMediaLibrary(),
         ];
 
         foreach ($defaults as $contract => $factory)

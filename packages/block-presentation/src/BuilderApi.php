@@ -19,12 +19,14 @@ use SpeedySpec\Block\Domain\Contracts\ConditionRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DesignTokenRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
-use SpeedySpec\Block\Domain\Contracts\EditorInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentIncluderInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRepositoryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentSerializerInterface;
+use SpeedySpec\Block\Domain\Contracts\EditorInterface;
+use SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface;
+use SpeedySpec\Block\Domain\Contracts\MediaUploadPolicyInterface;
 use SpeedySpec\Block\Domain\Contracts\StyleCollectorInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\BlockTree;
@@ -32,6 +34,7 @@ use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\Exceptions\DuplicateBlockIdException;
 use SpeedySpec\Block\Domain\Exceptions\InvalidBlockNameException;
 use SpeedySpec\Block\Domain\Exceptions\InvalidSettingPathException;
+use SpeedySpec\Block\Domain\Exceptions\MediaUploadRefusedException;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
@@ -39,6 +42,9 @@ use SpeedySpec\Block\Domain\ValueObjects\BuilderAbility;
 use SpeedySpec\Block\Domain\ValueObjects\EditRefusal;
 use SpeedySpec\Block\Domain\ValueObjects\EditResult;
 use SpeedySpec\Block\Domain\ValueObjects\Issue;
+use SpeedySpec\Block\Domain\ValueObjects\MediaItem;
+use SpeedySpec\Block\Domain\ValueObjects\MediaKind;
+use SpeedySpec\Block\Domain\ValueObjects\MediaQuery;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
 use SpeedySpec\Block\Domain\ValueObjects\Position;
 use SpeedySpec\Block\Domain\ValueObjects\RenderRequest;
@@ -130,6 +136,9 @@ class BuilderApi
             $method === 'POST' && $path === ['templates'] => $this->saveTemplate($this->body($request)),
             $method === 'DELETE' && $root === 'templates' && $count === 3
                 => $this->removeTemplate($path[1] . '/' . $path[2]),
+            $method === 'GET' && $path === ['media'] => $this->mediaList($request),
+            $method === 'GET' && $root === 'media' && $count === 2 => $this->mediaItem($path[1]),
+            $method === 'POST' && $path === ['media'] => $this->mediaUpload($request),
             default => throw new ApiProblem(404, 'There is nothing at that address.'),
         };
     }
@@ -434,6 +443,96 @@ class BuilderApi
         $this->container->get(BlockTemplateRepositoryInterface::class)->remove($name);
 
         return new ApiResponse(204);
+    }
+
+    private function mediaList(ApiRequest $request): ApiResponse
+    {
+        $this->need(BuilderAbility::Edit);
+        $library = $this->library();
+        $kind = $this->queryText($request, 'kind');
+        $mediaKind = $kind === '' ? null : MediaKind::tryFrom($kind);
+
+        if ($kind !== '' && $mediaKind === null)
+        {
+            throw new ApiProblem(400, 'Unknown media kind.');
+        }
+
+        $query = new MediaQuery(
+            $this->queryText($request, 'search'),
+            $mediaKind,
+            (int) $this->queryText($request, 'page', '1'),
+            (int) $this->queryText($request, 'perPage', '20'),
+        );
+        $page = $library->search($query);
+
+        return new ApiResponse(200, [
+            'items' => array_map(static fn (MediaItem $item): array => $item->toArray(), $page->items),
+            'total' => $page->total,
+            'page' => $query->page,
+            'perPage' => $query->perPage,
+        ]);
+    }
+
+    private function mediaItem(string $id): ApiResponse
+    {
+        $this->need(BuilderAbility::Edit);
+        $item = $this->library()->find($id);
+
+        if ($item === null)
+        {
+            throw new ApiProblem(404, 'There is no such media item.');
+        }
+
+        return new ApiResponse(200, ['item' => $item->toArray()]);
+    }
+
+    /**
+     * Keeps an uploaded file; it arrives as the raw body, named in the query.
+     *
+     * The type it is kept under is the one found in its content: the declared `Content-Type` is only a claim.
+     *
+     * @since 0.1.0
+     */
+    private function mediaUpload(ApiRequest $request): ApiResponse
+    {
+        $this->need(BuilderAbility::UploadMedia);
+        $library = $this->library();
+
+        try
+        {
+            $upload = $this->container->get(MediaUploadPolicyInterface::class)
+                ->check($this->queryText($request, 'name'), $request->body);
+        }
+        catch (MediaUploadRefusedException $e)
+        {
+            throw new ApiProblem($e->status, $e->getMessage());
+        }
+
+        return new ApiResponse(201, ['item' => $library->upload($upload)->toArray()]);
+    }
+
+    /**
+     * @throws ApiProblem
+     *   When the host has no media library.
+     */
+    private function library(): MediaLibraryInterface
+    {
+        if (!$this->container->has(MediaLibraryInterface::class))
+        {
+            throw new ApiProblem(501, 'This site has no media library.');
+        }
+
+        return $this->container->get(MediaLibraryInterface::class);
+    }
+
+    /**
+     * Reads one query value as text; a value sent as a list is treated as missing.
+     */
+    private function queryText(ApiRequest $request, string $key, string $default = ''): string
+    {
+        $value = $request->query[$key] ?? $default;
+
+        return is_string($value) ? $value : $default;
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SpeedySpec\Block\Infra\Filesystem;
 
 use SpeedySpec\Block\Domain\BlockServiceContainer;
+use SpeedySpec\Block\Domain\Contracts\MediaLibraryInterface;
 use SpeedySpec\Block\Domain\Contracts\RecordStoreInterface;
 
 /**
@@ -22,7 +23,10 @@ class FilesystemServiceProvider
      *
      * @since 0.1.0
      */
-    public function __construct(private readonly string $directory)
+    public function __construct(
+        private readonly string $directory,
+        private readonly ?string $mediaBaseUrl = null,
+    )
     {
     }
 
@@ -32,5 +36,14 @@ class FilesystemServiceProvider
     public function register(BlockServiceContainer $container): void
     {
         $container->add(RecordStoreInterface::class, fn () => new FilesystemRecordStore($this->directory));
+
+        // Media can only be kept here when the host serves the directory; without a URL for it there is no library.
+        if ($this->mediaBaseUrl !== null)
+        {
+            $container->add(
+                MediaLibraryInterface::class,
+                fn () => new FilesystemMediaLibrary($this->directory . '/media', $this->mediaBaseUrl),
+            );
+        }
     }
 }
