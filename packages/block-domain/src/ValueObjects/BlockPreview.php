@@ -7,6 +7,9 @@ namespace SpeedySpec\Block\Domain\ValueObjects;
 /**
  * One block of a document, drawn on its own.
  *
+ * It is for the server: the resolved block carries complete settings, private ones included, in both modes. Send
+ * the output, issues and assets to a browser, never the resolved block.
+ *
  * @since 0.1.0
  */
 class BlockPreview

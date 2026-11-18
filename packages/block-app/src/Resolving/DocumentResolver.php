@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SpeedySpec\Block\App\Resolving;
 
+use InvalidArgumentException;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
@@ -63,6 +64,10 @@ class DocumentResolver implements DocumentResolverInterface
         private readonly int $budget = 50000,
     )
     {
+        if ($budget < 0)
+        {
+            throw new InvalidArgumentException('The resolve budget cannot be below zero.');
+        }
     }
 
     /**
@@ -84,9 +89,20 @@ class DocumentResolver implements DocumentResolverInterface
                 break;
             }
 
-            if ($this->placed($root, null, $issues))
+            $misplaced = $this->misplaced($root, null);
+
+            if ($misplaced === null)
             {
                 $roots[] = $this->block($root, $context, $mode, $issues, $remaining);
+
+                continue;
+            }
+
+            $issues[] = $misplaced;
+
+            if ($mode === Mode::Admin)
+            {
+                $roots[] = $this->standIn($root, $context, $misplaced);
             }
         }
 
@@ -190,16 +206,24 @@ class DocumentResolver implements DocumentResolverInterface
                     break;
                 }
 
-                // Placement does not depend on the pass, so it is reported once rather than once per pass.
-                $discard = [];
+                $misplaced = $this->misplaced($child, $type);
 
-                $allowed = $index === 0
-                    ? $this->placed($child, $type, $issues)
-                    : $this->placed($child, $type, $discard);
-
-                if ($allowed)
+                if ($misplaced === null)
                 {
                     $children[] = $this->block($child, $passContext, $mode, $issues, $remaining);
+
+                    continue;
+                }
+
+                // Placement does not depend on the pass, so it is reported once rather than once per pass.
+                if ($index === 0)
+                {
+                    $issues[] = $misplaced;
+                }
+
+                if ($mode === Mode::Admin)
+                {
+                    $children[] = $this->standIn($child, $passContext, $misplaced);
                 }
             }
 
@@ -286,26 +310,42 @@ class DocumentResolver implements DocumentResolverInterface
     }
 
     /**
-     * Checks a block may sit under the given parent type, recording why when it may not.
+     * Checks a block may sit under the given parent type, saying why when it may not.
      *
      * The decision belongs to the placement contract, which builders use too, so the two can never disagree.
      *
-     * @param list<Issue> $issues
-     *   Receives the issue when the block is misplaced.
+     * @return Issue|null
+     *   Null when the block is where it may be.
      */
-    private function placed(Block $block, ?BlockType $parent, array &$issues): bool
+    private function misplaced(Block $block, ?BlockType $parent): ?Issue
     {
-        $allowed = $this->placement->decide($block->type, $parent?->name)->allowed;
-
-        if (!$allowed)
+        if ($this->placement->decide($block->type, $parent?->name)->allowed)
         {
-            $issues[] = new Issue($block->id, IssueKind::DisallowedChild, sprintf(
-                'Block type "%s" may not be placed %s.',
-                $block->type->toString(),
-                $parent === null ? 'at the document root' : sprintf('inside "%s"', $parent->name->toString()),
-            ));
+            return null;
         }
 
-        return $allowed;
+        return new Issue($block->id, IssueKind::DisallowedChild, sprintf(
+            'Block type "%s" may not be placed %s.',
+            $block->type->toString(),
+            $parent === null ? 'at the document root' : sprintf('inside "%s"', $parent->name->toString()),
+        ));
+    }
+
+    /**
+     * Keeps a misplaced block in the tree an editor sees, unresolved, so it can be selected and moved or removed.
+     *
+     * Nothing inside it is resolved: it is not part of the page, and a visitor's tree leaves it out altogether.
+     */
+    private function standIn(Block $block, Context $context, Issue $issue): ResolvedBlock
+    {
+        return new ResolvedBlock(
+            $block,
+            $this->types->get($block->type),
+            $block->settings,
+            $block->extensions,
+            null,
+            $context,
+            new AdminContext(issues: [$issue]),
+        );
     }
 }

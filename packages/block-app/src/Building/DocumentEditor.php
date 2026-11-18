@@ -61,7 +61,8 @@ class DocumentEditor implements DocumentEditorInterface
 
     public function insert(Document $document, BlockName $type, Position $position, array $settings = []): EditResult
     {
-        $refusal = $this->positionRefusal($document->tree, $position);
+        $refusal = $this->positionRefusal($document->tree, $position)
+            ?? $this->parentRefusal($document->tree, $position);
 
         if ($refusal !== null)
         {
@@ -92,7 +93,8 @@ class DocumentEditor implements DocumentEditorInterface
 
     public function insertBlocks(Document $document, array $blocks, Position $position): EditResult
     {
-        $refusal = $this->positionRefusal($document->tree, $position);
+        $refusal = $this->positionRefusal($document->tree, $position)
+            ?? $this->parentRefusal($document->tree, $position);
 
         if ($refusal !== null)
         {
@@ -163,7 +165,7 @@ class DocumentEditor implements DocumentEditorInterface
         }
 
         $without = $document->tree->remove($blockId);
-        $refusal = $this->positionRefusal($without, $position);
+        $refusal = $this->positionRefusal($without, $position) ?? $this->parentRefusal($without, $position);
 
         if ($refusal !== null)
         {
@@ -575,6 +577,23 @@ class DocumentEditor implements DocumentEditorInterface
         }
 
         return null;
+    }
+
+    /**
+     * Refuses a position inside a block whose type is not registered: nothing is known about what it may hold.
+     *
+     * @since 0.1.0
+     */
+    private function parentRefusal(BlockTree $tree, Position $position): ?EditRefusal
+    {
+        $parent = $position->parentId === null ? null : $tree->find($position->parentId);
+
+        if ($parent === null || $this->types->has($parent->type))
+        {
+            return null;
+        }
+
+        return $this->unknownType($parent->type, $parent->id);
     }
 
     /**

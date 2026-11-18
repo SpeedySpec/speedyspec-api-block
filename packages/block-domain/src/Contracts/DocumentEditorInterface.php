@@ -19,6 +19,9 @@ use SpeedySpec\Block\Domain\ValueObjects\SettingPath;
  * Each operation takes the current document and answers with a new one or with every reason it was refused; the
  * document passed in is never changed. Nothing here stores a document: saving is the caller's step.
  *
+ * A refusal is for a request that cannot be honoured. A collaborator that is broken, such as an id generator that
+ * only produces ids already in use, is an exception instead.
+ *
  * @since 0.1.0
  */
 interface DocumentEditorInterface
@@ -58,7 +61,8 @@ interface DocumentEditorInterface
      * Moves a block, with its descendants, to another place in the same document.
      *
      * @param Position $position
-     *   Read against the document with the block already taken out.
+     *   Read against the document with the block already taken out. Among siblings `a, b, c`, moving `a` to the
+     *   end is index 2, not 3, because only `b, c` remain when the position is read.
      *
      * @since 0.1.0
      */
@@ -80,6 +84,9 @@ interface DocumentEditorInterface
 
     /**
      * Replaces all of a block's own settings.
+     *
+     * The block is marked as being at its type's current version, since the new settings are checked against the
+     * current schema. Its bindings and decorator settings are kept as they are.
      *
      * @param array<string, mixed> $settings
      *
