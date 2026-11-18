@@ -22,7 +22,8 @@
         "files": [
             "src/schemaValidatorContract.php",
             "src/documentRepositoryContract.php",
-            "src/dataSourceContract.php"
+            "src/dataSourceContract.php",
+            "src/documentSerializerContract.php"
         ]
     },
     "archive": {
