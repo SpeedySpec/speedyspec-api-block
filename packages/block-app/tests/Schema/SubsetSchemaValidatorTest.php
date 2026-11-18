@@ -161,3 +161,40 @@ test('subschema follows a property path', function () {
         ->and($v->subschema(subsetValidatorSchema(), ['nope']))->toBeNull()
         ->and($v->subschema(subsetValidatorSchema(), []))->toBe(subsetValidatorSchema());
 });
+
+test('assertSupported rejects a malformed argument for each keyword', function (array $schema, string $path) {
+    expect(fn () => (new SubsetSchemaValidator())->assertSupported($schema))
+        ->toThrow(UnsupportedSchemaException::class, '"' . $path . '"');
+})->with([
+    'type unknown' => [['type' => 'foo'], 'type'],
+    'type empty list' => [['type' => []], 'type'],
+    'type nested list' => [['type' => [['a']]], 'type'],
+    'required string' => [['required' => 'x'], 'required'],
+    'required non-strings' => [['required' => [1]], 'required'],
+    'enum scalar' => [['enum' => 5], 'enum'],
+    'properties scalar entry' => [['properties' => ['a' => 5]], 'properties.a'],
+    'properties scalar' => [['properties' => 5], 'properties'],
+    'items scalar' => [['items' => 5], 'items'],
+    'additionalProperties string' => [['additionalProperties' => 'x'], 'additionalProperties'],
+    'minLength string' => [['minLength' => 'a'], 'minLength'],
+    'maxLength negative' => [['maxLength' => -1], 'maxLength'],
+    'minItems float' => [['minItems' => 1.5], 'minItems'],
+    'maxItems string' => [['maxItems' => '2'], 'maxItems'],
+    'minimum string' => [['minimum' => '1'], 'minimum'],
+    'maximum bool' => [['maximum' => true], 'maximum'],
+    'pattern not compiling' => [['pattern' => '('], 'pattern'],
+    'pattern not string' => [['pattern' => 5], 'pattern'],
+    'title int' => [['title' => 5], 'title'],
+    'description array' => [['description' => []], 'description'],
+    'x-control int' => [['x-control' => 5], 'x-control'],
+    'x-group int' => [['x-group' => 5], 'x-group'],
+    'nested x-private string' => [['properties' => ['a' => ['x-private' => 'yes']]], 'properties.a.x-private'],
+]);
+
+test('validate neither throws nor warns on a malformed type', function () {
+    $v = new SubsetSchemaValidator();
+    foreach ([[['a']], [new stdClass()], 5, []] as $type)
+    {
+        expect($v->validate('x', ['type' => $type])->isValid())->toBeFalse();
+    }
+});

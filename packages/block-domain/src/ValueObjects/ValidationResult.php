@@ -12,7 +12,12 @@ namespace SpeedySpec\Block\Domain\ValueObjects;
 class ValidationResult
 {
     /**
+     * Holds the failures; use valid() or invalid() to build one.
+     *
      * @param list<ValidationError> $errors
+     *   The failures found.
+     *
+     * @since 0.1.0
      */
     private function __construct(private readonly array $errors)
     {
@@ -29,7 +34,7 @@ class ValidationResult
     }
 
     /**
-     * Returns a result carrying the given errors; with none given it is valid.
+     * Returns a result carrying the given errors; calling it with no errors yields a valid result.
      *
      * @param ValidationError ...$errors
      *   The failures found.

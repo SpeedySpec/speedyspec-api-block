@@ -12,6 +12,8 @@ namespace SpeedySpec\Block\Domain\ValueObjects;
 class ValidationError
 {
     /**
+     * Records one failure.
+     *
      * @param string $path
      *   Dot-separated location from the root; empty for the root, `items.0.label` for nested values.
      * @param string $keyword
@@ -25,6 +27,7 @@ class ValidationError
         public readonly string $path,
         public readonly string $keyword,
         public readonly string $message,
-    ) {
+    )
+    {
     }
 }

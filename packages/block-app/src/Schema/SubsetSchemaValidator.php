@@ -13,7 +13,7 @@ use SpeedySpec\Block\Domain\ValueObjects\ValidationResult;
  * Validates values against the small JSON Schema subset block settings use, with no external engine.
  *
  * Unsupported keywords are rejected by assertSupported() at registration; validate() ignores them so a
- * schema that slipped through can never make a render throw.
+ * schema that slipped through can never make a render throw. `enum` and `const` compare strictly (`===`).
  *
  * @since 0.1.0
  */
@@ -150,9 +150,11 @@ class SubsetSchemaValidator implements SchemaValidatorInterface
                 throw new UnsupportedSchemaException(sprintf('Unsupported schema keyword at "%s".', $at));
             }
 
-            if ($keyword === 'pattern' && !$this->patternCompiles($argument))
+            if (!$this->argumentIsValid($keyword, $argument))
             {
-                throw new UnsupportedSchemaException(sprintf('Unsupported schema keyword at "%s": invalid pattern.', $at));
+                throw new UnsupportedSchemaException(
+                    sprintf('Unsupported schema keyword at "%s": invalid argument.', $at)
+                );
             }
 
             if ($keyword === 'properties')
@@ -164,6 +166,51 @@ class SubsetSchemaValidator implements SchemaValidatorInterface
                 $this->assertSubschemas([$keyword => $argument], $path, false, $allowPrivate);
             }
         }
+    }
+
+    /**
+     * Tells whether a keyword's argument has the shape validate() relies on, so nothing is silently ignored.
+     *
+     * @since 0.1.0
+     */
+    private function argumentIsValid(string $keyword, mixed $argument): bool
+    {
+        $isNumber = is_int($argument) || is_float($argument);
+
+        return match ($keyword)
+        {
+            'type' => $this->isValidType($argument),
+            'required' => is_array($argument) && array_is_list($argument)
+                && array_all($argument, static fn ($name) => is_string($name)),
+            'enum' => is_array($argument) && array_is_list($argument),
+            'properties' => is_array($argument),
+            'items' => is_array($argument),
+            'additionalProperties' => is_bool($argument) || is_array($argument),
+            'minLength', 'maxLength', 'minItems', 'maxItems' => is_int($argument) && $argument >= 0,
+            'minimum', 'maximum' => $isNumber,
+            'pattern' => $this->patternCompiles($argument),
+            'title', 'description', 'x-control', 'x-group' => is_string($argument),
+            'x-private' => is_bool($argument),
+            default => true,
+        };
+    }
+
+    /**
+     * Tells whether a `type` argument is a known type name or a non-empty list of them.
+     *
+     * @since 0.1.0
+     */
+    private function isValidType(mixed $type): bool
+    {
+        $known = ['string', 'integer', 'number', 'boolean', 'array', 'object', 'null'];
+
+        if (is_string($type))
+        {
+            return in_array($type, $known, true);
+        }
+
+        return is_array($type) && $type !== [] && array_is_list($type)
+            && array_all($type, static fn ($name) => is_string($name) && in_array($name, $known, true));
     }
 
     /**
@@ -187,7 +234,8 @@ class SubsetSchemaValidator implements SchemaValidatorInterface
         string $path,
         bool $privateAllowed,
         bool $allowPrivate,
-    ): void {
+    ): void
+    {
         if (!is_array($schemas))
         {
             throw new UnsupportedSchemaException(sprintf('Unsupported schema keyword at "%s": expected a map.', $path));
@@ -447,7 +495,9 @@ class SubsetSchemaValidator implements SchemaValidatorInterface
      */
     private function describeType(mixed $type): string
     {
-        return implode(' or ', array_map('strval', is_array($type) ? $type : [$type]));
+        $names = array_filter(is_array($type) ? $type : [$type], 'is_string');
+
+        return $names === [] ? 'a valid value' : implode(' or ', $names);
     }
 
     /**
@@ -458,7 +508,7 @@ class SubsetSchemaValidator implements SchemaValidatorInterface
      */
     private function matchesPattern(string $value, string $pattern): bool
     {
-        return @preg_match($this->compile($pattern), $value) === 1;
+        return $this->match($pattern, $value) === 1;
     }
 
     /**
@@ -468,7 +518,29 @@ class SubsetSchemaValidator implements SchemaValidatorInterface
      */
     private function patternCompiles(mixed $pattern): bool
     {
-        return is_string($pattern) && @preg_match($this->compile($pattern), '') !== false;
+        return is_string($pattern) && $this->match($pattern, '') !== false;
+    }
+
+    /**
+     * Runs a pattern, turning PCRE compile warnings into a false result so callers never see a warning.
+     *
+     * @return int|false
+     *   1 or 0 for a match result, false when the pattern does not compile.
+     *
+     * @since 0.1.0
+     */
+    private function match(string $pattern, string $value): int|false
+    {
+        set_error_handler(static fn (): bool => true);
+
+        try
+        {
+            return preg_match($this->compile($pattern), $value);
+        }
+        finally
+        {
+            restore_error_handler();
+        }
     }
 
     /**
