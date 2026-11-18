@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SpeedySpec\Block\Infra\Filesystem;
 
 use ErrorException;
+use InvalidArgumentException;
 use SpeedySpec\Block\Domain\Contracts\RecordStoreInterface;
 use SpeedySpec\Block\Domain\Exceptions\StorageException;
 use SpeedySpec\Block\Domain\ValueObjects\CollectionName;
@@ -18,6 +19,10 @@ use Throwable;
  * first-put order. Writes take an exclusive lock on the collection and replace files by renaming, so a reader never
  * sees a half-written record.
  *
+ * The two files of a write are ordered so that an interruption leaves at worst a key that is listed but has no
+ * record, which reads as missing; never a record that can be read but is not listed, or a deleted record that
+ * comes back.
+ *
  * @since 0.1.0
  */
 class FilesystemRecordStore implements RecordStoreInterface
@@ -26,14 +31,25 @@ class FilesystemRecordStore implements RecordStoreInterface
 
     private const string LOCK = '.lock';
 
+    private readonly string $directory;
+
     /**
      * @param string $directory
      *   Where collections are kept; created on the first write.
      *
+     * @throws InvalidArgumentException
+     *   When the directory is empty or the root of the disk, which is what an unset setting would turn into.
+     *
      * @since 0.1.0
      */
-    public function __construct(private readonly string $directory)
+    public function __construct(string $directory)
     {
+        $this->directory = rtrim(trim($directory), '/\\');
+
+        if ($this->directory === '')
+        {
+            throw new InvalidArgumentException('A record store needs a directory of its own.');
+        }
     }
 
     public function get(string $collection, string $key): ?string
@@ -41,13 +57,23 @@ class FilesystemRecordStore implements RecordStoreInterface
         CollectionName::assert($collection);
         $file = $this->recordFile($collection, $key);
 
-        return $this->guarded(sprintf('read from "%s"', $collection), function () use ($file): ?string {
-            if (!is_file($file))
-            {
-                return null;
-            }
+        return $this->guarded(sprintf('read from "%s"', $collection), function () use ($collection, $file): ?string {
+            $this->assertReachable($collection);
 
-            $value = file_get_contents($file);
+            try
+            {
+                $value = file_get_contents($file);
+            }
+            catch (ErrorException $e)
+            {
+                // Not found, or deleted between looking and reading: both are simply "no record".
+                if (!file_exists($file))
+                {
+                    return null;
+                }
+
+                throw $e;
+            }
 
             return $value === false ? throw new ErrorException('The record file could not be read.') : $value;
         });
@@ -58,13 +84,15 @@ class FilesystemRecordStore implements RecordStoreInterface
         CollectionName::assert($collection);
 
         $this->locked($collection, function () use ($collection, $key, $value): void {
-            $this->replace($this->recordFile($collection, $key), $value);
+            // Read first, so a damaged index stops the write before anything changes.
             $keys = $this->index($collection);
 
             if (!in_array($key, $keys, true))
             {
                 $this->writeIndex($collection, [...$keys, $key]);
             }
+
+            $this->replace($this->recordFile($collection, $key), $value);
         });
     }
 
@@ -72,29 +100,33 @@ class FilesystemRecordStore implements RecordStoreInterface
     {
         CollectionName::assert($collection);
 
-        if (!is_dir($this->collectionDirectory($collection)))
+        $exists = $this->guarded(sprintf('write to "%s"', $collection), function () use ($collection): bool {
+            $this->assertReachable($collection);
+
+            return is_dir($this->collectionDirectory($collection));
+        });
+
+        if (!$exists)
         {
             return;
         }
 
         $this->locked($collection, function () use ($collection, $key): void {
-            $keys = $this->index($collection);
-
-            if (in_array($key, $keys, true))
-            {
-                // The index goes first: a record missing from the list but still on disk is harmless, the reverse
-                // would list a record that cannot be read.
-                $this->writeIndex(
-                    $collection,
-                    array_values(array_filter($keys, static fn (string $stored): bool => $stored !== $key)),
-                );
-            }
-
             $file = $this->recordFile($collection, $key);
 
             if (is_file($file))
             {
                 unlink($file);
+            }
+
+            $keys = $this->index($collection);
+
+            if (in_array($key, $keys, true))
+            {
+                $this->writeIndex(
+                    $collection,
+                    array_values(array_filter($keys, static fn (string $stored): bool => $stored !== $key)),
+                );
             }
         });
     }
@@ -103,7 +135,48 @@ class FilesystemRecordStore implements RecordStoreInterface
     {
         CollectionName::assert($collection);
 
-        return $this->guarded(sprintf('list "%s"', $collection), fn (): array => $this->index($collection));
+        return $this->guarded(sprintf('list "%s"', $collection), function () use ($collection): array {
+            $this->assertReachable($collection);
+
+            return $this->index($collection);
+        });
+    }
+
+    /**
+     * Creates a directory and its parents.
+     *
+     * Kept apart so a test can stand in for another writer creating the same directory at the same moment.
+     *
+     * @since 0.1.0
+     */
+    protected function makeDirectory(string $directory): bool
+    {
+        return mkdir($directory, 0775, true);
+    }
+
+    /**
+     * Writes a file whole or not at all, by writing beside it and renaming over it.
+     *
+     * @since 0.1.0
+     */
+    protected function replace(string $file, string $contents): void
+    {
+        $temporary = $file . '.' . bin2hex(random_bytes(6)) . '.tmp';
+
+        try
+        {
+            if (file_put_contents($temporary, $contents) !== strlen($contents) || !rename($temporary, $file))
+            {
+                throw new ErrorException('The file could not be written.');
+            }
+        }
+        finally
+        {
+            if (is_file($temporary))
+            {
+                unlink($temporary);
+            }
+        }
     }
 
     /**
@@ -116,9 +189,22 @@ class FilesystemRecordStore implements RecordStoreInterface
         $this->guarded(sprintf('write to "%s"', $collection), function () use ($collection, $write): void {
             $directory = $this->collectionDirectory($collection);
 
-            if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory))
+            if (!is_dir($directory))
             {
-                throw new ErrorException('The collection directory could not be created.');
+                try
+                {
+                    $made = $this->makeDirectory($directory);
+                }
+                catch (ErrorException)
+                {
+                    $made = false;
+                }
+
+                // Another writer creating it at the same moment is success, not failure.
+                if (!$made && !is_dir($directory))
+                {
+                    throw new ErrorException('The collection directory could not be created.');
+                }
             }
 
             $lock = fopen($directory . '/' . self::LOCK, 'c');
@@ -141,9 +227,36 @@ class FilesystemRecordStore implements RecordStoreInterface
     }
 
     /**
+     * Makes sure a missing file means "no record" rather than "cannot look".
+     *
+     * PHP answers "not a file" both for a path that does not exist and for one it may not look at, so the nearest
+     * directory that does exist is checked: it must be a directory, and one this process may read and enter.
+     *
+     * @throws ErrorException
+     *   When storage exists but cannot be read.
+     *
+     * @since 0.1.0
+     */
+    private function assertReachable(string $collection): void
+    {
+        $path = $this->collectionDirectory($collection);
+
+        while (!file_exists($path) && dirname($path) !== $path)
+        {
+            $path = dirname($path);
+        }
+
+        if (!is_dir($path) || !is_readable($path) || !is_executable($path))
+        {
+            throw new ErrorException('The storage directory exists but cannot be read.');
+        }
+    }
+
+    /**
      * Reads the collection's keys in first-put order.
      *
-     * Keys are kept one per line in base64, since a key may hold any byte, a line break included.
+     * Keys are kept one per line as a colon and the key in base64, since a key may hold any byte, a line break
+     * included. Blank and repeated lines are passed over; any other line means the index is damaged.
      *
      * @return list<string>
      *
@@ -169,27 +282,38 @@ class FilesystemRecordStore implements RecordStoreInterface
 
         foreach ($lines as $line)
         {
-            $key = base64_decode($line, true);
+            if ($line === '')
+            {
+                continue;
+            }
+
+            // Every line starts with a colon, so the empty key still makes a line that is not blank.
+            $key = str_starts_with($line, ':') ? base64_decode(substr($line, 1), true) : false;
 
             if ($key === false)
             {
                 throw new ErrorException('The collection index is damaged.');
             }
 
-            $keys[] = $key;
+            if (!in_array($key, $keys, true))
+            {
+                $keys[] = $key;
+            }
         }
 
         return $keys;
     }
 
     /**
+     * Replaces the collection's index with the given keys.
+     *
      * @param list<string> $keys
      *
      * @since 0.1.0
      */
     private function writeIndex(string $collection, array $keys): void
     {
-        $lines = array_map(base64_encode(...), $keys);
+        $lines = array_map(static fn (string $key): string => ':' . base64_encode($key), $keys);
 
         $this->replace(
             $this->collectionDirectory($collection) . '/' . self::INDEX,
@@ -197,29 +321,9 @@ class FilesystemRecordStore implements RecordStoreInterface
         );
     }
 
-    /**
-     * Writes a file whole or not at all, by writing beside it and renaming over it.
-     *
-     * @since 0.1.0
-     */
-    private function replace(string $file, string $contents): void
-    {
-        $temporary = $file . '.' . bin2hex(random_bytes(6)) . '.tmp';
-
-        if (file_put_contents($temporary, $contents) !== strlen($contents) || !rename($temporary, $file))
-        {
-            if (is_file($temporary))
-            {
-                unlink($temporary);
-            }
-
-            throw new ErrorException('The file could not be written.');
-        }
-    }
-
     private function collectionDirectory(string $collection): string
     {
-        return rtrim($this->directory, '/\\') . '/' . $collection;
+        return $this->directory . '/' . $collection;
     }
 
     private function recordFile(string $collection, string $key): string

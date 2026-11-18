@@ -15,8 +15,8 @@ use SpeedySpec\Block\Domain\Contracts\RecordStoreInterface;
  * Binds the document and template repositories over whichever record store the host binds.
  *
  * A host registers this with one record store (files, a database, its own) and gets both repositories; it never
- * has to implement a repository itself. Register it after a provider that binds in-memory repositories to take
- * their place.
+ * has to implement a repository itself. The order providers are registered in does not matter: the in-memory
+ * provider only fills gaps, and a repository is first used after every provider has run.
  *
  * @since 0.1.0
  */

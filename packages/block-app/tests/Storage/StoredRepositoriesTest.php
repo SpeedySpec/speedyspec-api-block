@@ -56,7 +56,8 @@ test('documents and templates with the same key do not collide in one store', fu
     $templates,
 ) {
     $store = new InMemoryRecordStore();
-    $documents($store)->save(new \SpeedySpec\Block\Domain\Entities\Document('acme/hero', 'page', new BlockTree(block('a'))));
+    $page = new \SpeedySpec\Block\Domain\Entities\Document('acme/hero', 'page', new BlockTree(block('a')));
+    $documents($store)->save($page);
     $templates($store)->save(new BlockTemplate('acme/hero', 'Hero', new BlockTree(block('t'))));
     $templates($store)->remove('acme/hero');
 
@@ -113,3 +114,14 @@ test('the storage provider binds both repositories over whichever record store i
         ->and($store->keys('documents'))->toBe(['d'])
         ->and($store->keys('templates'))->toBe(['acme/hero']);
 });
+
+test('a document that could never be read back is refused when saved', function (string $id, string $kind) use (
+    $documents,
+) {
+    $store = new InMemoryRecordStore();
+    $document = new \SpeedySpec\Block\Domain\Entities\Document($id, $kind, new BlockTree(block('a')));
+
+    expect(fn () => $documents($store)->save($document))
+        ->toThrow(\SpeedySpec\Block\Domain\Exceptions\InvalidDocumentException::class)
+        ->and($store->keys('documents'))->toBe([]);
+})->with([['', 'page'], ['home', '']]);
