@@ -14,6 +14,7 @@ use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
+use SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\BlockTree;
@@ -301,27 +302,70 @@ function packageExampleFindings(BlockServiceContainer $container, array $names):
 }
 
 /**
- * Places markup in each free-text setting and checks it does not come out as markup.
+ * Places hostile text in each free-text setting and checks, for visitors and editors alike, that it stays text.
+ *
+ * Three things are tried in every text setting, including nullable, listed and nested ones: markup, a pair of
+ * quotes that would end an attribute, and a script link.
  *
  * @param list<BlockName> $names
  *
  * @return list<string>
- *   One sentence per setting whose value reached the output unescaped.
+ *   One sentence per setting, mode and kind of failure.
  *
  * @since 0.1.0
  */
 function unescapedMarkupFindings(BlockServiceContainer $container, array $names): array
 {
-    $markup = '<script>alert("x")</script>';
+    $linkAttribute = '/\b(?:href|src|action|formaction|xlink:href|poster|data)\s*=\s*["\']?\s*javascript:/i';
     $findings = [];
 
-    foreach (packageStringSettings($container, $names, false) as [$type, $setting])
+    foreach (packageSettingTargets($container, $names, false) as [$type, $path, $kind])
     {
-        $output = packageFrontOutput($container, $type, $setting, $markup);
+        $label = implode('.', $path);
+        $name = $type->name->toString();
 
-        if ($output !== null && str_contains($output, '<script>alert('))
+        foreach (Mode::cases() as $mode)
         {
-            $findings[] = sprintf('%s draws its "%s" setting without escaping it.', $type->name->toString(), $setting);
+            $hostile = packageValue($kind, '<script>alert("x")</script>');
+            $markup = packageOutput($container, $type, $path, $hostile, $mode);
+
+            if ($markup !== null && str_contains($markup, '<script>alert('))
+            {
+                $findings[] = sprintf(
+                    '%s draws its "%s" setting without escaping it in %s output.',
+                    $name,
+                    $label,
+                    $mode->value,
+                );
+
+                continue;
+            }
+
+            $quotes = packageOutput($container, $type, $path, packageValue($kind, 'x"y\'z'), $mode);
+
+            if ($quotes !== null && (str_contains($quotes, 'x"y') || str_contains($quotes, 'y\'z')))
+            {
+                $findings[] = sprintf(
+                    '%s lets a quote in its "%s" setting through unescaped in %s output.',
+                    $name,
+                    $label,
+                    $mode->value,
+                );
+
+                continue;
+            }
+
+            $link = packageOutput($container, $type, $path, packageValue($kind, 'javascript:alert(1)'), $mode);
+
+            if ($link !== null && preg_match($linkAttribute, $link) === 1)
+            {
+                $findings[] = sprintf(
+                    '%s writes its "%s" setting into a link without checking the scheme in %s output.',
+                    $name,
+                    $label,
+                    $mode->value,
+                );
+            }
         }
     }
 
@@ -329,7 +373,7 @@ function unescapedMarkupFindings(BlockServiceContainer $container, array $names)
 }
 
 /**
- * Places a marker in each private text setting and checks it never reaches a visitor.
+ * Places a marker in each private setting, whatever its type, and checks it never reaches a visitor.
  *
  * @param list<BlockName> $names
  *
@@ -342,33 +386,40 @@ function privateLeakFindings(BlockServiceContainer $container, array $names): ar
 {
     $findings = [];
 
-    foreach (packageStringSettings($container, $names, true) as [$type, $setting])
+    foreach (packageSettingTargets($container, $names, true) as [$type, $path, $kind])
     {
-        $marker = 'private-marker-' . bin2hex(random_bytes(6));
-        $output = packageFrontOutput($container, $type, $setting, $marker);
+        $number = $kind === 'integer' || $kind === 'number';
+        $marker = $number ? '7340219' : 'private-marker-' . bin2hex(random_bytes(6));
+        $value = match ($kind) {
+            'integer' => 7340219,
+            'number' => 7340219.5,
+            default => packageValue($kind, $marker),
+        };
+        $output = packageOutput($container, $type, $path, $value, Mode::Front);
 
         if ($output !== null && str_contains($output, $marker))
         {
             $findings[] = sprintf(
                 '%s draws its private "%s" setting in front-end output.',
                 $type->name->toString(),
-                $setting,
+                implode('.', $path),
             );
         }
     }
 
-    return $findings;
+    return array_values(array_unique($findings));
 }
 
 /**
  * Checks that values a block offers only to editors are absent from what a visitor receives.
  *
- * A value that is also part of the block's front-end view is public and is not counted.
+ * A value that is also part of the block's front-end view is public and is not counted. Each value is looked for
+ * as written and as the escaper would write it, so escaping a leaked value does not hide the leak.
  *
  * @param list<BlockName> $names
  *
  * @return list<string>
- *   One sentence per admin-only value found in front-end output.
+ *   One sentence per block type that draws an admin-only value in front-end output.
  *
  * @since 0.1.0
  */
@@ -377,6 +428,7 @@ function adminLeakFindings(BlockServiceContainer $container, array $names): arra
     $types = $container->get(BlockTypeRegistryInterface::class);
     $resolver = $container->get(DocumentResolverInterface::class);
     $renderer = $container->get(DocumentRendererInterface::class);
+    $escaper = $container->get(OutputEscaperRegistryInterface::class)->get('html');
     $findings = [];
 
     foreach ($names as $name)
@@ -395,9 +447,19 @@ function adminLeakFindings(BlockServiceContainer $container, array $names): arra
 
         foreach (packageStrings($admin?->admin?->values ?? []) as $value)
         {
-            if (strlen($value) >= 8 && !in_array($value, $public, true) && str_contains($front->output, $value))
+            if (strlen($value) < 8 || in_array($value, $public, true))
             {
-                $findings[] = sprintf('%s draws an admin-only value in front-end output.', $name->toString());
+                continue;
+            }
+
+            foreach (array_unique([$value, $escaper->text($value), $escaper->attribute($value)]) as $form)
+            {
+                if (str_contains($front->output, $form))
+                {
+                    $findings[] = sprintf('%s draws an admin-only value in front-end output.', $name->toString());
+
+                    continue 3;
+                }
             }
         }
     }
@@ -406,22 +468,22 @@ function adminLeakFindings(BlockServiceContainer $container, array $names): arra
 }
 
 /**
- * Lists the top-level free-text settings of the given block types.
+ * Finds the settings of the given block types that a marker can be placed in.
  *
  * @param list<BlockName> $names
  * @param bool $private
- *   True to list only private settings, false to list every free-text setting.
+ *   True to list the private settings, of any type; false to list every text setting.
  *
- * @return list<array{0: BlockType, 1: string}>
- *   Pairs of block type and setting name.
+ * @return list<array{0: BlockType, 1: list<string>, 2: string}>
+ *   Block type, the path to the setting, and its kind: `string`, `list`, `integer` or `number`.
  *
  * @since 0.1.0
  */
-function packageStringSettings(BlockServiceContainer $container, array $names, bool $private): array
+function packageSettingTargets(BlockServiceContainer $container, array $names, bool $private): array
 {
     $types = $container->get(BlockTypeRegistryInterface::class);
     $validator = $container->get(SchemaValidatorInterface::class);
-    $pairs = [];
+    $targets = [];
 
     foreach ($names as $name)
     {
@@ -438,39 +500,135 @@ function packageStringSettings(BlockServiceContainer $container, array $names, b
         {
             $setting = (string) $setting;
 
-            if (
-                !is_array($schema)
-                || ($schema['type'] ?? null) !== 'string'
-                || isset($schema['enum'])
-                || array_key_exists('const', $schema)
-                || isset($schema['pattern'])
-                || ($private && !in_array($setting, $privateNames, true))
-            )
+            if (!is_array($schema) || $private !== in_array($setting, $privateNames, true))
             {
                 continue;
             }
 
-            $pairs[] = [$type, $setting];
+            foreach (packageSchemaTargets($schema, [$setting], $private, 1) as [$path, $kind])
+            {
+                $targets[] = [$type, $path, $kind];
+            }
         }
     }
 
-    return $pairs;
+    return $targets;
 }
 
 /**
- * Draws the type's first example for a visitor with one setting replaced.
+ * Walks one setting's schema for places a marker fits, going into nested objects up to three levels.
+ *
+ * @param array<string, mixed> $schema
+ * @param list<string> $path
+ * @param bool $numbers
+ *   True to include whole and fractional numbers, which only matter when looking for private values.
+ *
+ * @return list<array{0: list<string>, 1: string}>
+ *   Pairs of path and kind.
+ *
+ * @since 0.1.0
+ */
+function packageSchemaTargets(array $schema, array $path, bool $numbers, int $depth): array
+{
+    if (isset($schema['enum']) || array_key_exists('const', $schema))
+    {
+        return [];
+    }
+
+    $kinds = (array) ($schema['type'] ?? []);
+
+    if (in_array('string', $kinds, true))
+    {
+        return [[$path, 'string']];
+    }
+
+    if ($numbers && in_array('integer', $kinds, true))
+    {
+        return [[$path, 'integer']];
+    }
+
+    if ($numbers && in_array('number', $kinds, true))
+    {
+        return [[$path, 'number']];
+    }
+
+    $items = $schema['items'] ?? null;
+
+    if (in_array('array', $kinds, true) && is_array($items) && in_array('string', (array) ($items['type'] ?? []), true))
+    {
+        return [[$path, 'list']];
+    }
+
+    $targets = [];
+
+    if (in_array('object', $kinds, true) && $depth < 3)
+    {
+        foreach ((array) ($schema['properties'] ?? []) as $name => $child)
+        {
+            if (is_array($child))
+            {
+                $deeper = packageSchemaTargets($child, [...$path, (string) $name], $numbers, $depth + 1);
+                $targets = [...$targets, ...$deeper];
+            }
+        }
+    }
+
+    return $targets;
+}
+
+/**
+ * Shapes a marker for the kind of setting it goes into.
+ *
+ * @return string|list<string>
+ *
+ * @since 0.1.0
+ */
+function packageValue(string $kind, string $marker): string|array
+{
+    return $kind === 'list' ? [$marker] : $marker;
+}
+
+/**
+ * Draws the type's first example with one setting replaced.
+ *
+ * @param list<string> $path
+ *   The path to the setting, from the top of the settings.
  *
  * @return string|null
  *   Null when the replaced value no longer fits the settings schema, so the case does not apply.
  *
  * @since 0.1.0
  */
-function packageFrontOutput(BlockServiceContainer $container, BlockType $type, string $setting, string $value): ?string
+function packageOutput(
+    BlockServiceContainer $container,
+    BlockType $type,
+    array $path,
+    mixed $value,
+    Mode $mode,
+): ?string
 {
     $validator = $container->get(SchemaValidatorInterface::class);
     $settings = $type->examples[0];
-    $settings[$setting] = $value;
+    $cursor = &$settings;
 
+    foreach ($path as $index => $segment)
+    {
+        if ($index === count($path) - 1)
+        {
+            $cursor[$segment] = $value;
+
+            break;
+        }
+
+        if (!isset($cursor[$segment]) || !is_array($cursor[$segment]))
+        {
+            $cursor[$segment] = [];
+        }
+
+        $cursor = &$cursor[$segment];
+    }
+
+    unset($cursor);
     $complete = $validator->withDefaults($settings, $type->settingsSchema);
 
     if (!$validator->validate($complete, $type->settingsSchema)->isValid())
@@ -480,7 +638,7 @@ function packageFrontOutput(BlockServiceContainer $container, BlockType $type, s
 
     $document = packageDocument($container, $type, $settings);
 
-    return $container->get(DocumentRendererInterface::class)->render($document, new RenderRequest(Mode::Front))->output;
+    return $container->get(DocumentRendererInterface::class)->render($document, new RenderRequest($mode))->output;
 }
 
 /**
