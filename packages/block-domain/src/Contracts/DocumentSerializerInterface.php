@@ -17,6 +17,9 @@ interface DocumentSerializerInterface
     /**
      * Encodes a document so that parsing the result yields an equal document.
      *
+     * @throws InvalidDocumentException
+     *   When the document cannot be encoded, for example a non-finite number or a tree nested too deeply.
+     *
      * @since 0.1.0
      */
     public function serialize(Document $document): string;

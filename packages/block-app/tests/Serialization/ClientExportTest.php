@@ -32,10 +32,16 @@ if (!function_exists('exporter'))
     }
 }
 
-function privateFormType(): BlockType
+if (!function_exists('privateFormType'))
 {
-    return type('acme/form', ['settings' => ['type' => 'object', 'properties' => [
-        'to' => ['type' => 'string', 'x-private' => true], 'title' => ['type' => 'string']]]]);
+    /**
+     * Builds a form type whose `to` setting is private.
+     */
+    function privateFormType(): BlockType
+    {
+        return type('acme/form', ['settings' => ['type' => 'object', 'properties' => [
+            'to' => ['type' => 'string', 'x-private' => true], 'title' => ['type' => 'string']]]]);
+    }
 }
 
 test('front export removes private settings and bindings that target them', function () {
@@ -104,4 +110,10 @@ test('front export does not change the source document', function () {
     exporter(privateFormType())->export($doc, Mode::Front);
 
     expect($doc->tree->find('f')->settings)->toBe(['to' => 'o@example.test']);
+});
+
+test('front export keeps the settings of a registered type whose schema has no properties', function () {
+    $doc = new Document('d', 'page', new BlockTree(block('a', 'acme/box', ['n' => 1])));
+
+    expect(exporter(type('acme/box'))->export($doc, Mode::Front)->tree->find('a')->settings)->toBe(['n' => 1]);
 });

@@ -7,6 +7,7 @@ namespace SpeedySpec\Block\App\Serialization;
 use InvalidArgumentException;
 use JsonException;
 use RuntimeException;
+use stdClass;
 use SpeedySpec\Block\Domain\Contracts\DocumentSerializerInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\BlockTree;
@@ -29,6 +30,8 @@ class JsonDocumentSerializer implements DocumentSerializerInterface
 
     private const DEPTH = 2048;
 
+    private const NAMESPACE_PATTERN = '/^[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*\z/';
+
     /**
      * {@inheritDoc}
      *
@@ -36,16 +39,23 @@ class JsonDocumentSerializer implements DocumentSerializerInterface
      */
     public function serialize(Document $document): string
     {
-        return json_encode(
-            [
-                'format' => $document->formatVersion,
-                'id' => $document->id,
-                'kind' => $document->kind,
-                'blocks' => array_map($this->encodeBlock(...), $document->tree->roots()),
-            ],
-            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
-            self::DEPTH,
-        );
+        try
+        {
+            return json_encode(
+                [
+                    'format' => $document->formatVersion,
+                    'id' => $document->id,
+                    'kind' => $document->kind,
+                    'blocks' => array_map($this->encodeBlock(...), $document->tree->roots()),
+                ],
+                JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR,
+                self::DEPTH,
+            );
+        }
+        catch (JsonException $e)
+        {
+            throw new InvalidDocumentException('The document cannot be encoded: ' . $e->getMessage(), 0, $e);
+        }
     }
 
     /**
@@ -57,28 +67,30 @@ class JsonDocumentSerializer implements DocumentSerializerInterface
     {
         try
         {
-            $data = json_decode($serialized, true, self::DEPTH, JSON_THROW_ON_ERROR);
+            $data = json_decode($serialized, false, self::DEPTH, JSON_THROW_ON_ERROR);
 
-            if (!is_array($data) || array_is_list($data) && $data !== [])
+            if (!$data instanceof stdClass)
             {
                 throw new InvalidDocumentException('A document must be a JSON object.');
             }
 
-            if (($data['format'] ?? null) !== self::FORMAT)
+            if (($data->format ?? null) !== self::FORMAT)
             {
                 throw new InvalidDocumentException('Unsupported or missing document "format"; expected 1.');
             }
 
             $id = $this->requireString($data, 'id', 'document');
             $kind = $this->requireString($data, 'kind', 'document');
-            $blocks = $data['blocks'] ?? null;
+            $blocks = $data->blocks ?? null;
 
-            if (!is_array($blocks) || !array_is_list($blocks))
+            if (!is_array($blocks))
             {
                 throw new InvalidDocumentException('A document needs a "blocks" array.');
             }
 
-            return new Document($id, $kind, new BlockTree(...array_map($this->decodeBlock(...), $blocks)), self::FORMAT);
+            $tree = new BlockTree(...array_map($this->decodeBlock(...), $blocks));
+
+            return new Document($id, $kind, $tree, self::FORMAT);
         }
         catch (InvalidDocumentException $e)
         {
@@ -120,42 +132,53 @@ class JsonDocumentSerializer implements DocumentSerializerInterface
 
     private function decodeBlock(mixed $data): Block
     {
-        if (!is_array($data) || array_is_list($data) && $data !== [])
+        if (!$data instanceof stdClass)
         {
             throw new InvalidDocumentException('A block must be a JSON object.');
         }
 
         $id = $this->requireString($data, 'id', 'block');
         $type = $this->requireString($data, 'type', sprintf('block "%s"', $id));
-        $version = $data['version'] ?? 1;
+        $version = $data->version ?? 1;
 
         if (!is_int($version) || $version < 1)
         {
             throw new InvalidDocumentException(sprintf('Block "%s" needs an integer "version" of 1 or more.', $id));
         }
 
-        $extensions = $this->map($data, 'extensions', $id);
+        $extensions = [];
 
-        foreach ($extensions as $namespace => $extension)
+        foreach ($this->object($data, 'extensions', sprintf('block "%s"', $id)) as $namespace => $extension)
         {
-            if (!is_array($extension) || array_is_list($extension) && $extension !== [])
+            $namespace = (string) $namespace;
+
+            if (preg_match(self::NAMESPACE_PATTERN, $namespace) !== 1)
+            {
+                throw new InvalidDocumentException(
+                    sprintf('Extension "%s" of block "%s" is not a valid decorator namespace.', $namespace, $id)
+                );
+            }
+
+            if (!$extension instanceof stdClass)
             {
                 throw new InvalidDocumentException(
                     sprintf('Extension "%s" of block "%s" must be an object.', $namespace, $id)
                 );
             }
+
+            $extensions[$namespace] = $this->plain($extension);
         }
 
         $bindings = [];
 
-        foreach ($this->map($data, 'bindings', $id) as $path => $binding)
+        foreach ($this->object($data, 'bindings', sprintf('block "%s"', $id)) as $path => $binding)
         {
             $bindings[(string) $path] = $this->decodeBinding((string) $path, $binding, $id);
         }
 
-        $children = $data['children'] ?? [];
+        $children = property_exists($data, 'children') ? $data->children : [];
 
-        if (!is_array($children) || !array_is_list($children))
+        if (!is_array($children))
         {
             throw new InvalidDocumentException(sprintf('Block "%s" needs a "children" array.', $id));
         }
@@ -164,7 +187,7 @@ class JsonDocumentSerializer implements DocumentSerializerInterface
             $id,
             BlockName::fromString($type),
             $version,
-            $this->map($data, 'settings', $id),
+            $this->plain($this->object($data, 'settings', sprintf('block "%s"', $id))),
             $extensions,
             $bindings,
             array_map($this->decodeBlock(...), $children),
@@ -173,50 +196,87 @@ class JsonDocumentSerializer implements DocumentSerializerInterface
 
     private function decodeBinding(string $path, mixed $binding, string $blockId): Binding
     {
-        if (!is_array($binding) || array_is_list($binding) && $binding !== [])
+        if (!$binding instanceof stdClass)
         {
             throw new InvalidDocumentException(
                 sprintf('Binding "%s" of block "%s" must be an object.', $path, $blockId)
             );
         }
 
-        if (!is_array($binding['arguments'] ?? []))
+        $source = $binding->source ?? null;
+
+        if (!is_string($source))
         {
             throw new InvalidDocumentException(
-                sprintf('Binding "%s" of block "%s" needs object "arguments".', $path, $blockId)
+                sprintf('Binding "%s" of block "%s" needs a string "source".', $path, $blockId)
             );
         }
 
         SettingPath::fromString($path);
 
-        return Binding::fromArray($binding);
+        $decoded = Binding::to(
+            $source,
+            $this->plain($this->object($binding, 'arguments', sprintf('binding "%s" of block "%s"', $path, $blockId))),
+        );
+
+        if (!property_exists($binding, 'fallback'))
+        {
+            return $decoded;
+        }
+
+        return $decoded->withFallback($this->plain($binding->fallback));
     }
 
     /**
-     * Reads an optional JSON object as a map; absent means empty.
+     * Reads an optional JSON object; absent means empty, any other kind is an error.
      *
-     * @param array<string, mixed> $data
-     *
-     * @return array<array-key, mixed>
      */
-    private function map(array $data, string $key, string $blockId): array
+    private function object(stdClass $data, string $key, string $subject): stdClass
     {
-        $value = $data[$key] ?? [];
-
-        if (!is_array($value) || array_is_list($value) && $value !== [])
+        if (!property_exists($data, $key))
         {
-            throw new InvalidDocumentException(sprintf('"%s" of block "%s" must be an object.', $key, $blockId));
+            return new stdClass();
+        }
+
+        $value = $data->$key;
+
+        if (!$value instanceof stdClass)
+        {
+            throw new InvalidDocumentException(sprintf('"%s" of %s must be an object.', $key, $subject));
         }
 
         return $value;
     }
 
     /**
-     * @param array<string, mixed> $data
+     * Converts decoded JSON to PHP values: objects become associative arrays, lists stay lists.
+     *
+     * @throws InvalidDocumentException
+     *   When a number is not finite.
      */
-    private function requireString(array $data, string $key, string $subject): string
+    private function plain(mixed $value): mixed
     {
-        $value = $data[$key] ?? null;
+        if (is_float($value) && !is_finite($value))
+        {
+            throw new InvalidDocumentException('Numbers must be finite.');
+        }
+
+        if ($value instanceof stdClass)
+        {
+            return array_map($this->plain(...), (array) $value);
+        }
+
+        if (is_array($value))
+        {
+            return array_map($this->plain(...), $value);
+        }
+
+        return $value;
+    }
+
+    private function requireString(stdClass $data, string $key, string $subject): string
+    {
+        $value = $data->$key ?? null;
 
         if (!is_string($value) || $value === '')
         {

@@ -12,7 +12,8 @@ server.
 ]}
 ```
 
-- Keys appear in the order shown. Output uses `JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE`.
+- Keys appear in the order shown. Output uses `JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION`, so `1.0` stays a float
+  through a round trip.
 - `settings`, `extensions`, `bindings` and a binding's `arguments` are always JSON objects, even when empty (`{}`).
   `children` and `blocks` are always JSON arrays (`[]`).
 - `fallback` is present only when the binding has one; a `null` fallback is written as `"fallback":null`.
@@ -23,7 +24,8 @@ server.
 ## Parsing
 
 `parse()` needs no registry and keeps blocks of unregistered types unchanged. `format` must be `1`. `version`
-defaults to 1; `settings`, `extensions`, `bindings` and `children` default to empty when absent. Every failure
+defaults to 1; `settings`, `extensions`, `bindings` and `children` default to empty when absent. Objects and lists
+are told apart on the raw JSON, so a setting named `0` is an object key, not a list. Every failure
 (invalid JSON, wrong structure, invalid block name or binding path, duplicate ids, a binding without a string
 `source`, non-object `settings`) throws `InvalidDocumentException`.
 
@@ -33,3 +35,15 @@ defaults to 1; `settings`, `extensions`, `bindings` and `children` default to em
 block type's settings schema, together with every binding that targets one. A block whose type is not registered
 loses all of its settings and all of its bindings, because nothing says which are safe; its extensions and
 children are kept, and children are cleaned by their own type.
+
+## Strictness
+
+- `settings`, `extensions`, `bindings`, `children` and a binding's `arguments` may be absent (they default to
+  empty); when present they must be the right kind: `null`, a scalar, or a list where an object is required (and
+  an object where `children` or `blocks` need an array) is rejected.
+- Each extension key must be a valid decorator namespace (lower-case `vendor/name`).
+- A non-finite number (for example `1e400`) is rejected on parse; `serialize()` throws `InvalidDocumentException`
+  for one placed in settings by code.
+- JSON is read and written to a depth of 2048 levels. Each nested block costs two levels (object and `children`
+  array) plus the levels of its own settings, so roughly 1000 nested blocks; beyond that `parse()` and `serialize()`
+  throw `InvalidDocumentException`.
