@@ -265,3 +265,206 @@ if (!function_exists('countingSource'))
         };
     }
 }
+
+if (!function_exists('renderer'))
+{
+    /**
+     * Builds a document renderer from a fresh container with the memory and application providers registered.
+     *
+     * @return array{0: \SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface, 1: BlockServiceContainer}
+     */
+    function renderer(?callable $setup = null): array
+    {
+        $container = new BlockServiceContainer();
+        (new MemoryServiceProvider())->register($container);
+        (new AppServiceProvider())->register($container);
+
+        if ($setup !== null)
+        {
+            $setup($container);
+        }
+
+        return [$container->get(\SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface::class), $container];
+    }
+}
+
+if (!function_exists('outputs'))
+{
+    /**
+     * Gets the block output registry bound in the container.
+     */
+    function outputs(BlockServiceContainer $container): \SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface
+    {
+        return $container->get(\SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface::class);
+    }
+}
+
+if (!function_exists('tag'))
+{
+    /**
+     * Builds an output that draws one element holding the view's escaped `text` value and the children.
+     */
+    function tag(string $element): \SpeedySpec\Block\Domain\Contracts\BlockOutputInterface
+    {
+        return new class($element) implements \SpeedySpec\Block\Domain\Contracts\BlockOutputInterface {
+            public function __construct(private readonly string $element)
+            {
+            }
+
+            public function render(\SpeedySpec\Block\Domain\ValueObjects\RenderInput $input): string
+            {
+                return sprintf(
+                    '<%1$s%2$s>%3$s%4$s</%1$s>',
+                    $this->element,
+                    $input->escaper->attributes($input->attributes),
+                    $input->escaper->text((string) ($input->view->values['text'] ?? '')),
+                    $input->children(),
+                );
+            }
+        };
+    }
+}
+
+if (!function_exists('fixedOutput'))
+{
+    /**
+     * Builds an output that always draws the same text.
+     */
+    function fixedOutput(string $text): \SpeedySpec\Block\Domain\Contracts\BlockOutputInterface
+    {
+        return new class($text) implements \SpeedySpec\Block\Domain\Contracts\BlockOutputInterface {
+            public function __construct(private readonly string $text)
+            {
+            }
+
+            public function render(\SpeedySpec\Block\Domain\ValueObjects\RenderInput $input): string
+            {
+                return $this->text;
+            }
+        };
+    }
+}
+
+if (!function_exists('spyOutput'))
+{
+    /**
+     * Builds an output that records every input it is given.
+     */
+    function spyOutput(array &$seen): \SpeedySpec\Block\Domain\Contracts\BlockOutputInterface
+    {
+        return new class($seen) implements \SpeedySpec\Block\Domain\Contracts\BlockOutputInterface {
+            public function __construct(private array &$seen)
+            {
+            }
+
+            public function render(\SpeedySpec\Block\Domain\ValueObjects\RenderInput $input): string
+            {
+                $this->seen[] = $input;
+
+                return '';
+            }
+        };
+    }
+}
+
+if (!function_exists('renderStep'))
+{
+    /**
+     * Builds a render step from a callable that receives the bag and returns the next one.
+     */
+    function renderStep(callable $change): \SpeedySpec\Block\Domain\Contracts\RenderStepInterface
+    {
+        return new class($change) implements \SpeedySpec\Block\Domain\Contracts\RenderStepInterface {
+            private $change;
+
+            public function __construct(callable $change)
+            {
+                $this->change = $change;
+            }
+
+            public function attributes(
+                \SpeedySpec\Block\Domain\ValueObjects\AttributeBag $bag,
+                \SpeedySpec\Block\Domain\ValueObjects\ResolvedBlock $block,
+                \SpeedySpec\Block\Domain\ValueObjects\RenderRequest $request,
+            ): \SpeedySpec\Block\Domain\ValueObjects\AttributeBag
+            {
+                return ($this->change)($bag, $block, $request);
+            }
+        };
+    }
+}
+
+if (!function_exists('collectStep'))
+{
+    /**
+     * Builds a collect step that names the same assets for every drawn block.
+     */
+    function collectStep(array $assets): \SpeedySpec\Block\Domain\Contracts\CollectStepInterface
+    {
+        return new class($assets) implements \SpeedySpec\Block\Domain\Contracts\CollectStepInterface {
+            public function __construct(private readonly array $assets)
+            {
+            }
+
+            public function assets(
+                \SpeedySpec\Block\Domain\ValueObjects\ResolvedBlock $block,
+                \SpeedySpec\Block\Domain\ValueObjects\RenderRequest $request,
+            ): array
+            {
+                return $this->assets;
+            }
+        };
+    }
+}
+
+if (!function_exists('viewStep'))
+{
+    /**
+     * Builds a view step that contributes the given extensions.
+     */
+    function viewStep(array $extensions): \SpeedySpec\Block\Domain\Contracts\ViewStepInterface
+    {
+        return new class($extensions) implements \SpeedySpec\Block\Domain\Contracts\ViewStepInterface {
+            public function __construct(private readonly array $extensions)
+            {
+            }
+
+            public function extend(
+                \SpeedySpec\Block\Domain\ValueObjects\BlockView $view,
+                Block $block,
+                BlockType $type,
+                array $extensions,
+                Context $context,
+                Mode $mode,
+            ): \SpeedySpec\Block\Domain\ValueObjects\BlockView
+            {
+                return new \SpeedySpec\Block\Domain\ValueObjects\BlockView([], $this->extensions);
+            }
+        };
+    }
+}
+
+if (!function_exists('migrationTo'))
+{
+    /**
+     * Builds a migration from version 1 that replaces the settings with the given ones.
+     */
+    function migrationTo(array $settings): SettingsMigrationInterface
+    {
+        return new class($settings) implements SettingsMigrationInterface {
+            public function __construct(private readonly array $settings)
+            {
+            }
+
+            public function from(): int
+            {
+                return 1;
+            }
+
+            public function migrate(array $settings): array
+            {
+                return $this->settings;
+            }
+        };
+    }
+}

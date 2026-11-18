@@ -6,6 +6,11 @@ namespace SpeedySpec\Block\App;
 
 use SpeedySpec\Block\App\Ids\BlockDuplicator;
 use SpeedySpec\Block\App\Ids\RandomBlockIdGenerator;
+use SpeedySpec\Block\App\Output\BlockOutputRegistry;
+use SpeedySpec\Block\App\Output\DocumentRenderer;
+use SpeedySpec\Block\App\Output\HtmlEscaper;
+use SpeedySpec\Block\App\Output\OutputEscaperRegistry;
+use SpeedySpec\Block\App\Packages\BlockPackageLoader;
 use SpeedySpec\Block\App\Registries\BlockBehaviourRegistry;
 use SpeedySpec\Block\App\Registries\BlockTypeRegistry;
 use SpeedySpec\Block\App\Registries\DataSourceRegistry;
@@ -25,12 +30,16 @@ use SpeedySpec\Block\Domain\BlockServiceContainer;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockDuplicatorInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockIdGeneratorInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentSerializerInterface;
+use SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
@@ -105,6 +114,7 @@ class AppServiceProvider
             $c->get(BlockBehaviourRegistryInterface::class),
             $c->get(SchemaValidatorInterface::class),
             $c->get(StepRegistryInterface::class),
+            $c->get(DecoratorRegistryInterface::class),
         ));
         $container->add(DocumentResolverInterface::class, fn (BlockServiceContainer $c) => new DocumentResolver(
             $c->get(PrepareStage::class),
@@ -113,6 +123,28 @@ class AppServiceProvider
             $c->get(ValidateStage::class),
             $c->get(ViewStage::class),
             $c->get(BlockTypeRegistryInterface::class),
+        ));
+        $container->add(OutputEscaperRegistryInterface::class, function (): OutputEscaperRegistryInterface {
+            $escapers = new OutputEscaperRegistry();
+            $escapers->add(new HtmlEscaper());
+
+            return $escapers;
+        });
+        $container->add(BlockOutputRegistryInterface::class, fn () => new BlockOutputRegistry());
+        $container->add(DocumentRendererInterface::class, fn (BlockServiceContainer $c) => new DocumentRenderer(
+            $c->get(DocumentResolverInterface::class),
+            $c->get(BlockOutputRegistryInterface::class),
+            $c->get(OutputEscaperRegistryInterface::class),
+            $c->get(StepRegistryInterface::class),
+        ));
+        $container->add(BlockPackageLoaderInterface::class, fn (BlockServiceContainer $c) => new BlockPackageLoader(
+            $c->get(BlockTypeRegistryInterface::class),
+            $c->get(BlockBehaviourRegistryInterface::class),
+            $c->get(BlockOutputRegistryInterface::class),
+            $c->get(DecoratorRegistryInterface::class),
+            $c->get(SettingsMigrationRegistryInterface::class),
+            $c->get(DataSourceRegistryInterface::class),
+            $c->get(StepRegistryInterface::class),
         ));
     }
 }

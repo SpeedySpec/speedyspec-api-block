@@ -21,4 +21,7 @@ enum IssueKind: string
     case InvalidView = 'invalid-view';
     case StepFailed = 'step-failed';
     case BudgetExceeded = 'budget-exceeded';
+    case MissingOutput = 'missing-output';
+    case OutputFailed = 'output-failed';
+    case InvalidAttribute = 'invalid-attribute';
 }

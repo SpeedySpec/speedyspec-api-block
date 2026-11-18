@@ -1,0 +1,10 @@
+{
+    "name": "acme/bad-blocks",
+    "require": {
+        "php": ">=8.4",
+        "ext-json": "*",
+        "speedyspec/block-domain": "^0.1",
+        "speedyspec/block-app": "^0.1",
+        "acme/some-builder": "^2.0"
+    }
+}
