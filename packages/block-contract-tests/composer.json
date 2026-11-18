@@ -20,7 +20,9 @@
             "SpeedySpec\\Block\\ContractTests\\": "src/"
         },
         "files": [
-            "src/schemaValidatorContract.php"
+            "src/schemaValidatorContract.php",
+            "src/documentRepositoryContract.php",
+            "src/dataSourceContract.php"
         ]
     },
     "archive": {
