@@ -88,7 +88,9 @@ class TextOutput implements BlockOutputInterface
     {
         $ordered = ($values['ordered'] ?? false) === true;
         $start = is_int($values['start'] ?? null) ? $values['start'] : 1;
-        $bag = $ordered && $start > 1 ? $input->attributes->withAttribute('start', (string) $start) : $input->attributes;
+        $bag = $ordered && $start > 1
+            ? $input->attributes->withAttribute('start', (string) $start)
+            : $input->attributes;
 
         return sprintf(
             '<%1$s%2$s>%3$s</%1$s>',

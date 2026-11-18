@@ -119,11 +119,32 @@ export function parseField(field, raw) {
 
 /**
  * Copies settings with one value set, or removed when the value is undefined.
+ *
+ * @param {object} settings
+ * @param {string} path A setting's name, or a dotted path into it such as `rows.1.2`; only what lies along the path
+ *   is copied, so the rest is kept exactly.
+ * @param {*} value
  */
-export function withValue(settings, name, value) {
-    const next = { ...settings };
+export function withValue(settings, path, value) {
+    const [name, ...rest] = String(path).split('.');
+    const next = Array.isArray(settings) ? [...settings] : { ...(settings ?? {}) };
 
-    if (value === undefined) {
+    // A list never gets holes: positions before a new one are filled, so it stays a list when sent as JSON.
+    if (Array.isArray(next) && /^\d+$/.test(name)) {
+        for (let index = next.length; index < Number(name); index++) {
+            next[index] = undefined;
+        }
+    }
+
+    if (rest.length > 0) {
+        const inner = next[name];
+        const container = inner !== null && typeof inner === 'object' ? inner : /^\d+$/.test(rest[0]) ? [] : {};
+        next[name] = withValue(container, rest.join('.'), value);
+
+        return next;
+    }
+
+    if (value === undefined && !Array.isArray(next)) {
         delete next[name];
     } else {
         next[name] = value;

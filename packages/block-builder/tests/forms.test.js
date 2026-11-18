@@ -110,3 +110,13 @@ test('a field says when its value may differ by width, and what kind of value it
     assert.deepEqual([plain.hint, plain.kind], ['', 'string']);
 });
 
+test('a value can be set deep inside settings without touching the rest', () => {
+    const settings = { rows: [['a', 'b'], ['c', 'd']], caption: 'x' };
+
+    assert.deepEqual(withValue(settings, 'rows.1.0', 'C'), { rows: [['a', 'b'], ['C', 'd']], caption: 'x' });
+    assert.deepEqual(settings.rows[1], ['c', 'd']);
+    assert.deepEqual(withValue({}, 'a.b', 1), { a: { b: 1 } });
+    assert.deepEqual(withValue({ rows: [['a']] }, 'rows.0.2', 'z'), { rows: [['a', undefined, 'z']] });
+    assert.deepEqual(withValue({ a: { b: 1, c: 2 } }, 'a.b', undefined), { a: { c: 2 } });
+});
+

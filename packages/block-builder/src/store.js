@@ -1,5 +1,5 @@
 import { Refused } from './api.js';
-import { find, indentPosition, movePosition, outdentPosition } from './tree.js';
+import { find, indentPosition, movePosition, outdentPosition, positionOf } from './tree.js';
 
 /**
  * Builds the state of one builder session: a document being edited through the API.
@@ -189,6 +189,21 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         insert: (type, position, settings = {}) => edit({ operation: 'insert', type, position, settings }, selectFirst),
 
         insertTemplate: (template, position) => edit({ operation: 'insertTemplate', template, position }, selectFirst),
+
+        /**
+         * Adds a block of a type directly after another, and selects it: what Enter does while typing.
+         */
+        insertAfter(id, type) {
+            const here = positionOf(state.document, id);
+
+            if (here === null) {
+                return Promise.resolve();
+            }
+
+            const position = { parent: here.parent, index: here.index + 1 };
+
+            return edit({ operation: 'insert', type, position, settings: {} }, selectFirst);
+        },
 
         remove: (id) => edit({ operation: 'remove', block: id }),
 

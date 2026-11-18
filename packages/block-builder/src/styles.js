@@ -110,6 +110,12 @@ block-builder .bb-bar button { display: grid; place-items: center; width: 2rem; 
     border-left: 1px solid rgb(255 255 255 / .25); color: #fff; background: transparent; }
 block-builder .bb-bar button:hover:not(:disabled) { background: rgb(0 0 0 / .18); }
 block-builder .bb-bar button:last-child { border-radius: 0 6px 6px 0; }
+block-builder .bb-format { position: absolute; z-index: 3; display: flex; border-radius: 6px; color: #fff;
+    background: var(--bb-ink); box-shadow: 0 4px 12px -4px rgb(22 24 29 / .5); }
+block-builder .bb-format[hidden] { display: none; }
+block-builder .bb-format button { min-width: 2rem; height: 2rem; padding: 0 .5rem; border: 0; color: #fff;
+    background: transparent; font-weight: 600; }
+block-builder .bb-format button:hover { background: #262a33; }
 block-builder .bb-blank { padding: 3rem 1.5rem; text-align: center; }
 block-builder .bb-blank p { margin: 0 0 .75rem; color: var(--bb-soft); font-size: 15px; }
 block-builder .bb-primary { height: 2.1rem; padding: 0 .9rem; border: 0; border-radius: 6px; color: #fff;
@@ -207,9 +213,11 @@ block-builder .bb-trail span { color: var(--bb-line); }
 export const CANVAS_STYLE = `
 body { margin: 0; padding: 1.25rem; font: 16px/1.5 system-ui, sans-serif; }
 [data-block-id] { cursor: pointer; }
-[data-block-id]:empty { min-height: 3rem; background: repeating-linear-gradient(-45deg, #f3f5f8 0 8px, #e9ecf1 8px 16px); }
+[data-block-id]:empty:not([data-block-setting]):not(hr) { min-height: 3rem; background: repeating-linear-gradient(-45deg, #f3f5f8 0 8px, #e9ecf1 8px 16px); }
 [data-bb-over] { outline: 1px dashed #0f7b6c; outline-offset: -1px; }
 [data-bb-picked] { outline: 2px solid #0f7b6c; outline-offset: -2px; }
+[data-bb-typing] { outline: 2px solid #0f7b6c; outline-offset: 2px; cursor: text; }
+[data-block-setting]:empty::before { content: 'Type here'; color: #8a93a3; }
 [data-bb-drop="before"] { box-shadow: 0 -4px 0 #0f7b6c; }
 [data-bb-drop="after"] { box-shadow: 0 4px 0 #0f7b6c; }
 [data-bb-drop="before-x"] { box-shadow: -4px 0 0 #0f7b6c; }
