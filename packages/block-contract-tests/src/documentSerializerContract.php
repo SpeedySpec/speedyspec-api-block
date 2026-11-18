@@ -29,7 +29,10 @@ function documentSerializerContract(Closure $make): void
             $mid = (new Block('mid', BlockName::fromString('acme/box'), 1, ['gap' => 4], [], [], [$leaf]))
                 ->withExtension('acme/vis', ['hide' => true])
                 ->withBinding(SettingPath::fromString('gap'), Binding::to('acme/values', ['key' => 'x']))
-                ->withBinding(SettingPath::fromString('title'), Binding::to('acme/values', ['key' => 'y'])->withFallback('z'));
+                ->withBinding(
+                    SettingPath::fromString('title'),
+                    Binding::to('acme/values', ['key' => 'y'])->withFallback('z'),
+                );
             $unknown = new Block('gone', BlockName::fromString('nobody/knows'), 7, ['a' => ['b' => [1, 2]]]);
 
             return new Document('doc-1', 'page', new BlockTree($mid, $unknown), 1);

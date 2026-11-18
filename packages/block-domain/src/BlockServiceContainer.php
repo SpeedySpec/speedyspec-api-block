@@ -137,7 +137,6 @@ class BlockServiceContainer
         }
 
         if (!isset($this->factories[$contract]))
-
         {
             throw new ServiceNotRegisteredException(sprintf('No service is registered for "%s".', $contract));
         }

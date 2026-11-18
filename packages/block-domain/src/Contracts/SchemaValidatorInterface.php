@@ -71,7 +71,7 @@ interface SchemaValidatorInterface
     public function privateProperties(array $schema): array;
 
     /**
-     * Returns the schema at a property path, or null when the path is not declared.
+     * Looks up the schema at a property path, or null when the path is not declared.
      *
      * @param array<string, mixed> $schema
      *   The root schema.

@@ -247,7 +247,9 @@ class SubsetSchemaValidator implements SchemaValidatorInterface
 
             if (!is_array($child))
             {
-                throw new UnsupportedSchemaException(sprintf('Unsupported schema keyword at "%s": expected a schema.', $at));
+                throw new UnsupportedSchemaException(
+                    sprintf('Unsupported schema keyword at "%s": expected a schema.', $at)
+                );
             }
 
             $this->assertSchemaSupported($child, $at, $privateAllowed, $allowPrivate);
@@ -329,12 +331,20 @@ class SubsetSchemaValidator implements SchemaValidatorInterface
 
         if (is_int($schema['minLength'] ?? null) && $length < $schema['minLength'])
         {
-            $errors[] = new ValidationError($path, 'minLength', sprintf('Must be at least %d characters.', $schema['minLength']));
+            $errors[] = new ValidationError(
+                $path,
+                'minLength',
+                sprintf('Must be at least %d characters.', $schema['minLength']),
+            );
         }
 
         if (is_int($schema['maxLength'] ?? null) && $length > $schema['maxLength'])
         {
-            $errors[] = new ValidationError($path, 'maxLength', sprintf('Must be at most %d characters.', $schema['maxLength']));
+            $errors[] = new ValidationError(
+                $path,
+                'maxLength',
+                sprintf('Must be at most %d characters.', $schema['maxLength']),
+            );
         }
 
         if (is_string($schema['pattern'] ?? null) && !$this->matchesPattern($value, $schema['pattern']))
@@ -387,12 +397,20 @@ class SubsetSchemaValidator implements SchemaValidatorInterface
 
         if (is_int($schema['minItems'] ?? null) && count($value) < $schema['minItems'])
         {
-            $errors[] = new ValidationError($path, 'minItems', sprintf('Must have at least %d items.', $schema['minItems']));
+            $errors[] = new ValidationError(
+                $path,
+                'minItems',
+                sprintf('Must have at least %d items.', $schema['minItems']),
+            );
         }
 
         if (is_int($schema['maxItems'] ?? null) && count($value) > $schema['maxItems'])
         {
-            $errors[] = new ValidationError($path, 'maxItems', sprintf('Must have at most %d items.', $schema['maxItems']));
+            $errors[] = new ValidationError(
+                $path,
+                'maxItems',
+                sprintf('Must have at most %d items.', $schema['maxItems']),
+            );
         }
 
         if (is_array($schema['items'] ?? null))

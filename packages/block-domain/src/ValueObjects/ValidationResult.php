@@ -24,7 +24,7 @@ class ValidationResult
     }
 
     /**
-     * Returns a result with no errors.
+     * Creates a result with no errors.
      *
      * @since 0.1.0
      */
@@ -34,7 +34,7 @@ class ValidationResult
     }
 
     /**
-     * Returns a result carrying the given errors; calling it with no errors yields a valid result.
+     * Creates a result carrying the given errors; calling it with no errors yields a valid result.
      *
      * @param ValidationError ...$errors
      *   The failures found.
@@ -57,7 +57,7 @@ class ValidationResult
     }
 
     /**
-     * Returns every failure found.
+     * Lists every failure found.
      *
      * @return list<ValidationError>
      *

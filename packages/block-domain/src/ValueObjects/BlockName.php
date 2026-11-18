@@ -41,7 +41,7 @@ class BlockName
     }
 
     /**
-     * Returns the full `vendor/name` string.
+     * Renders the full `vendor/name` string.
      *
      * @since 0.1.0
      */
@@ -51,7 +51,7 @@ class BlockName
     }
 
     /**
-     * Returns the part before the slash.
+     * Extracts the part before the slash.
      *
      * @since 0.1.0
      */
@@ -61,7 +61,7 @@ class BlockName
     }
 
     /**
-     * Returns the part after the slash.
+     * Extracts the part after the slash.
      *
      * @since 0.1.0
      */
