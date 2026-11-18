@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace SpeedySpec\Block\App;
 
+use SpeedySpec\Block\App\Building\BlockCatalogue;
+use SpeedySpec\Block\App\Building\BlockPreviewer;
+use SpeedySpec\Block\App\Building\BlockTemplateRegistry;
+use SpeedySpec\Block\App\Building\DocumentEditor;
+use SpeedySpec\Block\App\Building\PlaceholderOutput;
+use SpeedySpec\Block\App\Building\PlacementRules;
 use SpeedySpec\Block\App\Ids\BlockDuplicator;
 use SpeedySpec\Block\App\Ids\RandomBlockIdGenerator;
 use SpeedySpec\Block\App\Output\BlockOutputRegistry;
@@ -28,21 +34,27 @@ use SpeedySpec\Block\App\Serialization\ClientExport;
 use SpeedySpec\Block\App\Serialization\JsonDocumentSerializer;
 use SpeedySpec\Block\Domain\BlockServiceContainer;
 use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockDuplicatorInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockIdGeneratorInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DecoratorRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentRendererInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentSerializerInterface;
 use SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
 use SpeedySpec\Block\Domain\Contracts\SchemaValidatorInterface;
 use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\UnresolvedBlockOutputInterface;
 
 /**
  * Binds the application implementations of the block contracts, one binding each so a host can replace any alone.
@@ -123,6 +135,15 @@ class AppServiceProvider
             $c->get(ValidateStage::class),
             $c->get(ViewStage::class),
             $c->get(BlockTypeRegistryInterface::class),
+            $c->get(PlacementRulesInterface::class),
+        ));
+        $container->add(PlacementRulesInterface::class, fn (BlockServiceContainer $c) => new PlacementRules(
+            $c->get(BlockTypeRegistryInterface::class),
+        ));
+        $container->add(BlockCatalogueInterface::class, fn (BlockServiceContainer $c) => new BlockCatalogue(
+            $c->get(BlockTypeRegistryInterface::class),
+            $c->get(PlacementRulesInterface::class),
+            $c->get(BlockPackageLoaderInterface::class),
         ));
         $container->add(OutputEscaperRegistryInterface::class, function (): OutputEscaperRegistryInterface {
             $escapers = new OutputEscaperRegistry();
@@ -136,6 +157,12 @@ class AppServiceProvider
             $c->get(BlockOutputRegistryInterface::class),
             $c->get(OutputEscaperRegistryInterface::class),
             $c->get(StepRegistryInterface::class),
+            $c->get(UnresolvedBlockOutputInterface::class),
+        ));
+        $container->add(UnresolvedBlockOutputInterface::class, fn () => new PlaceholderOutput());
+        $container->add(BlockPreviewInterface::class, fn (BlockServiceContainer $c) => new BlockPreviewer(
+            $c->get(DocumentResolverInterface::class),
+            $c->get(DocumentRendererInterface::class),
         ));
         $container->add(BlockPackageLoaderInterface::class, fn (BlockServiceContainer $c) => new BlockPackageLoader(
             $c->get(BlockTypeRegistryInterface::class),
@@ -145,6 +172,18 @@ class AppServiceProvider
             $c->get(SettingsMigrationRegistryInterface::class),
             $c->get(DataSourceRegistryInterface::class),
             $c->get(StepRegistryInterface::class),
+            $c->get(BlockTemplateRegistryInterface::class),
+        ));
+        $container->add(BlockTemplateRegistryInterface::class, fn () => new BlockTemplateRegistry());
+        $container->add(DocumentEditorInterface::class, fn (BlockServiceContainer $c) => new DocumentEditor(
+            $c->get(BlockTypeRegistryInterface::class),
+            $c->get(PlacementRulesInterface::class),
+            $c->get(SchemaValidatorInterface::class),
+            $c->get(DecoratorRegistryInterface::class),
+            $c->get(DataSourceRegistryInterface::class),
+            $c->get(BlockIdGeneratorInterface::class),
+            $c->get(BlockDuplicatorInterface::class),
+            $c->get(SettingsMigrationRegistryInterface::class),
         ));
     }
 }

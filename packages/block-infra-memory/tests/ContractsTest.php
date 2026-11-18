@@ -21,3 +21,17 @@ describe('ArrayDataSource', function () {
         ['key' => 'missing'],
     );
 });
+
+describe('InMemoryBlockTemplateRepository', function () {
+    \SpeedySpec\Block\ContractTests\blockTemplateRepositoryContract(
+        fn () => new \SpeedySpec\Block\Infra\Memory\InMemoryBlockTemplateRepository()
+    );
+});
+
+test('the memory provider binds the template repository', function () {
+    $container = new \SpeedySpec\Block\Domain\BlockServiceContainer();
+    (new \SpeedySpec\Block\Infra\Memory\MemoryServiceProvider())->register($container);
+
+    expect($container->get(\SpeedySpec\Block\Domain\Contracts\BlockTemplateRepositoryInterface::class))
+        ->toBeInstanceOf(\SpeedySpec\Block\Infra\Memory\InMemoryBlockTemplateRepository::class);
+});

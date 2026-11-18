@@ -47,4 +47,14 @@ interface BlockPackageLoaderInterface
      * @since 0.1.0
      */
     public function typesOf(string $packageName): array;
+
+    /**
+     * Tells which loaded package added a block type, so a builder can group blocks by where they come from.
+     *
+     * @return string|null
+     *   The package's name; null for a type the host registered directly or that is not registered.
+     *
+     * @since 0.1.0
+     */
+    public function packageOf(BlockName $type): ?string;
 }

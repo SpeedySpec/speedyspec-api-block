@@ -13,6 +13,7 @@ use SpeedySpec\Block\Domain\Contracts\OutputEscaperInterface;
 use SpeedySpec\Block\Domain\Contracts\OutputEscaperRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\RenderStepInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\UnresolvedBlockOutputInterface;
 use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\Exceptions\InvalidAttributeException;
 use SpeedySpec\Block\Domain\ValueObjects\AttributeBag;
@@ -40,6 +41,9 @@ class DocumentRenderer implements DocumentRendererInterface
     /**
      * Takes every collaborator as a contract so each can be replaced on its own.
      *
+     * @param UnresolvedBlockOutputInterface|null $unresolved
+     *   Draws a stand-in, in admin mode, for a block that produced no view; without it such a block draws nothing.
+     *
      * @since 0.1.0
      */
     public function __construct(
@@ -47,6 +51,7 @@ class DocumentRenderer implements DocumentRendererInterface
         private readonly BlockOutputRegistryInterface $outputs,
         private readonly OutputEscaperRegistryInterface $escapers,
         private readonly StepRegistryInterface $steps,
+        private readonly ?UnresolvedBlockOutputInterface $unresolved = null,
     )
     {
     }
@@ -110,7 +115,7 @@ class DocumentRenderer implements DocumentRendererInterface
     {
         if ($block->view === null || $block->type === null)
         {
-            return '';
+            return $this->standIn($block, $request, $escaper, $issues);
         }
 
         $id = $block->block->id;
@@ -174,6 +179,41 @@ class DocumentRenderer implements DocumentRendererInterface
         $this->collect($block, $request, $issues, $assets);
 
         return $html;
+    }
+
+    /**
+     * Draws the stand-in for a block with no view: nothing for a visitor, the placeholder in admin mode.
+     *
+     * @param list<Issue> $issues
+     *
+     * @since 0.1.0
+     */
+    private function standIn(
+        ResolvedBlock $block,
+        RenderRequest $request,
+        OutputEscaperInterface $escaper,
+        array &$issues,
+    ): string
+    {
+        if ($this->unresolved === null || $request->mode !== Mode::Admin)
+        {
+            return '';
+        }
+
+        try
+        {
+            return $this->unresolved->render($block, $request, $escaper);
+        }
+        catch (Throwable $e)
+        {
+            $issues[] = new Issue($block->block->id, IssueKind::OutputFailed, sprintf(
+                'The placeholder for "%s" failed with %s.',
+                $block->block->type->toString(),
+                $e::class,
+            ));
+
+            return '';
+        }
     }
 
     /**

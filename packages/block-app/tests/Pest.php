@@ -468,3 +468,113 @@ if (!function_exists('migrationTo'))
         };
     }
 }
+
+if (!function_exists('package'))
+{
+    /**
+     * Builds a block package from a name and a callable that receives the registrar.
+     */
+    function package(string $name, callable $register): \SpeedySpec\Block\Domain\Contracts\BlockPackageInterface
+    {
+        return new class($name, $register) implements \SpeedySpec\Block\Domain\Contracts\BlockPackageInterface {
+            private $register;
+
+            public function __construct(private readonly string $name, callable $register)
+            {
+                $this->register = $register;
+            }
+
+            public function name(): string
+            {
+                return $this->name;
+            }
+
+            public function register(\SpeedySpec\Block\Domain\Contracts\BlockPackageRegistrarInterface $registrar): void
+            {
+                ($this->register)($registrar);
+            }
+        };
+    }
+}
+
+if (!function_exists('catalogue'))
+{
+    /**
+     * Builds a block catalogue from a fresh container with the memory and application providers registered.
+     *
+     * @return array{0: \SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface, 1: BlockServiceContainer}
+     */
+    function catalogue(?callable $setup = null): array
+    {
+        $container = new BlockServiceContainer();
+        (new MemoryServiceProvider())->register($container);
+        (new AppServiceProvider())->register($container);
+
+        if ($setup !== null)
+        {
+            $setup($container);
+        }
+
+        return [$container->get(\SpeedySpec\Block\Domain\Contracts\BlockCatalogueInterface::class), $container];
+    }
+}
+
+if (!function_exists('editor'))
+{
+    /**
+     * Builds the default document editor over a fresh container, after letting the test register what it needs.
+     *
+     * @return array{0: \SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface, 1: BlockServiceContainer}
+     */
+    function editor(?callable $setup = null): array
+    {
+        $container = new BlockServiceContainer();
+        (new MemoryServiceProvider())->register($container);
+        (new AppServiceProvider())->register($container);
+
+        if ($setup !== null)
+        {
+            $setup($container);
+        }
+
+        return [$container->get(\SpeedySpec\Block\Domain\Contracts\DocumentEditorInterface::class), $container];
+    }
+}
+
+if (!function_exists('refusals'))
+{
+    /**
+     * Lists the kinds of refusal an edit came back with, in order.
+     *
+     * @return list<\SpeedySpec\Block\Domain\ValueObjects\EditRefusalKind>
+     */
+    function refusals(\SpeedySpec\Block\Domain\ValueObjects\EditResult $result): array
+    {
+        return array_map(
+            fn (\SpeedySpec\Block\Domain\ValueObjects\EditRefusal $refusal) => $refusal->kind,
+            $result->refusals,
+        );
+    }
+}
+
+if (!function_exists('previewer'))
+{
+    /**
+     * Builds the default block previewer over a fresh container, after letting the test register what it needs.
+     *
+     * @return array{0: \SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface, 1: BlockServiceContainer}
+     */
+    function previewer(?callable $setup = null): array
+    {
+        $container = new BlockServiceContainer();
+        (new MemoryServiceProvider())->register($container);
+        (new AppServiceProvider())->register($container);
+
+        if ($setup !== null)
+        {
+            $setup($container);
+        }
+
+        return [$container->get(\SpeedySpec\Block\Domain\Contracts\BlockPreviewInterface::class), $container];
+    }
+}

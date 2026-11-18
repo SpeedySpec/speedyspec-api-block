@@ -27,7 +27,8 @@
             "src/dataSourceContract.php",
             "src/documentSerializerContract.php",
             "src/outputEscaperContract.php",
-            "src/blockPackageContract.php"
+            "src/blockPackageContract.php",
+            "src/blockTemplateRepositoryContract.php"
         ]
     },
     "archive": {

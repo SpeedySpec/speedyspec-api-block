@@ -10,6 +10,7 @@ use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockPackageRegistrarInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockTemplateRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
@@ -19,6 +20,7 @@ use SpeedySpec\Block\Domain\Contracts\SettingsMigrationRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\StepRegistryInterface;
 use SpeedySpec\Block\Domain\Exceptions\BlockPackageException;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
+use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
 use SpeedySpec\Block\Domain\ValueObjects\BlockType;
 use SpeedySpec\Block\Domain\ValueObjects\Decorator;
 use SpeedySpec\Block\Domain\ValueObjects\Mode;
@@ -80,6 +82,7 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
         private readonly SettingsMigrationRegistryInterface $migrations,
         private readonly DataSourceRegistryInterface $sources,
         private readonly StepRegistryInterface $steps,
+        private readonly BlockTemplateRegistryInterface $templates,
     )
     {
     }
@@ -162,6 +165,21 @@ class BlockPackageRegistrar implements BlockPackageRegistrarInterface
         }
 
         $this->pendingOther[] = fn () => $this->steps->add($stepInterface, $step, $priority);
+    }
+
+    public function template(BlockTemplate $template): void
+    {
+        if (explode('/', $template->name, 2)[0] !== $this->vendor)
+        {
+            throw new BlockPackageException(sprintf(
+                'Package "%s" may only add templates under "%s/"; "%s" is not one.',
+                $this->packageName,
+                $this->vendor,
+                $template->name,
+            ));
+        }
+
+        $this->pendingOther[] = fn () => $this->templates->add($template);
     }
 
     /**

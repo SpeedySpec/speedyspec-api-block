@@ -6,6 +6,7 @@ namespace SpeedySpec\Block\App\Resolving;
 
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\DocumentResolverInterface;
+use SpeedySpec\Block\Domain\Contracts\PlacementRulesInterface;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\ValueObjects\AdminContext;
@@ -58,6 +59,7 @@ class DocumentResolver implements DocumentResolverInterface
         private readonly ValidateStage $validate,
         private readonly ViewStage $view,
         private readonly BlockTypeRegistryInterface $types,
+        private readonly PlacementRulesInterface $placement,
         private readonly int $budget = 50000,
     )
     {
@@ -286,16 +288,14 @@ class DocumentResolver implements DocumentResolverInterface
     /**
      * Checks a block may sit under the given parent type, recording why when it may not.
      *
-     * A block of an unregistered type is judged by its parent's rule alone, so Prepare can report it as unknown.
+     * The decision belongs to the placement contract, which builders use too, so the two can never disagree.
      *
      * @param list<Issue> $issues
      *   Receives the issue when the block is misplaced.
      */
     private function placed(Block $block, ?BlockType $parent, array &$issues): bool
     {
-        $type = $this->types->get($block->type);
-        $allowed = ($parent === null || $parent->children->allows($block->type))
-            && ($type === null || $type->parents->allows($parent?->name));
+        $allowed = $this->placement->decide($block->type, $parent?->name)->allowed;
 
         if (!$allowed)
         {
