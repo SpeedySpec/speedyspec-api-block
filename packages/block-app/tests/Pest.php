@@ -443,3 +443,28 @@ if (!function_exists('viewStep'))
         };
     }
 }
+
+if (!function_exists('migrationTo'))
+{
+    /**
+     * Builds a migration from version 1 that replaces the settings with the given ones.
+     */
+    function migrationTo(array $settings): SettingsMigrationInterface
+    {
+        return new class($settings) implements SettingsMigrationInterface {
+            public function __construct(private readonly array $settings)
+            {
+            }
+
+            public function from(): int
+            {
+                return 1;
+            }
+
+            public function migrate(array $settings): array
+            {
+                return $this->settings;
+            }
+        };
+    }
+}

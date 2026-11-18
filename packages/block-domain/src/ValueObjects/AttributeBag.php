@@ -126,7 +126,9 @@ class AttributeBag
             || preg_match('/expression\(|javascript:|@import/i', $value) === 1
         )
         {
-            throw new InvalidAttributeException(sprintf('The value given for "%s" is not a safe style value.', $property));
+            throw new InvalidAttributeException(
+                sprintf('The value given for "%s" is not a safe style value.', $property)
+            );
         }
 
         $styles = $this->styles;

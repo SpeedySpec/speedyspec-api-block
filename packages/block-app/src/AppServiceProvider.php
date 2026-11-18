@@ -10,6 +10,7 @@ use SpeedySpec\Block\App\Output\BlockOutputRegistry;
 use SpeedySpec\Block\App\Output\DocumentRenderer;
 use SpeedySpec\Block\App\Output\HtmlEscaper;
 use SpeedySpec\Block\App\Output\OutputEscaperRegistry;
+use SpeedySpec\Block\App\Packages\BlockPackageLoader;
 use SpeedySpec\Block\App\Registries\BlockBehaviourRegistry;
 use SpeedySpec\Block\App\Registries\BlockTypeRegistry;
 use SpeedySpec\Block\App\Registries\DataSourceRegistry;
@@ -30,6 +31,7 @@ use SpeedySpec\Block\Domain\Contracts\BlockBehaviourRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockDuplicatorInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockIdGeneratorInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockOutputRegistryInterface;
+use SpeedySpec\Block\Domain\Contracts\BlockPackageLoaderInterface;
 use SpeedySpec\Block\Domain\Contracts\BlockTypeRegistryInterface;
 use SpeedySpec\Block\Domain\Contracts\ClientExportInterface;
 use SpeedySpec\Block\Domain\Contracts\DataSourceRegistryInterface;
@@ -133,6 +135,15 @@ class AppServiceProvider
             $c->get(DocumentResolverInterface::class),
             $c->get(BlockOutputRegistryInterface::class),
             $c->get(OutputEscaperRegistryInterface::class),
+            $c->get(StepRegistryInterface::class),
+        ));
+        $container->add(BlockPackageLoaderInterface::class, fn (BlockServiceContainer $c) => new BlockPackageLoader(
+            $c->get(BlockTypeRegistryInterface::class),
+            $c->get(BlockBehaviourRegistryInterface::class),
+            $c->get(BlockOutputRegistryInterface::class),
+            $c->get(DecoratorRegistryInterface::class),
+            $c->get(SettingsMigrationRegistryInterface::class),
+            $c->get(DataSourceRegistryInterface::class),
             $c->get(StepRegistryInterface::class),
         ));
     }

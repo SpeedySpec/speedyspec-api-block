@@ -29,7 +29,9 @@ class OutputEscaperRegistry implements OutputEscaperRegistryInterface
     {
         if (!isset($this->escapers[$target]))
         {
-            throw new UnsupportedTargetException(sprintf('No output escaper is registered for the "%s" target.', $target));
+            throw new UnsupportedTargetException(
+                sprintf('No output escaper is registered for the "%s" target.', $target)
+            );
         }
 
         return $this->escapers[$target];
