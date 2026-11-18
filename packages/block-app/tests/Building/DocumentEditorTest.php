@@ -458,8 +458,12 @@ $locks = function ($c) {
     types($c)->add(type('acme/box', ['children' => true]));
     $c->get(DecoratorRegistryInterface::class)->add(\SpeedySpec\Block\Domain\ValueObjects\BlockLock::decorator());
 };
-$locked = fn (string $id, array $lock, \SpeedySpec\Block\Domain\Entities\Block ...$children) => block($id, 'acme/box', [], ...$children)
-    ->withExtension('core/lock', $lock);
+$locked = fn (string $id, array $lock, \SpeedySpec\Block\Domain\Entities\Block ...$children) => block(
+    $id,
+    'acme/box',
+    [],
+    ...$children,
+)->withExtension('core/lock', $lock);
 
 test('a block locked in place cannot be moved, but its unlocked siblings can', function () use ($locks, $locked) {
     [$editor] = editor($locks);

@@ -1,6 +1,6 @@
 import { createClient } from './api.js';
 import { bindable, bindingFrom, bindingOf, describeBinding } from './bindings.js';
-import { clipboardText, pastePosition, readClipboard } from './clipboard.js';
+import { clipboardIntent, clipboardText, pastePosition, readClipboard } from './clipboard.js';
 import {
     FieldError, fields, movedListItem, parseField, tableShape, withColumn, withListItem, withListText, withoutColumn,
     withoutListItem, withoutRow, withRow, withTyped, withValue,
@@ -838,6 +838,9 @@ export class BlockBuilderElement extends HTMLElement {
                     this.stopTyping(true);
                 }
 
+                // A Shift-click also extends the browser's text selection, which would make copy take that text.
+                page.getSelection()?.removeAllRanges();
+
                 this.toggle(block.getAttribute(NAMED));
 
                 return;
@@ -849,6 +852,12 @@ export class BlockBuilderElement extends HTMLElement {
 
             if (editable !== null && block !== null) {
                 this.startTyping(editable, block.getAttribute(NAMED));
+            }
+        });
+        // Stops a Shift- or Ctrl-click on a block from selecting the text between it and the last click.
+        page.addEventListener('mousedown', (event) => {
+            if ((event.shiftKey || event.ctrlKey || event.metaKey) && named(event) !== null && this.typing === null) {
+                event.preventDefault();
             }
         });
         page.addEventListener('keydown', (event) => this.typingKey(event));
@@ -1373,32 +1382,48 @@ export class BlockBuilderElement extends HTMLElement {
      */
     clipboard(event, from) {
         const state = this.builder.state();
-        const typing = this.typing !== null
-            || Boolean(event.target.closest?.('input, textarea, select, [contenteditable]'));
-        const selectedText = from.getSelection?.()?.isCollapsed === false;
 
-        if (typing || state.document === null || event.clipboardData === null) {
+        if (state.document === null || event.clipboardData === null) {
             return;
         }
 
-        if (event.type === 'paste') {
-            const blocks = readClipboard(event.clipboardData.getData('text/plain'));
+        const typingIn = this.typing;
+        const inField = typingIn === null
+            && Boolean(event.target.closest?.('input, textarea, select, [contenteditable]'));
+        const intent = clipboardIntent({
+            kind: event.type,
+            text: event.type === 'paste' ? event.clipboardData.getData('text/plain') : '',
+            inField,
+            typing: typingIn !== null,
+            textSelected: from.getSelection?.()?.isCollapsed === false,
+            chosen: pick(state.document, this.chosen(state)).length,
+        });
 
-            if (blocks !== null) {
-                event.preventDefault();
-                this.builder.paste(blocks, pastePosition(state.document, this.chosen(state)));
+        if (intent.act === 'browser') {
+            return;
+        }
+
+        event.preventDefault();
+
+        if (intent.act === 'refuse') {
+            this.say('Select a block to paste blocks after it.');
+
+            return;
+        }
+
+        if (intent.act === 'paste') {
+            const after = typingIn === null ? this.chosen(state) : [typingIn.blockId];
+
+            if (intent.stopTyping) {
+                this.stopTyping(true);
             }
+
+            this.builder.paste(intent.blocks, pastePosition(this.builder.state().document, after));
 
             return;
         }
 
         const ids = pick(state.document, this.chosen(state)).map((block) => block.id);
-
-        if (ids.length === 0 || selectedText) {
-            return;
-        }
-
-        event.preventDefault();
         event.clipboardData.setData('text/plain', this.copiedText(state, ids));
 
         if (event.type === 'cut') {

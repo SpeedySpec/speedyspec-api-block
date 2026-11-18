@@ -160,15 +160,19 @@ test('the vocabulary gives a builder the breakpoints, tokens, conditions and col
         ->and(array_column($body['decorators'], 'namespace'))->toBe(['core/visibility', 'core/style']);
 });
 
-test('the vocabulary lists the data sources a setting can be bound to, with what each takes and gives', function () use (
+test('the vocabulary lists the data sources a setting can be bound to, with what each takes', function () use (
     $host,
     $call,
 ) {
     [$api, $c] = $host();
-    $c->get(DataSourceRegistryInterface::class)->add(new ArrayDataSource('acme/site', ['name' => 'x'], ['type' => 'string']));
+    $c->get(DataSourceRegistryInterface::class)
+        ->add(new ArrayDataSource('acme/site', ['name' => 'x'], ['type' => 'string']));
 
     [, $body] = $call($api, 'GET', '/vocabulary');
-    $site = array_values(array_filter($body['sources'], static fn (array $source): bool => $source['name'] === 'acme/site'));
+    $site = array_values(array_filter(
+        $body['sources'],
+        static fn (array $source): bool => $source['name'] === 'acme/site',
+    ));
 
     expect(array_column($body['sources'], 'name'))->toBe(['acme/site', 'core/current-item'])
         ->and($site[0]['arguments']['properties'])->toHaveKey('key')

@@ -64,7 +64,9 @@ test('a block type refuses transforms that could not be carried out', function (
         new BlockTransform(BlockName::fromString('core/heading'), []),
     ]],
     'to itself' => [fn () => [new BlockTransform(BlockName::fromString('core/paragraph'), ['text' => 'text'])]],
-    'unknown source setting' => [fn () => [new BlockTransform(BlockName::fromString('core/heading'), ['text' => 'body'])]],
+    'unknown source setting' => [
+        fn () => [new BlockTransform(BlockName::fromString('core/heading'), ['text' => 'body'])],
+    ],
 ]);
 
 test('transforms read from data must be a list of arrays', function () {

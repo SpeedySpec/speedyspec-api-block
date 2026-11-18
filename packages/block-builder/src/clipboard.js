@@ -60,3 +60,33 @@ export function pastePosition(document, ids) {
         ? { parent: null, index: document?.blocks?.length ?? 0 }
         : { parent: here.parent, index: here.index + 1 };
 }
+
+/**
+ * Decides what a copy, cut or paste does in the editor, so blocks and text never take each other's place.
+ *
+ * Copying takes blocks only when the person is not working with text. Pasting copied blocks always pastes blocks,
+ * even while typing, since pasting their text into a paragraph would save it there: on the page typing stops
+ * first, and in an inspector field the paste is refused rather than guessed at. Any other text is the browser's.
+ *
+ * @param {{kind: 'copy'|'cut'|'paste', text: string, inField: boolean, typing: boolean, textSelected: boolean,
+ *   chosen: number}} event `inField` is an inspector field or other control; `typing` is typing on the page;
+ *   `chosen` is how many blocks are selected.
+ * @returns {{act: 'browser'}|{act: 'copy'}|{act: 'refuse'}|{act: 'paste', blocks: Array<object>, stopTyping?: true}}
+ */
+export function clipboardIntent({ kind, text, inField, typing, textSelected, chosen }) {
+    if (kind !== 'paste') {
+        return inField || typing || textSelected || chosen === 0 ? { act: 'browser' } : { act: 'copy' };
+    }
+
+    const blocks = readClipboard(text);
+
+    if (blocks === null) {
+        return { act: 'browser' };
+    }
+
+    if (inField) {
+        return { act: 'refuse' };
+    }
+
+    return typing ? { act: 'paste', blocks, stopTyping: true } : { act: 'paste', blocks };
+}

@@ -45,12 +45,15 @@ test('a stored token registry reads its defaults until it is first changed, then
     expect((new StoredDesignTokenRegistry($store, ['space.md' => '1rem']))->all())->toBe([]);
 });
 
-test('a stored breakpoint registry starts from the usual breakpoints and keeps what is changed', function () use ($widths) {
+test('a stored breakpoint registry starts from the usual breakpoints and keeps what is changed', function () use (
+    $widths,
+) {
     $store = new InMemoryRecordStore();
     $breakpoints = new StoredBreakpointRegistry($store);
 
     expect($widths($breakpoints))->toBe([['tablet', 768], ['desktop', 1024]])
-        ->and($widths(new BreakpointRegistry(...BreakpointRegistry::defaults())))->toBe([['tablet', 768], ['desktop', 1024]]);
+        ->and($widths(new BreakpointRegistry(...BreakpointRegistry::defaults())))
+        ->toBe([['tablet', 768], ['desktop', 1024]]);
 
     $breakpoints->add(new Breakpoint('wide', 1280));
     $breakpoints->add(new Breakpoint('phone', 320));
