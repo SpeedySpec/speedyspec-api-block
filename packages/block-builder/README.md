@@ -70,7 +70,8 @@ It is laid out the way the block editors people already know are:
   colour picker for colours, and its breakpoints. Changes apply to every page and are not undone with the document.
 - **Turn into**, in the More list, offers the types the selected block's type declares.
 - **Locks.** The Block tab's Lock group holds "Prevent moving" and "Prevent removing". A locked block's move,
-  remove and cut buttons are turned off, it cannot be dragged, and the outline marks it.
+  remove and cut buttons are turned off, it cannot be dragged, and the outline marks it. A block with a block
+  inside it that is locked against removal cannot be removed or cut either, and its Remove button says why.
 - **Several blocks.** Shift-, Ctrl- or Cmd-click blocks beside each other, on the page or in the outline, to select
   them together; the inspector then offers Copy, Cut, Remove, Lock all and Unlock all, each one step to undo.
   Escape clears the selection.

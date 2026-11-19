@@ -1,6 +1,6 @@
 import { ApiError, Refused } from './api.js';
 import { templateName } from './templates.js';
-import { toggleInSelection, withLock } from './selection.js';
+import { toggleInSelection } from './selection.js';
 import { find, indentPosition, movePosition, outdentPosition, positionOf } from './tree.js';
 
 /**
@@ -35,6 +35,8 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         preview: { output: '', css: '', styles: [] },
         // The template libraries and whether the person may save and remove templates; null until first asked.
         templates: null,
+        // Whether the last attempt to list templates failed; the editor then offers to ask again.
+        templatesFailed: false,
     };
     const listeners = new Set();
     let queue = Promise.resolve();
@@ -176,7 +178,16 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
         }
     }
 
-    const loadTemplates = () => siteChange(async () => set({ templates: await client.templates() }));
+    // A failed load is marked, so the editor offers to try again instead of waiting for an answer that never comes.
+    const loadTemplates = async () => {
+        const loaded = await siteChange(async () => set({ templates: await client.templates(), templatesFailed: false }));
+
+        if (!loaded) {
+            set({ templatesFailed: true });
+        }
+
+        return loaded;
+    };
 
     const moveTo = (id, position) =>
         position === null ? Promise.resolve() : edit({ operation: 'move', block: id, position });
@@ -247,7 +258,7 @@ export function createBuilder({ client, documentId, historyLimit = 50 }) {
          * @param {string[]} ids
          * @param {{move: boolean, remove: boolean}} lock
          */
-        lockMany: (ids, lock) => edit(() => ({ operation: 'restore', blocks: withLock(state.document.blocks, ids, lock) })),
+        lockMany: (ids, lock) => edit({ operation: 'lockBlocks', ids, lock: { move: lock.move, remove: lock.remove } }),
 
         /**
          * Puts away what the server last refused, once the person has read it.

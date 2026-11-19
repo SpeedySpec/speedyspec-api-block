@@ -269,15 +269,18 @@ class DocumentEditor implements DocumentEditorInterface
      *
      * @return list<EditRefusal>
      */
-    private function removalLocks(Block $block): array
+    private function removalLocks(Block $block, bool $inside = false): array
     {
+        $message = $inside
+            ? 'A block inside this one is locked against removal.'
+            : 'This block is locked against removal.';
         $refusals = BlockLock::of($block)->remove
-            ? [new EditRefusal(EditRefusalKind::Locked, 'This block is locked against removal.', $block->id)]
+            ? [new EditRefusal(EditRefusalKind::Locked, $message, $block->id)]
             : [];
 
         foreach ($block->children as $child)
         {
-            $refusals = [...$refusals, ...$this->removalLocks($child)];
+            $refusals = [...$refusals, ...$this->removalLocks($child, true)];
         }
 
         return $refusals;
@@ -293,7 +296,8 @@ class DocumentEditor implements DocumentEditorInterface
             ));
         }
 
-        $refusals = [];
+        $unknown = [];
+        $locks = [];
 
         foreach ($blockIds as $blockId)
         {
@@ -301,19 +305,20 @@ class DocumentEditor implements DocumentEditorInterface
 
             if ($block === null)
             {
-                $refusals[] = $this->unknownBlock(is_string($blockId) ? $blockId : get_debug_type($blockId));
+                $unknown[] = $this->unknownBlock(is_string($blockId) ? $blockId : get_debug_type($blockId));
 
                 continue;
             }
 
             foreach ($this->removalLocks($block) as $refusal)
             {
-                // A locked block inside two listed blocks is reported once.
-                $refusals[$refusal->blockId] = $refusal;
+                // A locked block inside two listed blocks is reported once; the prefix keeps a numeric id a string
+                // key, so it can never collide with a list index.
+                $locks['#' . $refusal->blockId] ??= $refusal;
             }
         }
 
-        $refusals = array_values($refusals);
+        $refusals = [...$unknown, ...array_values($locks)];
 
         if ($refusals !== [])
         {
@@ -332,6 +337,60 @@ class DocumentEditor implements DocumentEditorInterface
         }
 
         return EditResult::accepted($document->withTree($tree));
+    }
+
+    public function lockBlocks(Document $document, array $blockIds, BlockLock $lock): EditResult
+    {
+        if ($blockIds === [])
+        {
+            return EditResult::refused(new EditRefusal(
+                EditRefusalKind::UnknownBlock,
+                'Name at least one block to lock or unlock.',
+            ));
+        }
+
+        $refusals = [];
+
+        foreach ($blockIds as $blockId)
+        {
+            if (!is_string($blockId) || $document->tree->find($blockId) === null)
+            {
+                $refusals[] = $this->unknownBlock(is_string($blockId) ? $blockId : get_debug_type($blockId));
+            }
+        }
+
+        if ($refusals !== [])
+        {
+            return EditResult::refused(...$refusals);
+        }
+
+        $tree = $document->tree;
+        $affected = [];
+
+        foreach (array_unique($blockIds) as $blockId)
+        {
+            $block = $tree->find($blockId);
+            $extensions = $block->extensions;
+            unset($extensions[BlockLock::NAMESPACE]);
+
+            if ($lock->isLocked())
+            {
+                $extensions[BlockLock::NAMESPACE] = ['move' => $lock->move, 'remove' => $lock->remove];
+            }
+
+            $tree = $tree->replace($blockId, new Block(
+                $block->id,
+                $block->type,
+                $block->typeVersion,
+                $block->settings,
+                $extensions,
+                $block->bindings,
+                $block->children,
+            ));
+            $affected[] = $blockId;
+        }
+
+        return EditResult::accepted($document->withTree($tree), $affected);
     }
 
     public function transform(Document $document, string $blockId, BlockName $to): EditResult

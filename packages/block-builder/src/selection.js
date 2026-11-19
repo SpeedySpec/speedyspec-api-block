@@ -47,6 +47,14 @@ export function lockOf(block) {
 }
 
 /**
+ * Tells whether removing a block would be refused: the server refuses when the block, or any block inside it, is
+ * locked against removal, so the editor checks the same subtree before offering Remove.
+ */
+export function lockedAgainstRemoval(block) {
+    return lockOf(block).remove || (block?.children ?? []).some((child) => lockedAgainstRemoval(child));
+}
+
+/**
  * Adds a block to the selection, or takes it out when it is already there.
  *
  * A selection holds siblings only, so what is done to it (copying, removing, locking) acts on blocks side by side.
@@ -64,35 +72,4 @@ export function toggleInSelection(document, selection, id) {
     const next = selection.length === 0 || parentOf(selection[0]) === parentOf(id) ? [...selection, id] : [id];
 
     return pick(document, next).map((block) => block.id);
-}
-
-/**
- * Gives a copy of blocks with a lock set on some of them, or taken off when neither flag is set.
- *
- * Locking a selection is sent as one restore of the whole page, so one undo takes every lock off again.
- *
- * @param {Array<object>} blocks
- * @param {string[]} ids
- * @param {{move: boolean, remove: boolean}} lock
- * @returns {Array<object>}
- */
-export function withLock(blocks, ids, lock) {
-    const wanted = new Set(ids);
-    const locking = lock.move || lock.remove;
-
-    return blocks.map((block) => {
-        const children = withLock(block.children ?? [], ids, lock);
-
-        if (!wanted.has(block.id)) {
-            return { ...block, children };
-        }
-
-        const { [LOCK_NS]: _old, ...extensions } = block.extensions ?? {};
-
-        return {
-            ...block,
-            extensions: locking ? { ...extensions, [LOCK_NS]: { move: lock.move, remove: lock.remove } } : extensions,
-            children,
-        };
-    });
 }
