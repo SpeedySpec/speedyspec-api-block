@@ -8,7 +8,7 @@ import {
 import { createBuilder } from './store.js';
 import { accepts, addedMedia, mediaQuery, movedMedia, withoutMediaAt } from './media.js';
 import { STYLE } from './styles.js';
-import { lockOf, pick } from './selection.js';
+import { lockOf, lockedAgainstRemoval, pick } from './selection.js';
 import { isColourToken, tokenGroups, tokenNameProblem, widthProblem } from './site-styles.js';
 import { SAVED_LIBRARY, matchTemplates, templateName } from './templates.js';
 import { find, positionOf, walk } from './tree.js';
@@ -128,7 +128,7 @@ export class BlockBuilderElement extends HTMLElement {
             // The binding form while it is open: which setting it binds, and the source and arguments chosen.
             binding: null,
             // The site styles screen: what is being typed into its Add rows, and problems by row.
-            styles: { token: { name: '', value: '' }, breakpoint: { name: '', width: '' }, problems: {} },
+            styles: { token: { name: '', value: '' }, breakpoint: { name: '', width: '' }, problems: {}, drafts: {} },
         };
         // Media items already looked up, by id, so a chosen file shows its picture and name; null while loading.
         this.media = new Map();
@@ -189,9 +189,13 @@ export class BlockBuilderElement extends HTMLElement {
         }
     }
 
-        disconnectedCallback() {
+    disconnectedCallback() {
         this.stop?.();
         window.removeEventListener('resize', this.resize);
+        // Connecting again adds these afresh, so they are taken off here; otherwise every key and paste would be
+        // handled once for each time the element was connected.
+        this.removeEventListener('keydown', this.keys);
+        ['copy', 'cut', 'paste'].forEach((kind) => this.removeEventListener(kind, this.clip));
     }
 
     /**
@@ -336,13 +340,19 @@ export class BlockBuilderElement extends HTMLElement {
         const breakpoints = state.vocabulary?.breakpoints ?? [];
         const problem = (key) => (ui.problems[key] ? el('span', { class: 'bb-wrong', role: 'alert', text: ui.problems[key] }) : null);
         // Sends a change, and shows the server's reason under its row when it refuses.
-        const send = async (key, change) => {
+        // A refused value stays in its row beside the reason, so the person can correct it rather than retype it.
+        const send = async (key, change, typed = null) => {
             const message = await change();
 
             if (message === null) {
                 delete ui.problems[key];
+                delete ui.drafts[key];
             } else {
                 ui.problems[key] = message;
+
+                if (typed !== null) {
+                    ui.drafts[key] = typed;
+                }
             }
 
             this.render();
@@ -353,7 +363,7 @@ export class BlockBuilderElement extends HTMLElement {
             el('button', { class: 'bb-icon-button', type: 'button', title: `Remove ${label}`, 'aria-label': `Remove ${label}`, onclick: run }, icon('remove'));
         const tokenRow = ({ name, value }) => {
             const key = `token:${name}`;
-            const save = (next) => send(key, () => this.builder.setToken(name, next));
+            const save = (next) => send(key, () => this.builder.setToken(name, next), next);
 
             return el(
                 'div',
@@ -374,7 +384,7 @@ export class BlockBuilderElement extends HTMLElement {
                         class: 'bb-input',
                         id: `bb-${key}`,
                         'data-key': key,
-                        value,
+                        value: ui.drafts[key] ?? value,
                         onchange: (event) => save(event.target.value),
                     }),
                     removeButton(name, () => send(key, () => this.builder.removeToken(name))),
@@ -397,18 +407,23 @@ export class BlockBuilderElement extends HTMLElement {
                         id: `bb-${key}`,
                         'data-key': key,
                         inputmode: 'numeric',
-                        value: String(minWidth),
+                        value: ui.drafts[key] ?? String(minWidth),
                         onchange: (event) => {
                             const local = widthProblem(event.target.value);
 
                             if (local !== null) {
                                 ui.problems[key] = local;
+                                ui.drafts[key] = event.target.value;
                                 this.render();
 
                                 return;
                             }
 
-                            send(key, () => this.builder.setBreakpoint(name, Number(event.target.value.trim())));
+                            send(
+                                key,
+                                () => this.builder.setBreakpoint(name, Number(event.target.value.trim())),
+                                event.target.value,
+                            );
                         },
                     }),
                     el('span', { class: 'bb-unit', text: 'px' }),
@@ -606,6 +621,15 @@ export class BlockBuilderElement extends HTMLElement {
      * Lists the templates that can be inserted, by library, with Remove on saved ones for people who may.
      */
     templateList(state, position) {
+        if (state.templates === null && state.templatesFailed) {
+            return el(
+                'div',
+                { class: 'bb-drawer-body' },
+                el('p', { class: 'bb-none', text: 'Templates could not be loaded.' }),
+                el('button', { class: 'bb-wide-button', type: 'button', text: 'Try again', onclick: () => this.builder.loadTemplates() }),
+            );
+        }
+
         if (state.templates === null) {
             if (!this.templatesAsked) {
                 this.templatesAsked = true;
@@ -1163,6 +1187,9 @@ export class BlockBuilderElement extends HTMLElement {
 
         const here = positionOf(state.document, block.id);
         const lock = lockOf(block);
+        // Removing takes everything inside, so a lock on any block inside keeps this one too.
+        const kept = lockedAgainstRemoval(block);
+        const removeLabel = lock.remove ? 'Remove (locked)' : kept ? 'Remove (a block inside is locked)' : 'Remove';
         const beside = here.parent === null ? state.document.blocks : find(state.document, here.parent).children;
         const tool = (label, glyph, run, disabled = false) =>
             el('button', { type: 'button', title: label, 'aria-label': label, disabled, onclick: run }, icon(glyph));
@@ -1174,7 +1201,7 @@ export class BlockBuilderElement extends HTMLElement {
             tool('Move down', 'down', () => this.builder.moveBy(block.id, 1), here.index === beside.length - 1 || lock.move),
             tool('Duplicate', 'copy', () => this.builder.duplicate(block.id)),
             tool('Add a block', 'add', () => this.openDrawer('add')),
-            tool(lock.remove ? 'Remove (locked)' : 'Remove', 'remove', () => this.builder.remove(block.id), lock.remove),
+            tool(removeLabel, 'remove', () => this.builder.remove(block.id), kept),
             ...[this.moreButton(state, block)].flat(),
         );
         this.bar.hidden = false;
@@ -1198,7 +1225,7 @@ export class BlockBuilderElement extends HTMLElement {
     moreActions(state, block) {
         const actions = [
             { label: 'Copy', run: () => this.copyBlocks([block.id], false) },
-            { label: 'Cut', run: () => this.copyBlocks([block.id], true), disabled: lockOf(block).remove },
+            { label: 'Cut', run: () => this.copyBlocks([block.id], true), disabled: lockedAgainstRemoval(block) },
         ];
 
         if (typeof navigator.clipboard?.readText === 'function') {
@@ -1681,7 +1708,7 @@ export class BlockBuilderElement extends HTMLElement {
     several(state) {
         const ids = pick(state.document, state.selection).map((block) => block.id);
         const blocks = ids.map((id) => find(state.document, id));
-        const removable = blocks.every((block) => !lockOf(block).remove);
+        const removable = blocks.every((block) => !lockedAgainstRemoval(block));
         const action = (label, run, disabled = false) =>
             el('button', { class: 'bb-wide-button', type: 'button', text: label, disabled, onclick: run });
 

@@ -379,6 +379,8 @@ an editing operation, so the server checks it like any other, or declared as dat
   refuses with `locked`: removing a block also checks everything inside it. `restore`, which undo is built on, is
   never checked, so undoing the paste of a locked block works. Anyone who may edit may unlock, since a lock prevents
   accidents, not access. `DocumentsPackage` registers the lock as a decorator, so builders show it like any other.
+  Locking or unlocking several blocks is one operation, `{operation: "lockBlocks", ids, lock: {move, remove}}`,
+  which changes only those blocks' locks, so a problem elsewhere on the page cannot refuse it.
 
 ## WordPress
 

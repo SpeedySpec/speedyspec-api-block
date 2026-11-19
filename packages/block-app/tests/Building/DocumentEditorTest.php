@@ -527,3 +527,58 @@ test('undo is never stopped by a lock, so locking and pasting locked blocks can 
         ->and($undoPaste->isAccepted())->toBeTrue()
         ->and($undoPaste->document->tree->ids())->toBe(['a', 'b']);
 });
+
+test('removing a block refused for a locked block inside it says the lock is inside', function () use (
+    $locks,
+    $locked,
+) {
+    [$editor] = editor($locks);
+    $document = doc(block('p', 'acme/box', [], $locked('a', ['remove' => true])));
+
+    $refused = $editor->remove($document, 'p');
+    $many = $editor->removeBlocks($document, ['p']);
+
+    expect($refused->refusals[0]->message)->toBe('A block inside this one is locked against removal.')
+        ->and($refused->refusals[0]->blockId)->toBe('a')
+        ->and($many->refusals[0]->message)->toBe('A block inside this one is locked against removal.');
+});
+
+test('removeBlocks reports every refusal, whatever the ids look like', function () use ($locks, $locked) {
+    [$editor] = editor($locks);
+    $document = doc($locked('0', ['remove' => true]), $locked('1', ['remove' => true]));
+
+    $refused = $editor->removeBlocks($document, ['nope', 'gone', '0', '1']);
+
+    expect(refusals($refused))->toBe([
+        EditRefusalKind::UnknownBlock,
+        EditRefusalKind::UnknownBlock,
+        EditRefusalKind::Locked,
+        EditRefusalKind::Locked,
+    ]);
+});
+
+test('lockBlocks locks or unlocks several blocks in one edit, whatever else is on the page', function () use (
+    $setup,
+) {
+    [$editor] = editor(function ($c) use ($setup) {
+        $setup($c);
+        $c->get(DecoratorRegistryInterface::class)->add(
+            \SpeedySpec\Block\Domain\ValueObjects\BlockLock::decorator(),
+        );
+    });
+    // The field is missing its required key, so restoring this page would be refused.
+    $broken = block('f', 'acme/form', [], block('y', 'acme/field', [])->withTypeVersion(2));
+    $document = doc(block('a', 'acme/box'), block('b', 'acme/box'), $broken);
+    $lock = new \SpeedySpec\Block\Domain\ValueObjects\BlockLock(move: true, remove: true);
+
+    $lockedNow = $editor->lockBlocks($document, ['a', 'b'], $lock);
+    $unlocked = $editor->lockBlocks($lockedNow->document, ['a'], new \SpeedySpec\Block\Domain\ValueObjects\BlockLock());
+
+    expect($lockedNow->isAccepted())->toBeTrue()
+        ->and($lockedNow->affectedIds)->toBe(['a', 'b'])
+        ->and($lockedNow->document->tree->find('b')->extensions['core/lock'])->toBe(['move' => true, 'remove' => true])
+        ->and($unlocked->document->tree->find('a')->extensions)->toBe([])
+        ->and($unlocked->document->tree->find('b')->extensions['core/lock'])->toBe(['move' => true, 'remove' => true])
+        ->and(refusals($editor->lockBlocks($document, ['a', 'nope'], $lock)))->toBe([EditRefusalKind::UnknownBlock])
+        ->and(refusals($editor->lockBlocks($document, [], $lock)))->toBe([EditRefusalKind::UnknownBlock]);
+});

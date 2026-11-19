@@ -7,6 +7,7 @@ namespace SpeedySpec\Block\Domain\Contracts;
 use SpeedySpec\Block\Domain\Entities\Block;
 use SpeedySpec\Block\Domain\Entities\Document;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
+use SpeedySpec\Block\Domain\ValueObjects\BlockLock;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
 use SpeedySpec\Block\Domain\ValueObjects\EditResult;
@@ -101,6 +102,20 @@ interface DocumentEditorInterface
      * @since 0.1.0
      */
     public function removeBlocks(Document $document, array $blockIds): EditResult;
+
+    /**
+     * Sets or takes off the lock on several blocks as one edit.
+     *
+     * Only the listed blocks' locks change, so the rest of the page is not checked again: a builder locking a
+     * selection is never refused for an unrelated block. A lock with neither flag set takes the lock off. Nothing
+     * changes unless every id is in the document.
+     *
+     * @param list<string> $blockIds
+     *   At least one id.
+     *
+     * @since 0.1.0
+     */
+    public function lockBlocks(Document $document, array $blockIds, BlockLock $lock): EditResult;
 
     /**
      * Turns a block into a block of another type, as its own type declares, keeping its id and place.

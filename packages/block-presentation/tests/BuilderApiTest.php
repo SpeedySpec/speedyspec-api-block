@@ -287,6 +287,12 @@ test('every editing operation is reachable', function (array $body, callable $ch
         ['operation' => 'removeBlocks', 'ids' => ['t', 'b']],
         fn (array $blocks) => expect($blocks)->toBe([]),
     ],
+    'lock several' => [
+        ['operation' => 'lockBlocks', 'ids' => ['t', 'b'], 'lock' => ['move' => true, 'remove' => false]],
+        fn (array $blocks, array $result) => expect($blocks[0]['children'][0]['extensions']['core/lock'])
+            ->toBe(['move' => true, 'remove' => false])
+            ->and($result['affected'])->toBe(['t', 'b']),
+    ],
     'transform' => [
         ['operation' => 'transform', 'block' => 't', 'type' => 'acme/box'],
         fn (array $blocks, array $result) => expect($blocks[0]['children'][0]['type'])->toBe('acme/box')
@@ -356,6 +362,8 @@ test('a request that makes no sense is a bad request, never a server error', fun
     ['POST', '/documents/home/operations', ['operation' => 'removeBlocks', 'ids' => ['t', 3]], 400],
     ['POST', '/documents/home/operations', ['operation' => 'removeBlocks', 'ids' => ['t', '']], 400],
     ['POST', '/documents/home/operations', ['operation' => 'removeBlocks', 'ids' => ['a' => 't']], 400],
+    ['POST', '/documents/home/operations', ['operation' => 'lockBlocks', 'ids' => ['t']], 400],
+    ['POST', '/documents/home/operations', ['operation' => 'lockBlocks', 'ids' => ['t'], 'lock' => ['move' => 1]], 400],
     [
         'POST',
         '/documents/home/operations',

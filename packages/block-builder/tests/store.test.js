@@ -552,6 +552,30 @@ test('saving a template sends a name made from its title and the document, then 
     assert.equal(builder.state().canUndo, canUndo);
 });
 
+test('templates that fail to load can be asked for again', async () => {
+    const client = fakeClient();
+    let fail = true;
+    client.templates = async () => {
+        if (fail) {
+            throw new ApiError(500, 'The server could not answer.');
+        }
+
+        return { libraries: [], manage: false };
+    };
+    const builder = createBuilder({ client, documentId: 'home' });
+    await builder.load();
+
+    assert.equal(await builder.loadTemplates(), false);
+    assert.equal(builder.state().templates, null);
+    assert.equal(builder.state().templatesFailed, true);
+
+    fail = false;
+
+    assert.equal(await builder.loadTemplates(), true);
+    assert.equal(builder.state().templatesFailed, false);
+    assert.deepEqual(builder.state().templates, { libraries: [], manage: false });
+});
+
 test('a template that cannot be saved is shown as an error', async () => {
     const client = fakeClient();
     client.templates = async () => ({ libraries: [], manage: true });
@@ -652,7 +676,7 @@ test('several blocks can be selected, and the selection follows what is still on
     assert.deepEqual(builder.state().selection, []);
 });
 
-test('locking several blocks is one restore, so one undo unlocks them all', async () => {
+test('locking several blocks is one lockBlocks edit, so the rest of the page is not checked again', async () => {
     const client = editingClient();
     const builder = createBuilder({ client, documentId: 'home' });
     await builder.load();
@@ -661,12 +685,7 @@ test('locking several blocks is one restore, so one undo unlocks them all', asyn
 
     const sent = client.calls.filter((call) => call[0] === 'operate').map((call) => call[1]);
 
-    assert.equal(sent.length, 1);
-    assert.equal(sent[0].operation, 'restore');
-    assert.deepEqual(sent[0].blocks.map((entry) => entry.extensions), [
-        { 'core/lock': { move: true, remove: true } },
-        { 'core/lock': { move: true, remove: true } },
-    ]);
+    assert.deepEqual(sent, [{ operation: 'lockBlocks', ids: ['a', 'b'], lock: { move: true, remove: true } }]);
     assert.equal(builder.state().canUndo, true);
 });
 

@@ -41,6 +41,7 @@ use SpeedySpec\Block\Domain\Exceptions\InvalidStyleException;
 use SpeedySpec\Block\Domain\Exceptions\MediaUploadRefusedException;
 use SpeedySpec\Block\Domain\ValueObjects\AssetKind;
 use SpeedySpec\Block\Domain\ValueObjects\Binding;
+use SpeedySpec\Block\Domain\ValueObjects\BlockLock;
 use SpeedySpec\Block\Domain\ValueObjects\BlockName;
 use SpeedySpec\Block\Domain\ValueObjects\Breakpoint;
 use SpeedySpec\Block\Domain\ValueObjects\BlockTemplate;
@@ -447,6 +448,7 @@ class BuilderApi
             'move' => $editor->move($document, $block(), $this->position($body)),
             'remove' => $editor->remove($document, $block()),
             'removeBlocks' => $editor->removeBlocks($document, $this->ids($body)),
+            'lockBlocks' => $editor->lockBlocks($document, $this->ids($body), $this->lock($body)),
             'duplicate' => $editor->duplicate($document, $block()),
             'transform' => $editor->transform($document, $block(), BlockName::fromString($this->text($body, 'type'))),
             'updateSettings' => $editor->updateSettings($document, $block(), $this->map($body, 'settings', true)),
@@ -902,6 +904,27 @@ class BuilderApi
         }
 
         return $ids;
+    }
+
+    /**
+     * Reads the lock to set, refusing anything but true or false for each flag so a stray value never locks.
+     *
+     * @param array<string, mixed> $body
+     *
+     * @throws ApiProblem
+     *
+     * @since 0.1.0
+     */
+    private function lock(array $body): BlockLock
+    {
+        $lock = $body['lock'] ?? null;
+
+        if (!is_array($lock) || !is_bool($lock['move'] ?? null) || !is_bool($lock['remove'] ?? null))
+        {
+            throw new ApiProblem(400, 'The request needs "lock", with "move" and "remove" each true or false.');
+        }
+
+        return new BlockLock($lock['move'], $lock['remove']);
     }
 
     /**
